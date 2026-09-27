@@ -12,7 +12,7 @@ from .geometry import (array, block, chamfer, circle, component_of,
                        rigid_transform, rotate, sphere, square, union,
                        workplane)
 
-__version__ = '0.1.0.dev0'
+__version__ = '0.1.0'
 
 __all__ = ['LicenseError', 'array', 'block', 'bounding_box', 'chamfer',
            'circle', 'component_of', 'coordinate_system', 'cylinder',

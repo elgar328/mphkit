@@ -1,6 +1,6 @@
 [project]
 name = "mphkit"
-version = "0.1.0.dev0"
+version = "0.1.0"
 description = "Helpers on top of MPh for building COMSOL geometries and geometry-based selections in Python."
 readme = "README.md"
 authors = [{ name = "elgar328" }]

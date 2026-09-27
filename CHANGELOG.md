@@ -9,6 +9,8 @@ until 1.0, a minor release (0.2, 0.3, ...) may change the API. See
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-09-27
+
 First release.
 
 ### Added
@@ -33,4 +35,5 @@ First release.
 - `LicenseError` is raised when a feature needs a license that is not
   available.
 
-[Unreleased]: https://github.com/elgar328/mphkit/commits/main
+[Unreleased]: https://github.com/elgar328/mphkit/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/elgar328/mphkit/releases/tag/v0.1.0
