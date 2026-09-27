@@ -3,6 +3,7 @@
 [![PyPI](https://img.shields.io/pypi/v/mphkit)](https://pypi.org/project/mphkit/)
 [![Python](https://img.shields.io/python/required-version-toml?tomlFilePath=https://raw.githubusercontent.com/elgar328/mphkit/main/pyproject.toml)](https://pypi.org/project/mphkit/)
 [![License](https://img.shields.io/pypi/l/mphkit)](https://github.com/elgar328/mphkit/blob/main/LICENSE)
+[![COMSOL](https://img.shields.io/badge/COMSOL-6.4-blue)](https://www.comsol.com/)
 
 Helpers on top of [MPh](https://github.com/MPh-py/MPh) for building COMSOL
 geometries and geometry-based selections in Python. Select boundaries by
@@ -51,10 +52,10 @@ plain MPh (or the COMSOL Java API through `node.java`).
   for CAD import (CAD Import Module, Design Module or a LiveLink).
   Everything else needs COMSOL only.
 
-Tested with COMSOL 6.4 and MPh 1.4.0, on macOS (Apple silicon) with
-Python 3.10, 3.13 and 3.14 and on Windows with Python 3.13. Linux is not
-tested yet; since mphkit only goes through MPh, it is expected to work the
-same way.
+mphkit is developed and tested with COMSOL 6.4 and MPh 1.4. Feature types,
+property names and selection behavior can differ between COMSOL versions,
+so other versions may need adjustments; reports are welcome. It runs
+wherever MPh runs (checked on macOS and Windows).
 
 ## Installation
 

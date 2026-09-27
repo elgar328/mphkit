@@ -92,8 +92,8 @@ For example (made-up entries):
      [X.Y.Z]: https://github.com/elgar328/mphkit/compare/vA.B.C...vX.Y.Z
      ```
 
-5. **Update README.md** if needed: "Tested with", when COMSOL, MPh or
-   Python versions changed.
+5. **Update README.md** if the tested COMSOL or MPh version changed: the
+   sentence under Requirements and the COMSOL badge.
 
 6. **Check consistency and the package**:
    ```sh
