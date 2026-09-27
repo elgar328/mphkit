@@ -1,5 +1,9 @@
 # mphkit
 
+[![PyPI](https://img.shields.io/pypi/v/mphkit)](https://pypi.org/project/mphkit/)
+[![Python](https://img.shields.io/pypi/pyversions/mphkit)](https://pypi.org/project/mphkit/)
+[![License](https://img.shields.io/pypi/l/mphkit)](https://github.com/elgar328/mphkit/blob/main/LICENSE)
+
 Helpers on top of [MPh](https://github.com/MPh-py/MPh) for building COMSOL
 geometries and geometry-based selections in Python. Select boundaries by
 location instead of by entity number, so selections keep working when the
