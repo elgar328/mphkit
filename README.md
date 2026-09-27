@@ -52,9 +52,9 @@ plain MPh (or the COMSOL Java API through `node.java`).
   Everything else needs COMSOL only.
 
 Tested with COMSOL 6.4 and MPh 1.4.0, on macOS (Apple silicon) with
-Python 3.10 and 3.13 and on Windows with Python 3.13. Linux is not tested
-yet; since mphkit only goes through MPh, it is expected to work the same
-way.
+Python 3.10, 3.13 and 3.14 and on Windows with Python 3.13. Linux is not
+tested yet; since mphkit only goes through MPh, it is expected to work the
+same way.
 
 ## Installation
 
