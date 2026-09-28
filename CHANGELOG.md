@@ -45,6 +45,14 @@ until 1.0, a minor release (0.2, 0.3, ...) may change the API. See
   only touch such a bound are now picked too, as they already were at
   round coordinates; pass `xmin=`, `xmax=`, ... to `sel.box` for exact
   bounds.
+- `sel.ball`, `sel.disk` and `sel.cylinder` find a drawn sphere, circle
+  or cylinder given its exact radius, top and bottom, such as 0.3 or far
+  from the origin; COMSOL compares in single precision, so these were
+  missed. `r`, `top`, `bottom` and `rin`
+  now get a margin of a millionth of the size of the coordinates involved,
+  so with `condition='intersects'` entities that only touch them are
+  picked too; for a strict bound, give room the other way, e.g.
+  `0.999*r`.
 
 ## [0.1.0] - 2026-09-27
 

@@ -8,10 +8,11 @@ from mph.node import Node
 from mph.node import escape
 
 from . import _comsol
+from ._expr import expr
 from .geometry import feature
 
 WHERE = ('component', 'geometry')
-MARGIN = 1e-6  # relative margin of box bounds, see box()
+MARGIN = 1e-6  # relative margin of selection bounds, see box()
 
 
 def _where(parent: Node, where: str | None) -> str:
@@ -134,20 +135,73 @@ def _bounds(geom: Node, **ranges) -> dict:
     return properties
 
 
-def _widen(value, sign: int):
-    """Widens a bound by a millionth of its value, away from the range."""
-    if isinstance(value, str):
-        op = '-' if sign < 0 else '+'
-        return f'({value}){op}1e-6*abs({value})'  # same text as box()
-    if isinstance(value, bool) or not isinstance(value, numbers.Real):
+def _widen(value, sign: int, *size):
+    """
+    Widens a bound away from the range by a millionth of a size: the value
+    itself, or for a round selection the absolute coordinates and
+    dimensions involved, since COMSOL's single-precision rounding follows
+    the size of the coordinates.
+    """
+    if isinstance(value, bool) or not isinstance(value, (str, numbers.Real)):
         return value
-    try:
-        number = float(value)
-    except OverflowError:
-        return value  # passed on as text, see _comsol.convert
-    if not math.isfinite(number):
-        return number  # inf - inf would be NaN
-    return number + sign*MARGIN*abs(number)
+    if isinstance(value, str) and not _size_terms((value,)):
+        return value  # 'Inf': an open bound
+    if not isinstance(value, str):
+        try:
+            number = float(value)
+        except OverflowError:
+            return value  # passed on as text, see _comsol.convert
+        if not math.isfinite(number):
+            return number  # inf - inf would be NaN
+    terms = _size_terms(size or (value,))
+    if isinstance(value, str) or any(isinstance(t, str) for t in terms):
+        if not terms:
+            return value
+        op = '-' if sign < 0 else '+'
+        scale = [f'abs({expr(t)})' for t in terms]
+        scale_text = scale[0] if len(scale) == 1 else f'({"+".join(scale)})'
+        return f'({expr(value)}){op}1e-6*{scale_text}'  # see box()
+    return float(value) + sign*MARGIN*sum(abs(t) for t in terms)
+
+
+def _size_terms(terms) -> list:
+    """
+    Returns the terms of a size that count: numbers as floats, expressions
+    as they are. Left out are `None`, zero and infinite values (`'Inf'` is
+    COMSOL's default of an open bound), and every term if one of them is of
+    an unknown type.
+    """
+    kept: list = []
+    for term in terms:
+        if term is None or isinstance(term, bool):
+            continue
+        if isinstance(term, str):
+            if term.strip().lstrip('+-').lower() not in ('inf', 'infinity'):
+                kept.append(term)
+            continue
+        if not isinstance(term, numbers.Real):
+            return []
+        try:
+            number = float(term)
+        except OverflowError:
+            return []
+        if math.isfinite(number) and number != 0:
+            kept.append(number)
+    return kept
+
+
+def _inner(rin, *size):
+    """
+    Widens an inner radius inward like `_widen`, but not below zero. A
+    negative `rin` stays as it is, so that COMSOL's own error names it.
+    """
+    widened = _widen(rin, -1, *size)
+    if isinstance(widened, str):
+        return widened if widened == rin else \
+            f'max(min(0,({rin})),{widened})'
+    if isinstance(widened, float):
+        return max(min(0.0, float(rin)), widened)
+    return widened
 
 
 def box(geom: Node, entity: str, /, x=None, y=None, z=None, *,
@@ -188,15 +242,22 @@ def ball(geom: Node, entity: str, /, center, r, *,
     """
     Selects the entities inside a ball of radius `r` around `center`.
 
-    `condition` defaults to `'inside'`, see `box()`. The radius gets no
-    automatic margin: give it a little room, e.g. `1.01*r`.
+    `condition` defaults to `'inside'`, see `box()`. Like the bounds of
+    `box()`, `r` gets a margin, here a millionth of the size of the
+    coordinates involved (`|r|` plus the absolute coordinates of
+    `center`), so the radius of a drawn sphere or circle selects it.
+    Entities up to that margin outside (0.01 at 1e4 from the origin) may
+    be picked too, and with
+    `condition='intersects'` also entities that only touch the ball; for a
+    strict bound give room the other way, e.g. `0.999*r`.
     """
     dim = _comsol.parent_dim(geom)
     if len(center) != dim:
         raise ValueError(f'center needs {dim} coordinates.')
     position = {f'pos{a}': c for a, c in zip('xyz', center)}
     properties = {'entitydim': _level(geom, entity, where),
-                  'condition': condition, 'r': r, **position, **properties}
+                  'condition': condition, 'r': _widen(r, +1, r, *center),
+                  **position, **properties}
     return _create(geom, 'Ball', where, name, properties)
 
 
@@ -209,14 +270,21 @@ def cylinder(geom: Node, entity: str, /, pos, r, *, axis=None, top=None,
 
     `pos` is the center of the base and `axis` the direction, `'x'`, `'y'`,
     `'z'` (default) or a vector. `top` and `bottom` are measured from `pos`
-    along the axis; left out, the cylinder is unbounded. With `rin` it is a
-    shell, e.g. `r=2.1, rin=1.9` picks the side faces of an r=2 cylinder.
-    Bound the shell with `top` and `bottom` slightly beyond the cylinder,
-    e.g. `bottom=-0.01*h, top=1.01*h`; unbounded, it also picks side faces
-    of other objects on the same axis.
+    along the axis; left out, the cylinder is unbounded. `r`, `top` and
+    `bottom` get a margin as in `ball()`, with the same side effects,
+    sized by `pos`, `r`, `top` and `bottom` together (a tilted cylinder
+    needs that), so the radius and height of a drawn cylinder select it.
+
+    With `rin` it is a shell, e.g. `rin=0.99*r, bottom=0, top=h` picks the
+    side faces of a cylinder of radius `r` and height `h` that no other
+    object cut; unbounded, it also picks side faces of other objects on
+    the same axis. `rin` gets the same margin inward, but curved faces are
+    checked on a rendering mesh whose flat pieces cut inside the circle,
+    so give it about 1 % room. In a model some 1e5 times larger than the
+    radius even that misses; there `condition='intersects'` with
+    `rin=0.9*r, bottom=0.01*h, top=0.99*h` works too.
+
     `condition` defaults to `'inside'`, see `box()`. In 2D use `disk()`.
-    Radii and `top`/`bottom` get no automatic margin: give them a little
-    room, e.g. `1.01*r`.
     """
     _comsol.check_not_workplane(geom, 'sel.cylinder')
     if _comsol.sdim(geom) != 3:
@@ -225,9 +293,12 @@ def cylinder(geom: Node, entity: str, /, pos, r, *, axis=None, top=None,
     _comsol.check_vector(geom, 'pos', pos)
     if axis is not None and not isinstance(axis, str):
         _comsol.check_vector(geom, 'axis', axis)
+    size = (r, top, bottom, *pos)
     properties = {'entitydim': _level(geom, entity, where),
-                  'condition': condition, 'pos': pos, 'r': r, 'rin': rin,
-                  'top': top, 'bottom': bottom,
+                  'condition': condition, 'pos': pos,
+                  'r': _widen(r, +1, *size), 'rin': _inner(rin, *size),
+                  'top': _widen(top, +1, *size),
+                  'bottom': _widen(bottom, -1, *size),
                   **_comsol.axis_properties(axis), **properties}
     return _create(geom, 'Cylinder', where, name, properties)
 
@@ -239,8 +310,9 @@ def disk(geom: Node, entity: str, /, center, r, *, rin=None,
     Selects the entities inside a disk of radius `r` around `center` (2D).
 
     With `rin` it is a ring. `condition` defaults to `'inside'`, see
-    `box()`. In 3D use `cylinder()` or `ball()`. Radii get no automatic
-    margin: give them a little room, e.g. `1.01*r`.
+    `box()`. In 3D use `cylinder()` or `ball()`. `r` and `rin` get margins
+    as in `ball()` and `cylinder()`; give `rin` a little room too, e.g.
+    `rin=0.99*r`.
     """
     if _comsol.parent_dim(geom) != 2:
         raise ValueError('sel.disk needs a 2D geometry; use sel.cylinder or '
@@ -248,7 +320,8 @@ def disk(geom: Node, entity: str, /, center, r, *, rin=None,
     _comsol.check_vector(geom, 'center', center)
     properties = {'entitydim': _level(geom, entity, where),
                   'condition': condition, 'posx': center[0],
-                  'posy': center[1], 'r': r, 'rin': rin, **properties}
+                  'posy': center[1], 'r': _widen(r, +1, r, *center),
+                  'rin': _inner(rin, r, *center), **properties}
     return _create(geom, 'Disk', where, name, properties)
 
 

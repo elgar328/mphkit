@@ -59,10 +59,10 @@ into others, e.g. the spherical faces a subtracted sphere leaves in a
 block. Curved surfaces are split into several faces: the side of a
 cylinder or cone, the wall of a hole or of an extruded circle into four,
 a sphere into eight. For the side of a cylinder that no other object cut,
-use a thin shell bounded just beyond it: `mk.sel.cylinder(geom,
-'boundary', pos, 1.01*r, rin=0.99*r, bottom=-0.01*h, top=1.01*h,
-name='side')` (a name avoids a clash with the cylinder's own label).
-Sizes and coordinates are in the geometry's length unit.
+use a thin shell: `mk.sel.cylinder(geom, 'boundary', pos, r, rin=0.99*r,
+bottom=0, top=h, name='side')` (`rin` needs about 1 % room, see
+`help(mk.sel.cylinder)`; a name avoids a clash with the cylinder's own
+label). Sizes and coordinates are in the geometry's length unit.
 
 More: `help(mk.sel)` for selections (also in work planes), `help(mk.block)`
 etc. for each helper, `mk.feature(geom, 'Type', ...)` for any other

@@ -441,11 +441,171 @@ def test_cylinder_side_tip(model):
     mk.cylinder(geom, r, h, pos)
     mk.cylinder(geom, r, 0.005, (0.0011, 0.0013, 0.0073))   # on top of it
     model.build(geom)
-    side = mk.sel.cylinder(geom, 'boundary', pos, 1.01*r, rin=0.99*r,
-                           bottom=-0.01*h, top=1.01*h, name='side')
+    side = mk.sel.cylinder(geom, 'boundary', pos, r, rin=0.99*r, bottom=0,
+                           top=h, name='side')
     assert len(mk.sel.entities(geom, side)) == 4
     assert mk.measure(geom, 'boundary', side) == \
         pytest.approx(2*math.pi*r*h, rel=0.005)
+
+
+def count_of(geom, selection):
+    """Returns the number of entities of a selection and removes it."""
+    try:
+        return len(mk.sel.entities(geom, selection))
+    finally:
+        selection.remove()
+
+
+@pytest.mark.parametrize('x', [0, 100, 1e4])
+def test_round_selections_exact_radius(model, x):
+    # the radius of the drawn shape selects it, also far from the origin
+    geom = mk.geometry(model, 3)
+    center, pos = (x, 0.7, 0.3), (x, 0.3, 1.1)
+    mk.sphere(geom, 0.3, center)
+    mk.cylinder(geom, 0.3, 0.6, pos)
+    model.build(geom)
+    assert count_of(geom, mk.sel.ball(geom, 'domain', center, 0.3)) == 1
+    assert count_of(geom, mk.sel.ball(geom, 'boundary', center, 0.3)) == 8
+    in_sequence = mk.sel.ball(geom, 'domain', center, 0.3, where='geometry')
+    model.build(geom)
+    assert len(mk.sel.entities(geom, in_sequence)) == 1
+    assert count_of(geom, mk.sel.cylinder(geom, 'domain', pos, 0.3,
+                                          bottom=0, top=0.6)) == 1
+    flat = mk.geometry(model, 2)
+    mk.circle(flat, 0.3, (x, 0.7))
+    model.build(flat)
+    assert count_of(flat, mk.sel.disk(flat, 'domain', (x, 0.7), 0.3)) == 1
+    assert count_of(flat, mk.sel.disk(flat, 'boundary', (x, 0.7), 0.3)) == 4
+
+
+def test_round_selection_margin_values(model, geom):
+    def value(node, name):
+        return float(str(node.java.getString(name)))
+
+    ball = mk.sel.ball(geom, 'domain', (1, 0.7, 0.3), 0.3)
+    assert value(ball, 'r') == pytest.approx(0.3 + 1e-6*(0.3 + 2))
+    # a cylinder's values share one size: pos, r, top and bottom
+    shell = mk.sel.cylinder(geom, 'boundary', (1, 0.7, 0.3), 0.3, rin=0.29,
+                            bottom=0, top=0.6)
+    size = 1e-6*(0.3 + 0.6 + 2)
+    assert value(shell, 'r') == pytest.approx(0.3 + size)
+    assert value(shell, 'rin') == pytest.approx(0.29 - size)
+    assert value(shell, 'top') == pytest.approx(0.6 + size)
+    assert value(shell, 'bottom') == pytest.approx(-size)
+    # open bounds stay open, and do not enter the size
+    open_ = mk.sel.cylinder(geom, 'domain', (1, 0.7, 0.3), 0.3)
+    stored = [str(open_.java.getString(n)) for n in ('top', 'bottom', 'rin')]
+    assert stored == ['Inf', '-Inf', '0']
+    for top in ('Inf', math.inf):
+        tall = mk.sel.cylinder(geom, 'domain', (1, 0.7, 0.3), 0.3, top=top)
+        assert value(tall, 'r') == pytest.approx(0.3 + 1e-6*(0.3 + 2))
+    # rin does not go below zero; a negative one stays COMSOL's error
+    far = mk.sel.cylinder(geom, 'boundary', (1e4, 0, 0), 1, rin=0.001)
+    assert value(far, 'rin') == 0
+    with pytest.raises(Exception, match='Inner radius'):
+        mk.sel.cylinder(geom, 'boundary', (0, 0, 0), 1, rin=-0.1)
+    with pytest.raises(Exception, match='Inner radius'):
+        mk.sel.cylinder(geom, 'boundary', (0, 0, 0), 1, rin='-0.1')
+    # an open bound given as COMSOL's text stays as it is
+    assert str(mk.sel.cylinder(geom, 'domain', (1, 0, 0), 1, top='Inf')
+               .java.getString('top')) == 'Inf'
+
+
+@pytest.mark.parametrize('pos, h', [((0, 0, 0), 1), ((0.1, 0.7, 0.3), 100)])
+def test_round_selection_tilted_axis(model, geom, pos, h):
+    mk.cylinder(geom, 0.3, h, pos, axistype='cartesian', ax3=[1, 1, 1])
+    model.build(geom)
+    tilted = {'axis': (1, 1, 1), 'bottom': 0, 'top': h}
+    assert count_of(geom, mk.sel.cylinder(geom, 'domain', pos, 0.3,
+                                          **tilted)) == 1
+    assert count_of(geom, mk.sel.cylinder(geom, 'boundary', pos, 0.3,
+                                          **tilted)) == 6
+
+
+@pytest.mark.parametrize('unit', ['m', 'mm'])
+def test_round_selection_expressions(model, unit):
+    model.parameter('R', '0.3')
+    model.parameter('X', '100.7')
+    model.parameter('H', '0.9')
+    geom = mk.geometry(model, 3, length_unit=unit)
+    mk.sphere(geom, 'R', ('X', 0.7, 0.3))
+    mk.cylinder(geom, 'R', 'H', (5, 'X', 0))
+    model.build(geom)
+    ball = mk.sel.ball(geom, 'domain', ('X', 0.7, 0.3), 'R')
+    assert ball.java.getString('r') == \
+        '(R)+1e-6*(abs(R)+abs(X)+abs(0.7)+abs(0.3))'
+    assert count_of(geom, ball) == 1
+    assert count_of(geom, mk.sel.cylinder(geom, 'domain', (5, 'X', 0), 'R',
+                                          bottom=0, top='H')) == 1
+    shell = mk.sel.cylinder(geom, 'boundary', (5, 'X', 0), 'R',
+                            rin='R*0.99', bottom=0, top='H')
+    assert str(shell.java.getString('rin')).startswith('max(min(0,(R*0.99)),')
+    assert count_of(geom, shell) == 4
+    assert model.problems() == []
+
+
+def test_round_selection_rin_far_from_origin(model):
+    geom = mk.geometry(model, 3)
+    pos = (1e5, 0.3, 1.1)
+    mk.cylinder(geom, 0.3, 0.6, pos)
+    model.build(geom)
+    side = mk.sel.cylinder(geom, 'boundary', pos, 0.3, rin=0.99*0.3,
+                           bottom=0, top=0.6)
+    assert count_of(geom, side) == 4
+    flat = mk.geometry(model, 2)
+    mk.circle(flat, 0.3, (1e4, 0.7))
+    model.build(flat)
+    ring = mk.sel.disk(flat, 'boundary', (1e4, 0.7), 0.3, rin=0.2997)
+    assert count_of(flat, ring) == 4
+
+
+def test_round_selection_side_effects(model):
+    # with 'intersects', what only touches the widened top is picked too
+    geom = mk.geometry(model, 3)
+    mk.cylinder(geom, 0.3, 0.6)
+    mk.cylinder(geom, 0.3, 0.6, (0, 0, 0.6))
+    model.build(geom)
+    touching = mk.sel.cylinder(geom, 'domain', (0, 0, 0), 0.3, bottom=0,
+                               top=0.6, condition='intersects')
+    assert count_of(geom, touching) == 2
+    strict = mk.sel.cylinder(geom, 'domain', (0, 0, 0), 0.3, bottom=0,
+                             top=0.599, condition='intersects')
+    assert count_of(geom, strict) == 1
+    # a neighbour within the margin is picked too
+    far = mk.geometry(model, 3)
+    mk.cylinder(far, 1, 2, (1e4, 0, 0))
+    mk.cylinder(far, 1.005, 2, (1e4, 0, 0))
+    model.build(far)
+    shell = mk.sel.cylinder(far, 'boundary', (1e4, 0, 0), 1, rin=0.99,
+                            bottom=0, top=2)
+    assert count_of(far, shell) == 8
+
+
+def test_cylinder_shell_rin_room(model):
+    # documents the rendering mesh of COMSOL 6.4; the limits may move in
+    # other versions
+    def side(block_at, **shell):
+        geom = mk.geometry(model, 3)
+        mk.cylinder(geom, 1, 2)
+        mk.block(geom, (1, 1, 1), (block_at, 0, 0))
+        model.build(geom)
+        return count_of(geom, mk.sel.cylinder(geom, 'boundary', (0, 0, 0), 1,
+                                              **shell))
+
+    assert side(1000, rin=0.999, bottom=0, top=2) != 4
+    assert side(1000, rin=0.99, bottom=0, top=2) == 4
+    assert side(1e5, rin=0.99, bottom=0, top=2) != 4
+    assert side(1e5, rin=0.9, bottom=0.02, top=1.98,
+                condition='intersects') == 4
+
+
+def test_cylinder_intersects_picks_crossing_faces(model, geom):
+    mk.cylinder(geom, 1, 2)
+    mk.block(geom, (4, 4, 0.5), (-2, -2, 0.75))
+    model.build(geom)
+    side = mk.sel.cylinder(geom, 'boundary', (0, 0, 0), 1, rin=0.9,
+                           bottom=0.02, top=1.98, condition='intersects')
+    assert count_of(geom, side) > 4
 
 
 def test_disk(model, geom):
