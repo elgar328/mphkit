@@ -42,6 +42,20 @@ def test_box_names(cube):
         mk.sel.box(cube, 'boundary', x=10, name='cube')
 
 
+def test_box_reversed_range(model, cube):
+    before = [str(t) for t in model.java.selection().tags()]
+    with pytest.raises(ValueError, match=r'x=\(10, 0\) is reversed.*'
+                                         r'x=\(0, 10\)'):
+        mk.sel.box(cube, 'boundary', x=(10, 0))
+    with pytest.raises(ValueError, match='reversed'):
+        mk.sel.find(cube, 'domain', z=(5.5, 0.5))
+    assert [str(t) for t in model.java.selection().tags()] == before
+    # equal bounds are a plane; expressions and open ends are not checked
+    assert mk.sel.find(cube, 'boundary', x=(10, 10)) == [6]
+    mk.sel.find(cube, 'boundary', x=('10', '0'))   # values unknown here
+    assert mk.sel.find(cube, 'boundary', x=(None, 0)) == [1]
+
+
 def test_box_2d(model):
     geom = mk.geometry(model, 2)
     mk.square(geom, 1)

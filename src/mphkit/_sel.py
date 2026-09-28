@@ -123,6 +123,12 @@ def _bounds(geom: Node, **ranges) -> dict:
             low, high = value
         else:
             low = high = value
+        if (all(isinstance(v, numbers.Real) and not isinstance(v, bool)
+                for v in (low, high)) and high < low):
+            raise ValueError(
+                f'{axis}=({low}, {high}) is reversed: give (min, max), e.g. '
+                f'{axis}=({high}, {low}). COMSOL would select what lies '
+                'outside the range; use sel.complement for that.')
         properties[f'{axis}min'] = _widen(low, -1)
         properties[f'{axis}max'] = _widen(high, +1)
     return properties

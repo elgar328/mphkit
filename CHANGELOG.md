@@ -26,6 +26,9 @@ until 1.0, a minor release (0.2, 0.3, ...) may change the API. See
 - Using a node that no longer exists in the model raises a `LookupError`
   naming the node, instead of an unrelated `AttributeError` or
   `TypeError`.
+- `sel.box` and `sel.find` raise a `ValueError` for a reversed range such
+  as `x=(14.1, 1.1)`, for which COMSOL silently selected what lies outside
+  it. Give `(min, max)`, or use `sel.complement` to select the outside.
 
 ### Fixed
 
