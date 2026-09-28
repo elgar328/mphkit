@@ -31,8 +31,9 @@ until 1.0, a minor release (0.2, 0.3, ...) may change the API. See
 
 - Type hints of optional arguments accept `None`, so type checkers accept
   calls that pass the defaults explicitly.
-- Integers too large for a float, such as `10**400`, are passed to COMSOL
-  as they are instead of raising `OverflowError`.
+- Integers outside the 32-bit range, such as `2**31` or `10**400`, are
+  passed to COMSOL as they are, instead of raising `OverflowError` in
+  vectors or silently wrapping around otherwise (`2**32 + 1` became 1).
 
 ## [0.1.0] - 2026-09-27
 

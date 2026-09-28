@@ -420,9 +420,12 @@ def convert(value):
     if isinstance(value, Node):
         return tag_of(value)
     if isinstance(value, numpy.generic):
-        return value.item()
+        value = value.item()
     if isinstance(value, numpy.ndarray):
-        value = value.tolist()
+        value = value.tolist()  # a scalar for a 0-d array
+    if (isinstance(value, int) and not isinstance(value, bool)
+            and not -2**31 <= value < 2**31):
+        return str(value)  # cast() would wrap it around as a Java int
     if isinstance(value, (list, tuple)):
         items = [tag_of(v) if isinstance(v, Node) else v for v in value]
         if any(isinstance(v, (list, tuple, numpy.ndarray)) for v in items):

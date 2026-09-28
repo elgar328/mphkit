@@ -24,6 +24,25 @@ def test_convert_pure():
     assert _comsol.convert([True, False]) == [True, False]
     assert _comsol.convert('r/2') == 'r/2'
     assert _comsol.convert(True) is True
+    assert _comsol.convert(2**31 - 1) == 2**31 - 1
+    assert _comsol.convert(-2**31) == -2**31
+    assert _comsol.convert(2**31) == str(2**31)
+    assert _comsol.convert(numpy.int64(2**40)) == str(2**40)
+    assert _comsol.convert(numpy.array(2**40)) == str(2**40)
+
+
+@pytest.mark.parametrize('r', [2**32 + 1, 10**400, 2**31 - 1],
+                         ids=['2**32+1', '10**400', '2**31-1'])
+def test_large_integers_reach_comsol(geom, r):
+    sphere = mk.sphere(geom, r)
+    assert sphere.java.getString('r') == str(r)
+
+
+def test_large_numpy_integers_reach_comsol(geom):
+    import numpy
+    for r in (numpy.int64(2**40), numpy.array(2**40)):
+        sphere = mk.sphere(geom, r)
+        assert sphere.java.getString('r') == str(2**40)
 
 
 def test_entity_dim(model):
