@@ -1,7 +1,7 @@
 """Geometry-based selections; documented in `mphkit.sel`."""
 from __future__ import annotations
 
-from mph import Node
+from mph.node import Node
 from mph.node import escape
 
 from . import _comsol
@@ -45,8 +45,8 @@ def _level(geom: Node, entity: str, where: str | None) -> int:
     return _comsol.entity_dim(geom, entity)
 
 
-def _create(geom: Node, type: str, where: str, name: str | None,
-            properties: dict, default: str = None) -> Node:
+def _create(geom: Node, type: str, where: str | None, name: str | None,
+            properties: dict, default: str | None = None) -> Node:
     """Creates a selection of `type` (component names, e.g. 'Box')."""
     where = _where(geom, where)
     model = geom.model
@@ -79,7 +79,7 @@ def _create(geom: Node, type: str, where: str, name: str | None,
     return node
 
 
-def _inputs(geom: Node, where: str, values) -> list[str]:
+def _inputs(geom: Node, where: str | None, values) -> list[str]:
     """Returns selection tags for the inputs of a set operation."""
     where = _where(geom, where)
     values = [values] if isinstance(values, (Node, str)) else list(values)
@@ -126,7 +126,7 @@ def _bounds(geom: Node, **ranges) -> dict:
 
 def box(geom: Node, entity: str, /, x=None, y=None, z=None, *,
         condition: str = 'inside', where: str | None = None,
-        name: str = None, **properties) -> Node:
+        name: str | None = None, **properties) -> Node:
     """
     Selects the entities inside a box.
 
@@ -150,7 +150,7 @@ def box(geom: Node, entity: str, /, x=None, y=None, z=None, *,
 
 def ball(geom: Node, entity: str, /, center, r, *,
          condition: str = 'inside', where: str | None = None,
-         name: str = None, **properties) -> Node:
+         name: str | None = None, **properties) -> Node:
     """
     Selects the entities inside a ball of radius `r` around `center`.
 
@@ -167,7 +167,7 @@ def ball(geom: Node, entity: str, /, center, r, *,
 
 def cylinder(geom: Node, entity: str, /, pos, r, *, axis=None, top=None,
              bottom=None, rin=None, condition: str = 'inside',
-             where: str | None = None, name: str = None,
+             where: str | None = None, name: str | None = None,
              **properties) -> Node:
     """
     Selects the entities inside a cylinder (3D).
@@ -194,7 +194,7 @@ def cylinder(geom: Node, entity: str, /, pos, r, *, axis=None, top=None,
 
 def disk(geom: Node, entity: str, /, center, r, *, rin=None,
          condition: str = 'inside', where: str | None = None,
-         name: str = None, **properties) -> Node:
+         name: str | None = None, **properties) -> Node:
     """
     Selects the entities inside a disk of radius `r` around `center` (2D).
 
@@ -212,7 +212,7 @@ def disk(geom: Node, entity: str, /, center, r, *, rin=None,
 
 
 def all_(geom: Node, entity: str, /, *, where: str | None = None,
-         name: str = None) -> Node:
+         name: str | None = None) -> Node:
     """Selects all entities of one kind, e.g. all boundaries."""
     properties = {'entitydim': _level(geom, entity, where),
                   'condition': 'intersects'}
@@ -220,7 +220,7 @@ def all_(geom: Node, entity: str, /, *, where: str | None = None,
 
 
 def union(geom: Node, entity: str, /, input, *, where: str | None = None,
-          name: str = None) -> Node:
+          name: str | None = None) -> Node:
     """Selects the union of the `input` selections."""
     properties = {'entitydim': _level(geom, entity, where),
                   'input': _inputs(geom, where, input)}
@@ -228,7 +228,7 @@ def union(geom: Node, entity: str, /, input, *, where: str | None = None,
 
 
 def intersection(geom: Node, entity: str, /, input, *,
-                 where: str | None = None, name: str = None) -> Node:
+                 where: str | None = None, name: str | None = None) -> Node:
     """Selects the entities that all `input` selections have in common."""
     properties = {'entitydim': _level(geom, entity, where),
                   'input': _inputs(geom, where, input)}
@@ -236,7 +236,7 @@ def intersection(geom: Node, entity: str, /, input, *,
 
 
 def difference(geom: Node, entity: str, /, add, subtract, *,
-               where: str | None = None, name: str = None) -> Node:
+               where: str | None = None, name: str | None = None) -> Node:
     """Selects the entities in `add` that are not in `subtract`."""
     properties = {'entitydim': _level(geom, entity, where),
                   'add': _inputs(geom, where, add),
@@ -245,7 +245,7 @@ def difference(geom: Node, entity: str, /, add, subtract, *,
 
 
 def complement(geom: Node, entity: str, /, input, *,
-               where: str | None = None, name: str = None) -> Node:
+               where: str | None = None, name: str | None = None) -> Node:
     """Selects all entities that are not in the `input` selections."""
     properties = {'entitydim': _level(geom, entity, where),
                   'input': _inputs(geom, where, input)}
@@ -255,7 +255,7 @@ def complement(geom: Node, entity: str, /, input, *,
 def adjacent(geom: Node, /, input, entity: str = 'boundary', *,
              input_entity: str = 'domain', exterior: bool = True,
              interior: bool = False, where: str | None = None,
-             name: str = None) -> Node:
+             name: str | None = None) -> Node:
     """
     Selects the entities of kind `entity` adjacent to the `input` selections.
 
@@ -270,7 +270,7 @@ def adjacent(geom: Node, /, input, entity: str = 'boundary', *,
 
 
 def result(geom: Node, feature: Node, entity: str, /, *,
-           name: str = None) -> Node:
+           name: str | None = None) -> Node:
     """
     Selects the entities created by a geometry feature.
 
@@ -285,7 +285,7 @@ def result(geom: Node, feature: Node, entity: str, /, *,
                          f'"{geom}".')
     entity = _comsol.entity_name(geom, entity)
     suffix = _comsol.RESULT_SUFFIX[entity]
-    java = feature.java
+    java = _comsol.java_of(feature)
     known = [str(p) for p in java.properties()]
     if 'selresult' not in known:
         raise ValueError(f'"{feature}" has no result selection.')
@@ -307,7 +307,7 @@ def result(geom: Node, feature: Node, entity: str, /, *,
                  default=f'{feature.name()} ({entity})')
 
 
-def layer(geom: Node, feature: Node, layer, /, *, name: str = None) -> Node:
+def layer(geom: Node, feature: Node, layer, /, *, name: str | None = None) -> Node:
     """
     Selects the domains of one layer of a geometry feature.
 
@@ -326,12 +326,13 @@ def layer(geom: Node, feature: Node, layer, /, *, name: str = None) -> Node:
     if len(feature.path) != 3 or _comsol.geometry_of(feature) != geom:
         raise ValueError(f'"{feature}" is not a top-level feature of '
                          f'"{geom}".')
-    java = feature.java
+    java = _comsol.java_of(feature)
     known = [str(p) for p in java.properties()]
     if 'sellayer' not in known:
         raise ValueError(f'"{feature}" does not support layers.')
     names = [str(n) for n in java.getStringArray('layername')] \
         if 'layername' in known else []
+    expected: str | None
     if isinstance(layer, str) and layer.lower() == 'core':
         index, expected = None, 'Core'
     elif isinstance(layer, bool) or not isinstance(layer, (int, str)):
@@ -402,7 +403,7 @@ def find(geom: Node, entity: str, /, x=None, y=None, z=None, *,
 
 
 def cumulative(geom: Node, group, entity: str, /, *, create: bool = False,
-               name: str = None) -> Node:
+               name: str | None = None) -> Node:
     """
     Selects the entities of a cumulative selection, COMSOL's way of
     collecting what several features create.
@@ -430,7 +431,7 @@ def cumulative(geom: Node, group, entity: str, /, *, create: bool = False,
     _comsol.check_not_workplane(geom, 'sel.cumulative')
     entity = _comsol.entity_name(geom, entity)
     model = geom.model
-    selections = geom.java.selection()
+    selections = _comsol.java_of(geom).selection()
     known = _comsol.cumulative_tags(geom)
     if create:
         if not isinstance(group, str):

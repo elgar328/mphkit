@@ -129,3 +129,20 @@ def test_entity_level_number(model, geom):
         with pytest.raises(ValueError) as error:
             mk.sel.box(geom, level, z=0)
         assert 'Did you mean' not in str(error.value)
+
+
+def test_missing_node_raises_lookup_error(model):
+    geom = mk.geometry(model, 3, name='gone')
+    mk.block(geom, (1, 1, 1))
+    model.build(geom)
+    kept = mk.sel.box(geom, 'domain', x=(-1, 2))
+    removed = mk.sel.box(geom, 'domain', x=(5, 6))
+    removed.remove()
+    with pytest.raises(LookupError, match='does not exist in model tree'):
+        mk.sel.union(geom, 'domain', [kept, removed])
+    geom.remove()
+    for call in (lambda: mk.measure(geom, 'domain'),
+                 lambda: mk.sel.box(geom, 'domain', x=0),
+                 lambda: mk.block(geom, (1, 1, 1))):
+        with pytest.raises(LookupError, match='does not exist in model tree'):
+            call()

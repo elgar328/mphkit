@@ -7,8 +7,7 @@ overloads"), numpy arrays and lists that mix numbers and expressions;
 """
 from __future__ import annotations
 
-from mph import Node
-from mph.node import join
+from mph.node import Node, join
 
 from . import _comsol
 from ._comsol import WorkPlaneNode
@@ -43,9 +42,9 @@ def set_(target, /, **properties):
                 and not isinstance(target, WorkPlaneNode)):
             # A plain node cannot resolve features inside a work plane.
             target = WorkPlaneNode(target.model, join(target.path))
-        java = target.java_if_exists()
+        java = _comsol.java_of(target)
         if len(target.path) >= 3 and target.path[0] == 'geometries':
-            owner = target.parent()
+            owner = _comsol.parent_of(target)
             container = _comsol.feature_container(owner)
     elif hasattr(target, 'set'):
         java = target

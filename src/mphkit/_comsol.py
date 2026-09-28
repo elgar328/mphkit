@@ -9,9 +9,10 @@ from __future__ import annotations
 import numbers
 from collections.abc import Iterable
 from difflib import get_close_matches
+from typing import Any
 
 import numpy
-from mph import Node
+from mph.node import Node
 from mph.node import cast, escape, join, tag_pattern
 
 from ._expr import vector
@@ -63,6 +64,30 @@ ALIAS_NOT = {('dimensions', 'size'): ('Array',), ('dims', 'size'): ('Array',)}
 # Geometry and entities #
 #########################
 
+def java_of(node: Node) -> Any:
+    """Returns the Java object of `node`, which must exist in the model."""
+    java = node.java
+    if java is None:
+        raise LookupError(f'Node "{node}" does not exist in model tree.')
+    return java
+
+
+def tag_of(node: Node) -> str:
+    """Returns the tag of `node`, which must exist in the model."""
+    tag = node.tag()
+    if tag is None:
+        raise LookupError(f'Node "{node}" does not exist in model tree.')
+    return tag
+
+
+def parent_of(node: Node) -> Node:
+    """Returns the parent of `node`, which must not be the model root."""
+    parent = node.parent()
+    if parent is None:
+        raise LookupError(f'Node "{node}" has no parent.')
+    return parent
+
+
 def geometry_of(node: Node) -> Node:
     """Returns the geometry node that `node` belongs to."""
     if len(node.path) < 2 or node.path[0] != 'geometries':
@@ -82,7 +107,7 @@ def component_of(geom: Node):
 
 def sdim(geom: Node) -> int:
     """Returns the space dimension of the geometry."""
-    return int(geom.java.getSDim())
+    return int(java_of(geom).getSDim())
 
 
 def entity_suggestion(entity, dim: int = 3) -> str | None:
@@ -143,7 +168,7 @@ def entity_dim(geom: Node, entity: str) -> int:
 
 def entity_count(geom: Node, dim: int) -> int:
     """Returns the number of entities of level `dim` in the built geometry."""
-    java = geom.java
+    java = java_of(geom)
     if dim == sdim(geom):
         return int(java.getNDomains())
     if dim == sdim(geom) - 1:
@@ -190,7 +215,7 @@ def check_built(geom: Node):
     as not built after edits, parameter changes and disabling, but not when
     a feature is removed, so a removal goes unnoticed.
     """
-    features = geom.java.feature()
+    features = java_of(geom).feature()
     stale = [str(tag) for tag in features.tags()
              if not features.get(tag).isBuilt()]
     if stale:
@@ -212,7 +237,7 @@ def check_selection(geom: Node, selection: Node):
     if (not isinstance(selection, Node) or len(selection.path) != 2
             or selection.path[0] != 'selections'):
         raise TypeError(f'{selection!r} is not a selection node.')
-    java = selection.java_if_exists()
+    java = java_of(selection)
     tag = str(java.tag())
     gtag = geom.tag()
     own = [str(t) for t in component_of(geom).selection().tags()]
@@ -242,9 +267,7 @@ def is_workplane(java) -> bool:
 
 def feature_container(parent: Node):
     """Returns the Java feature list that new features of `parent` go into."""
-    java = parent.java
-    if java is None:
-        raise LookupError(f'Node "{parent}" does not exist.')
+    java = java_of(parent)
     if is_workplane(java):
         return java.geom().feature()
     if len(parent.path) == 2 and parent.path[0] == 'geometries':
@@ -257,7 +280,7 @@ def labels(container) -> set[str]:
     return {str(container.get(tag).label()) for tag in container.tags()}
 
 
-def selection_labels(model, exclude_prefix: str = None) -> set[str]:
+def selection_labels(model, exclude_prefix: str | None = None) -> set[str]:
     """
     Returns the labels of all selections in the model.
 
@@ -293,7 +316,7 @@ def pick_label(name: str | None, default: str, taken: set[str]) -> str:
 
 
 def create_java(container, group: str, type: str, name: str | None,
-                taken: set[str], tags=None, default: str = None,
+                taken: set[str], tags=None, default: str | None = None,
                 args: tuple = ()):
     """
     Creates a Java feature in `container` with a unique tag and label.
@@ -328,7 +351,7 @@ class WorkPlaneNode(Node):
     def _workplane_parent(self):
         if self.is_root() or self.is_group():
             return None
-        java = self.parent().java
+        java = parent_of(self).java
         return java if is_workplane(java) else None
 
     @property
@@ -345,16 +368,18 @@ class WorkPlaneNode(Node):
 
     def children(self) -> list[Node]:
         java = self.java
-        if is_workplane(java):
+        if java is not None and is_workplane(java):
             container = java.geom().feature()
             return [self/escape(container.get(tag).label())
                     for tag in container.tags()]
         return super().children()
 
-    def create(self, *arguments, name: str = None) -> Node:
+    def create(self, *arguments: Any, name: str | None = None) -> Node:
         if is_workplane(self.java) and arguments:
             from .geometry import feature
             return feature(self, *arguments[:1], name=name)
+        if name is None:
+            return super().create(*arguments)
         return super().create(*arguments, name=name)
 
     def remove(self):
@@ -393,13 +418,13 @@ def is_selection_input(java, name: str) -> bool:
 def convert(value):
     """Converts a Python value into something MPh's `cast()` accepts."""
     if isinstance(value, Node):
-        return value.tag()
+        return tag_of(value)
     if isinstance(value, numpy.generic):
         return value.item()
     if isinstance(value, numpy.ndarray):
         value = value.tolist()
     if isinstance(value, (list, tuple)):
-        items = [v.tag() if isinstance(v, Node) else v for v in value]
+        items = [tag_of(v) if isinstance(v, Node) else v for v in value]
         if any(isinstance(v, (list, tuple, numpy.ndarray)) for v in items):
             return [vector(row) for row in items]
         if any(isinstance(v, bool) for v in items):
@@ -521,7 +546,7 @@ def center_hint(java, kind: str) -> str:
     return "'pos'"
 
 
-def set_properties(java, properties: dict, owner: Node = None,
+def set_properties(java, properties: dict, owner: Node | None = None,
                    container=None):
     """
     Sets properties in the given order, skipping `None` values.
@@ -559,7 +584,7 @@ def sequence_selection_tag(geom: Node, node: Node) -> str | None:
     """
     tag = node.tag()
     gtag = geom.tag()
-    for ftag in geom.java.feature().tags():
+    for ftag in java_of(geom).feature().tags():
         if f'{gtag}_{ftag}' == tag:
             return str(ftag)
     return None
@@ -603,16 +628,18 @@ def selection_source(owner: Node, ref: Node):
     objects. Returns `None` for a node that is no selection; raises for a
     selection that cannot be an input here.
     """
-    if (ref.path[0] == 'geometries' and len(ref.path) >= 4
+    path: tuple[str, ...] = ref.path
+    root = path[0]
+    if (root == 'geometries' and len(path) >= 4
             and not isinstance(ref, WorkPlaneNode)):
-        ref = WorkPlaneNode(ref.model, join(ref.path))  # resolves in a plane
+        ref = WorkPlaneNode(ref.model, join(path))  # resolves in a plane
     if is_workplane(owner.java):
-        if ref.path[0] == 'geometries' and ref.parent() == owner:
+        if root == 'geometries' and ref.parent() == owner:
             if is_selection_feature(ref.java):
-                return ref.tag(), sequence_level(owner, ref.tag()), \
+                return tag_of(ref), sequence_level(owner, tag_of(ref)), \
                     'sequence'
             return None
-        if (ref.path[0] == 'geometries' and len(ref.path) >= 4
+        if (root == 'geometries' and len(path) >= 4
                 and is_selection_feature(ref.java)):
             raise ValueError(f'Selection "{ref}" belongs to "{ref.parent()}", '
                              f'not to the work plane "{owner}".')
@@ -628,7 +655,7 @@ def selection_source(owner: Node, ref: Node):
                              'the work plane.')
         return None
     geom = owner
-    if ref.path[0] == 'selections':
+    if root == 'selections':
         found = find_cumulative(geom, ref)
         if found is not None:
             return (*found, 'cumulative')
@@ -639,10 +666,10 @@ def selection_source(owner: Node, ref: Node):
                 "operation. Use a selection made with where='geometry', a "
                 'cumulative selection of this geometry, or geometry objects.')
         return ftag, sequence_level(geom, ftag), 'sequence'
-    if ref.path[0] == 'geometries' and is_selection_feature(ref.java):
-        if len(ref.path) == 3 and geometry_of(ref) == geom:
-            return ref.tag(), sequence_level(geom, ref.tag()), 'sequence'
-        where = 'the work plane ' if len(ref.path) > 3 else ''
+    if root == 'geometries' and is_selection_feature(ref.java):
+        if len(path) == 3 and geometry_of(ref) == geom:
+            return tag_of(ref), sequence_level(geom, tag_of(ref)), 'sequence'
+        where = 'the work plane ' if len(path) > 3 else ''
         raise ValueError(f'Selection "{ref}" belongs to {where}'
                          f'"{ref.parent()}", not to "{geom}".')
     return None
@@ -665,7 +692,7 @@ def sequence_level(parent: Node, ftag: str) -> int:
     nothing; its own selection list reports the level instead.
     """
     if is_workplane(parent.java):
-        selections = parent.java.geom().selection()
+        selections = java_of(parent).geom().selection()
         if ftag not in [str(t) for t in selections.tags()]:
             raise LookupError(f'Work plane "{parent}" lists no selection '
                               f'"{ftag}".')
@@ -774,7 +801,7 @@ def cumulative_tags(geom: Node) -> dict[str, str]:
     features contributing to them (`cyl1`, `cyl1.dom`, ...). Cumulative
     selections have no type, only their client class tells them apart.
     """
-    selections = geom.java.selection()
+    selections = java_of(geom).selection()
     found = {}
     for tag in selections.tags():
         member = selections.get(tag)
@@ -829,4 +856,4 @@ def cumulative_tag(geom: Node, value) -> str:
 
 def names(values: Iterable) -> list[str]:
     """Returns the tags of selection nodes, passing strings through."""
-    return [v.tag() if isinstance(v, Node) else str(v) for v in values]
+    return [tag_of(v) if isinstance(v, Node) else str(v) for v in values]

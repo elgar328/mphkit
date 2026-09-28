@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from numbers import Real
+from numbers import Integral, Real
 
 Expr = str | Real
 Vector = Sequence[Expr]
@@ -18,8 +18,11 @@ def expr(value: Expr) -> str:
         raise TypeError(f'Expected a number or expression, got {value!r}.')
     if isinstance(value, str):
         return value
+    if isinstance(value, Integral):
+        return str(int(value))
     if isinstance(value, Real):
-        return repr(float(value)) if not float(value).is_integer() else str(int(value))
+        number = float(value)
+        return str(int(number)) if number.is_integer() else repr(number)
     raise TypeError(f'Expected a number or expression, got {value!r}.')
 
 

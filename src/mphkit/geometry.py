@@ -2,15 +2,16 @@
 from __future__ import annotations
 
 import numpy
-from mph import Model, Node
+from mph.model import Model
+from mph.node import Node
 from mph.node import escape
 
 from . import _comsol
 from ._comsol import WorkPlaneNode
 
 
-def geometry(model: Model, dim: int = 3, *, length_unit: str = None,
-             name: str = None) -> Node:
+def geometry(model: Model, dim: int = 3, *, length_unit: str | None = None,
+             name: str | None = None) -> Node:
     """
     Creates a new component with a geometry of dimension `dim`.
 
@@ -50,8 +51,8 @@ def component_of(geom: Node) -> Node:
     return node
 
 
-def coordinate_system(geom: Node, type: str, /, *, selection: Node = None,
-                      name: str = None, **properties) -> Node:
+def coordinate_system(geom: Node, type: str, /, *, selection: Node | None = None,
+                      name: str | None = None, **properties) -> Node:
     """
     Creates a coordinate system of `type` for the geometry.
 
@@ -96,7 +97,7 @@ def coordinate_system(geom: Node, type: str, /, *, selection: Node = None,
     return node
 
 
-def feature(parent: Node, type: str, /, *, name: str = None,
+def feature(parent: Node, type: str, /, *, name: str | None = None,
             **properties) -> Node:
     """
     Creates a geometry feature of any COMSOL `type` and sets its properties.
@@ -137,7 +138,7 @@ def feature(parent: Node, type: str, /, *, name: str = None,
 # Primitives and operations #
 #############################
 
-def block(geom: Node, /, size=None, pos=None, *, name: str = None,
+def block(geom: Node, /, size=None, pos=None, *, name: str | None = None,
           **properties) -> Node:
     """
     Creates a Block. `base='center'` centers it on `pos`.
@@ -153,7 +154,7 @@ def block(geom: Node, /, size=None, pos=None, *, name: str = None,
                    **properties)
 
 
-def cylinder(geom: Node, /, r=None, h=None, pos=None, *, name: str = None,
+def cylinder(geom: Node, /, r=None, h=None, pos=None, *, name: str | None = None,
              **properties) -> Node:
     """
     Creates a Cylinder with radius `r` and height `h`.
@@ -165,30 +166,30 @@ def cylinder(geom: Node, /, r=None, h=None, pos=None, *, name: str = None,
                    **properties)
 
 
-def sphere(geom: Node, /, r=None, pos=None, *, name: str = None,
+def sphere(geom: Node, /, r=None, pos=None, *, name: str | None = None,
            **properties) -> Node:
     """Creates a Sphere with radius `r` centered at `pos`."""
     return feature(geom, 'Sphere', name=name, r=r, pos=pos, **properties)
 
 
-def point(geom: Node, /, p, *, name: str = None, **properties) -> Node:
+def point(geom: Node, /, p, *, name: str | None = None, **properties) -> Node:
     """Creates a Point at coordinates `p`."""
     return feature(geom, 'Point', name=name, p=p, **properties)
 
 
-def union(geom: Node, /, input, *, name: str = None, **properties) -> Node:
+def union(geom: Node, /, input, *, name: str | None = None, **properties) -> Node:
     """Creates a Union of the `input` objects."""
     return feature(geom, 'Union', name=name, input=input, **properties)
 
 
-def difference(geom: Node, /, input, input2, *, name: str = None,
+def difference(geom: Node, /, input, input2, *, name: str | None = None,
                **properties) -> Node:
     """Creates a Difference: `input` objects minus `input2` objects."""
     return feature(geom, 'Difference', name=name, input=input,
                    input2=input2, **properties)
 
 
-def rigid_transform(geom: Node, /, input, *, name: str = None,
+def rigid_transform(geom: Node, /, input, *, name: str | None = None,
                     **properties) -> Node:
     """
     Creates a Rigid Transform (move and rotate) of the `input` objects.
@@ -200,14 +201,14 @@ def rigid_transform(geom: Node, /, input, *, name: str = None,
                    **properties)
 
 
-def intersection(parent: Node, /, input, *, name: str = None,
+def intersection(parent: Node, /, input, *, name: str | None = None,
                  **properties) -> Node:
     """Creates an Intersection: the part the `input` objects share."""
     return feature(parent, 'Intersection', name=name, input=input,
                    **properties)
 
 
-def delete(parent: Node, /, input, *, name: str = None,
+def delete(parent: Node, /, input, *, name: str | None = None,
            **properties) -> Node:
     """
     Creates a Delete of the `input` objects.
@@ -224,7 +225,7 @@ def delete(parent: Node, /, input, *, name: str = None,
 # Transforms #
 ##############
 
-def array(parent: Node, /, input, *, size, displ, name: str = None,
+def array(parent: Node, /, input, *, size, displ, name: str | None = None,
           **properties) -> Node:
     """
     Creates an Array of copies of the `input` objects.
@@ -249,7 +250,7 @@ def array(parent: Node, /, input, *, size, displ, name: str = None,
                    **properties)
 
 
-def move(parent: Node, /, input, displ, *, name: str = None,
+def move(parent: Node, /, input, displ, *, name: str | None = None,
          **properties) -> Node:
     """
     Creates a Move of the `input` objects by `displ`, e.g. `(0, 0, 5)`.
@@ -264,7 +265,7 @@ def move(parent: Node, /, input, displ, *, name: str = None,
 
 
 def rotate(parent: Node, /, input, rot, *, pos=None, axis=None,
-           name: str = None, **properties) -> Node:
+           name: str | None = None, **properties) -> Node:
     """
     Creates a Rotate of the `input` objects by `rot` degrees.
 
@@ -284,7 +285,7 @@ def rotate(parent: Node, /, input, rot, *, pos=None, axis=None,
                    pos=pos, **properties)
 
 
-def mirror(parent: Node, /, input, axis, *, pos=None, name: str = None,
+def mirror(parent: Node, /, input, axis, *, pos=None, name: str | None = None,
            **properties) -> Node:
     """
     Creates a Mirror of the `input` objects.
@@ -302,7 +303,7 @@ def mirror(parent: Node, /, input, axis, *, pos=None, name: str = None,
 
 
 def revolve(geom: Node, /, input, angle=None, *, pos=None, axis=None,
-            name: str = None, **properties) -> Node:
+            name: str | None = None, **properties) -> Node:
     """
     Creates a Revolve of `input`, usually a work plane, in a 3D geometry.
 
@@ -342,7 +343,7 @@ def revolve(geom: Node, /, input, angle=None, *, pos=None, axis=None,
     return feature(geom, 'Revolve', name=name, input=input, **properties)
 
 
-def partition(parent: Node, /, input, tool, *, name: str = None,
+def partition(parent: Node, /, input, tool, *, name: str | None = None,
               **properties) -> Node:
     """
     Creates a Partition of the `input` objects by `tool`.
@@ -379,7 +380,7 @@ def _workplane_tag(parent: Node, ref) -> str | None:
     return None
 
 
-def fillet(parent: Node, /, input, radius, *, name: str = None,
+def fillet(parent: Node, /, input, radius, *, name: str | None = None,
            **properties) -> Node:
     """
     Rounds edges (3D) or corners (2D and work planes) with `radius`.
@@ -397,7 +398,7 @@ def fillet(parent: Node, /, input, radius, *, name: str = None,
                   **properties)
 
 
-def chamfer(parent: Node, /, input, dist, *, name: str = None,
+def chamfer(parent: Node, /, input, dist, *, name: str | None = None,
             **properties) -> Node:
     """
     Bevels edges (3D) or corners (2D and work planes) by `dist`.
@@ -423,7 +424,7 @@ def _round(parent: Node, kind: str, input, name, **properties) -> Node:
     raise ValueError(f'A 1D geometry has no {kind.lower()}.')
 
 
-def line_segment(parent: Node, /, start, end, *, name: str = None,
+def line_segment(parent: Node, /, start, end, *, name: str | None = None,
                  **properties) -> Node:
     """Creates a straight line segment from `start` to `end`."""
     _comsol.check_vector(parent, 'start', start)
@@ -432,7 +433,7 @@ def line_segment(parent: Node, /, start, end, *, name: str = None,
                    coord1=start, specify2='coord', coord2=end, **properties)
 
 
-def interval(geom: Node, /, coord, *, name: str = None,
+def interval(geom: Node, /, coord, *, name: str | None = None,
              **properties) -> Node:
     """
     Creates an Interval in a 1D geometry through the points `coord`.
@@ -450,7 +451,7 @@ def interval(geom: Node, /, coord, *, name: str = None,
 # Work planes #
 ###############
 
-def workplane(geom: Node, /, *, name: str = None, **properties) -> Node:
+def workplane(geom: Node, /, *, name: str | None = None, **properties) -> Node:
     """
     Creates a Work Plane, for example `quickz=5`.
 
@@ -462,27 +463,27 @@ def workplane(geom: Node, /, *, name: str = None, **properties) -> Node:
     return feature(geom, 'WorkPlane', name=name, **properties)
 
 
-def square(parent: Node, /, size=None, pos=None, *, name: str = None,
+def square(parent: Node, /, size=None, pos=None, *, name: str | None = None,
            **properties) -> Node:
     """Creates a Square in a 2D geometry or a work plane."""
     return feature(parent, 'Square', name=name, size=size, pos=pos,
                    **properties)
 
 
-def rectangle(parent: Node, /, size=None, pos=None, *, name: str = None,
+def rectangle(parent: Node, /, size=None, pos=None, *, name: str | None = None,
               **properties) -> Node:
     """Creates a Rectangle `size=(width, height)` in 2D or a work plane."""
     return feature(parent, 'Rectangle', name=name, size=size, pos=pos,
                    **properties)
 
 
-def circle(parent: Node, /, r=None, pos=None, *, name: str = None,
+def circle(parent: Node, /, r=None, pos=None, *, name: str | None = None,
            **properties) -> Node:
     """Creates a Circle with radius `r` in 2D or a work plane."""
     return feature(parent, 'Circle', name=name, r=r, pos=pos, **properties)
 
 
-def polygon(parent: Node, /, x, y, *, name: str = None,
+def polygon(parent: Node, /, x, y, *, name: str | None = None,
             **properties) -> Node:
     """Creates a closed Polygon through the points `x`, `y`."""
     properties.setdefault('type', 'solid')
@@ -490,7 +491,7 @@ def polygon(parent: Node, /, x, y, *, name: str = None,
                    **properties)
 
 
-def extrude(geom: Node, /, input, distance, *, name: str = None,
+def extrude(geom: Node, /, input, distance, *, name: str | None = None,
             **properties) -> Node:
     """Extrudes `input` (e.g. a work plane) by `distance` (scalar or list)."""
     if not isinstance(distance, (list, tuple)):
@@ -503,7 +504,7 @@ def extrude(geom: Node, /, input, distance, *, name: str = None,
 # Import #
 ##########
 
-def import_(geom: Node, file, /, *, type: str = None, name: str = None,
+def import_(geom: Node, file, /, *, type: str | None = None, name: str | None = None,
             **properties) -> Node:
     """
     Imports geometry from `file`.
@@ -525,7 +526,7 @@ def import_(geom: Node, file, /, *, type: str = None, name: str = None,
     try:
         # MPh's `Node.import_()` calls `discardData()`, which geometry
         # imports lack; `importData()` reads the file right away.
-        node.java.importData()
+        _comsol.java_of(node).importData()
     except Exception as error:
         node.remove()
         if 'license' in str(error).lower():

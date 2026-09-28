@@ -71,9 +71,11 @@ For example (made-up entries):
 
 2. **Run the checks** with COMSOL:
    ```sh
-   uv run pytest
+   uv run pytest                                   # includes mypy
    uv run python examples/plate_with_holes.py
+   uvx pyright@1.1.414 --pythonpath .venv/bin/python src/mphkit
    ```
+   pyright needs `--pythonpath` to find MPh; it should report no errors.
    If `.github/workflows/publish.yml` changed since the last release,
    also do a dry run of it (see [Publishing to PyPI](#publishing-to-pypi)):
    ```sh

@@ -34,7 +34,10 @@ Changelog = "https://github.com/elgar328/mphkit/blob/main/CHANGELOG.md"
 Issues = "https://github.com/elgar328/mphkit/issues"
 
 [dependency-groups]
-dev = ["pytest>=8"]
+dev = [
+    "mypy>=2.3.1",
+    "pytest>=8",
+]
 
 [build-system]
 requires = ["uv_build>=0.9.9,<0.13"]

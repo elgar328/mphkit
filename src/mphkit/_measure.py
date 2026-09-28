@@ -13,7 +13,7 @@ from __future__ import annotations
 import numbers
 
 import numpy
-from mph import Node
+from mph.node import Node
 
 from . import _comsol
 
@@ -54,7 +54,7 @@ def _final(geom: Node, entity: str, selection):
                              f'has {count} {entity} entities.')
     if not found:
         return None
-    measurement = geom.java.measureFinal()
+    measurement = _comsol.java_of(geom).measureFinal()
     measurement.selection().geom(geom.tag(), dim)
     measurement.selection().set(found)
     return measurement

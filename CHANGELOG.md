@@ -21,6 +21,19 @@ until 1.0, a minor release (0.2, 0.3, ...) may change the API. See
   unknown property names suggest COMSOL's (`radius` → `r`, or `rmaj` and
   `rmin` on a torus).
 
+### Changed
+
+- Using a node that no longer exists in the model raises a `LookupError`
+  naming the node, instead of an unrelated `AttributeError` or
+  `TypeError`.
+
+### Fixed
+
+- Type hints of optional arguments accept `None`, so type checkers accept
+  calls that pass the defaults explicitly.
+- Integers too large for a float, such as `10**400`, are passed to COMSOL
+  as they are instead of raising `OverflowError`.
+
 ## [0.1.0] - 2026-09-27
 
 First release.
