@@ -411,14 +411,25 @@ def test_objects_to_entity_input(model, geom):
 
 
 def test_revolve(model):
-    def ring(*args, **kwargs):
+    def ring(*args, plane='xz', **kwargs):
         geom = mk.geometry(model, 3)
-        plane = mk.workplane(geom, quickplane='xz')
+        plane = mk.workplane(geom, quickplane=plane)
         mk.rectangle(plane, (1, 1), (1, 0))
         node = mk.revolve(geom, plane, *args, **kwargs)
         model.build(geom)
         return geom, node
     full, _ = ring()
+    # a full turn keeps the cross-section as an interior face
+    assert count(full, 'boundaries') == 17
+    assert count(ring(origfaces=False)[0], 'boundaries') == 16
+    assert count(ring(360, origfaces=False)[0], 'boundaries') == 17
+    # swept faces are split every 90 degrees from the start angle
+    assert count(ring(100)[0], 'boundaries') == 10
+    assert count(ring((30, 120))[0], 'boundaries') == 6
+    assert count(ring(270)[0], 'boundaries') == 14
+    assert bbox(ring(plane='yz')[0]) == bbox(full)    # about the global z
+    model.parameter('a', '90')
+    assert count(ring('a')[0], 'boundaries') == 6
     assert mk.measure(full, 'domain') == pytest.approx(3*math.pi, rel=0.01)
     assert bbox(full)['x'] == (-2, 2)
     half, _ = ring(180)
@@ -744,3 +755,149 @@ def test_extrude_distance_list(model, geom):
     assert count(geom, 'domains') == 2
     assert len(mk.sel.find(geom, 'boundary', z=1)) == 1
     assert len(mk.sel.find(geom, 'boundary', z=3)) == 1
+
+
+LAYERED = {'layername': ['pml'], 'layer': [5], 'layertop': True,
+           'layerbottom': False}
+
+
+def built(model, geom):
+    """Builds `geom` and returns its numbers of domains and boundaries."""
+    model.build(geom)
+    return count(geom, 'domains'), count(geom, 'boundaries')
+
+
+def counts(model, make):
+    """Runs `make(geom)` in a new 3D geometry and returns `built()`."""
+    geom = mk.geometry(model, 3)
+    make(geom)
+    return built(model, geom)
+
+
+def boss(geom):
+    """A cylinder standing on a plate."""
+    return [mk.block(geom, (10, 10, 2)), mk.cylinder(geom, 1, 3, (5, 5, 2))]
+
+
+def overlapping(geom):
+    return [mk.block(geom, (1, 1, 1)), mk.block(geom, (1, 1, 1), (0.5, 0, 0))]
+
+
+def apart(geom):
+    return [mk.block(geom, (1, 1, 1)), mk.block(geom, (1, 1, 1), (3, 0, 0))]
+
+
+def layered(geom):
+    return [mk.block(geom, (40, 40, 40), **LAYERED),
+            mk.block(geom, (10, 10, 10), (40, 0, 0))]
+
+
+def cut(geom):
+    """A block cut in two by a partition, and a block touching it."""
+    blk = mk.block(geom, (2, 1, 1))
+    plane = mk.workplane(geom, quickplane='yz', quickx=1)
+    return [mk.partition(geom, blk, plane),
+            mk.block(geom, (1, 1, 1), (0, 1, 0))]
+
+
+@pytest.mark.parametrize('objects, apart_, united, merged', [
+    (boss, (2, 12), (2, 12), (1, 11)),
+    (overlapping, (3, 16), (3, 16), (1, 14)),
+    (layered, (3, 17), (3, 17), (1, 15)),
+    (cut, (3, 16), (3, 16), (1, 14)),
+])
+def test_union_keeps_interior_boundaries(model, objects, apart_, united,
+                                         merged):
+    assert counts(model, objects) == apart_
+    assert counts(model, lambda g: mk.union(g, objects(g))) == united
+    assert counts(model, lambda g: mk.union(g, objects(g),
+                                            intbnd=False)) == merged
+
+
+def test_union_keeps_objects_apart(model):
+    assert counts(model, lambda g: mk.union(g, apart(g),
+                                            intbnd=False)) == (2, 12)
+
+
+@pytest.mark.parametrize('objects, kept, merged', [
+    (lambda g: [mk.block(g, (1, 1, 1)), mk.block(g, (1, 1, 1), (1, 0, 0))],
+     (2, 11), (1, 10)),
+    (overlapping, (3, 16), (1, 14)),
+])
+def test_difference_intbnd(model, objects, kept, merged):
+    def cut_away(geom, **properties):
+        tool = mk.block(geom, (0.1, 0.1, 0.1), (5, 5, 5))
+        mk.difference(geom, objects(geom), [tool], **properties)
+
+    assert counts(model, cut_away) == kept
+    assert counts(model, lambda g: cut_away(g, intbnd=False)) == merged
+
+
+def test_intersection_intbnd_layers(model):
+    def common(geom, **properties):
+        around = mk.block(geom, (60, 60, 60), (-10, -10, -10))
+        block = mk.block(geom, (40, 40, 40), **LAYERED)
+        mk.intersection(geom, [block, around], **properties)
+
+    assert counts(model, common) == (2, 11)
+    assert counts(model, lambda g: common(g, intbnd=False)) == (1, 10)
+
+
+def test_workplane_objects_stay_separate(model):
+    def extruded(rectangles, unite=None):
+        geom = mk.geometry(model, 3)
+        plane = mk.workplane(geom)
+        shapes = [mk.rectangle(plane, size, pos) for size, pos in rectangles]
+        if unite == 'plane':
+            mk.union(plane, shapes, intbnd=False)
+        solid = mk.extrude(geom, plane, 1)
+        if unite == 'after':
+            mk.union(geom, [solid], intbnd=False)
+        return built(model, geom)
+
+    touching = [((2, 1), None), ((1, 2), (2, 0))]
+    assert extruded(touching) == (2, 12)
+    assert extruded(touching, 'plane') == (1, 9)
+    assert extruded(touching, 'after') == (1, 11)   # top and bottom split
+    assert extruded([((2, 1), None), ((1, 2), (1.5, 0))])[0] == 3
+    geom = mk.geometry(model, 3)
+    plane = mk.workplane(geom, quickplane='xz')
+    mk.rectangle(plane, (1, 1), (1, 0))
+    mk.rectangle(plane, (1, 1), (2, 0))
+    mk.revolve(geom, plane)
+    assert built(model, geom)[0] == 2
+
+
+def test_curved_faces_split(model):
+    def boundaries(make):
+        geom = mk.geometry(model, 3)
+        make(geom)
+        return geom, built(model, geom)[1]
+
+    geom, n = boundaries(lambda g: mk.cylinder(g, 1, 2))
+    assert n == 6
+    side = mk.sel.cylinder(geom, 'boundary', (0, 0, 0), 1.01, rin=0.99,
+                           bottom=-0.02, top=2.02)
+    assert len(mk.sel.entities(geom, side)) == 4
+    assert boundaries(lambda g: mk.sphere(g, 1))[1] == 8
+    for rtop, expected in ((0, 5), (0.5, 6)):
+        cone = boundaries(lambda g: mk.feature(
+            g, 'Cone', r=1, h=2, specifytop='radius', rtop=rtop))
+        assert cone[1] == expected
+
+    def pillar(g):
+        plane = mk.workplane(g)
+        mk.circle(plane, 1)
+        mk.extrude(g, plane, 2)
+
+    assert boundaries(pillar)[1] == 6
+
+    def plate(g):
+        mk.difference(g, mk.block(g, (10, 10, 1)),
+                      [mk.cylinder(g, 1, 1, (5, 5, 0))])
+
+    geom, n = boundaries(plate)
+    assert n == 10
+    wall = mk.sel.cylinder(geom, 'boundary', (5, 5, 0), 1.01, rin=0.99,
+                           bottom=-0.01, top=1.01)
+    assert len(mk.sel.entities(geom, wall)) == 4

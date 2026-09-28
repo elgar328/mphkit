@@ -5,8 +5,12 @@ Measurements of the finished geometry. Public as `mk.measure` and
 Both return plain numbers in the geometry's length unit and leave nothing
 in the model. Curved geometry is measured on a rendering mesh, so volumes,
 areas and lengths of curved entities are approximate (a cylinder about
-0.3 % too small, a sphere 0.3 to 0.6 % depending on the geometry kernel);
-planar geometry is exact.
+0.3 % too small, a sphere 0.3 to 0.6 % depending on the geometry kernel).
+Planar geometry is exact up to single precision: the measurement rounds
+coordinates to about seven digits, so a thickness that is small compared
+with the coordinate across it loses accuracy, e.g. a 0.001 thick plate at
+z = 1000 measures 0.00098 and at z = 1000.3 measures 0.00104. The
+geometry itself is not affected.
 """
 from __future__ import annotations
 
@@ -73,7 +77,9 @@ def measure(geom: Node, entity: str, /, selection=None) -> float:
 
     The geometry must be built. Curved entities are measured on a
     rendering mesh and are approximate (a cylinder about 0.3 % too small);
-    planar ones are exact.
+    planar ones are exact up to single precision: coordinates are rounded
+    to about seven digits, so a 0.001 thick plate at z = 1000 measures
+    0.00098.
     """
     _comsol.check_not_workplane(geom, 'measure')
     if _comsol.entity_dim(geom, entity) == 0:
@@ -91,7 +97,10 @@ def bounding_box(geom: Node, entity: str, /, selection=None) -> dict | None:
     Has one pair per space dimension, so it can be passed on as
     `sel.box(geom, entity, **box)`. For a single point, min equals max: its
     coordinates. `selection` works as in `measure()`. Returns `None` for
-    an empty selection.
+    an empty selection. Values at the `'domain'`, `'boundary'` and `'edge'`
+    levels are single precision (1.1 reads 1.100000023841858); points keep
+    full precision. After a rotation, 0 may read about 1e-16 at any level.
+    Compare with a tolerance; `sel.box` allows for that.
     """
     _comsol.check_not_workplane(geom, 'bounding_box')
     measurement = _final(geom, entity, selection)

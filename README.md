@@ -35,7 +35,7 @@ bottom = mk.sel.box(geom, 'boundary', z=0)     # faces on the plane z = 0
 
 # plain MPh from here on
 physics = (model/'physics').create('HeatTransfer', geom)
-physics.create('TemperatureBoundary', 2).select(bottom)
+physics.create('TemperatureBoundary', 2).select(bottom)  # 2: boundaries in 3D
 model.save('demo.mph')
 ```
 
@@ -49,6 +49,8 @@ Good to know:
   when the geometry changes.
 - Entity kinds are COMSOL's: `'domain'`, `'boundary'` (faces in 3D),
   `'edge'`, `'point'`.
+- Objects that touch or overlap stay separate domains, even after
+  `mk.union`; merge them with `mk.union(geom, [a, b], intbnd=False)`.
 - Extra keyword arguments are COMSOL property names (`r`, `h`, `pos`,
   `size`), so the COMSOL documentation of each feature applies.
 - `mk.measure` and `mk.bounding_box` return values in the geometry's

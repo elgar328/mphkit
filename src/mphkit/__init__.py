@@ -17,7 +17,8 @@ Every helper takes MPh nodes, and those that create something return one.
     model.build(geom)
     bottom = mk.sel.box(geom, 'boundary', z=0)    # select by location
     physics = (model/'physics').create('HeatTransfer', geom)
-    physics.create('TemperatureBoundary', 2).select(bottom)   # 2: boundary level
+    # 2: boundaries in 3D
+    physics.create('TemperatureBoundary', 2).select(bottom)
 
 Rules:
 
@@ -28,26 +29,40 @@ Rules:
   geometry and `mk.sel.cumulative` collects groups across operations
   (features join with `contributeto=`).
 - Entity kinds are COMSOL's: 'domain' (volumes in 3D), 'boundary' (faces
-  in 3D, edges in 2D), 'edge', 'point' (vertices).
+  in 3D, edges in 2D), 'edge', 'point' (vertices). Physics features take
+  the level as a number: 3 for domains and 2 for boundaries in 3D, 2 and 1
+  in 2D.
+- Objects that touch or overlap stay separate domains, even after
+  `mk.union`; merge them with `mk.union(geom, [a, b], intbnd=False)`,
+  which also removes layers and partition cuts of its inputs. A full
+  `mk.revolve` (no `angle`) keeps its cross-section as an interior face
+  unless `origfaces=False`.
 - Extra keyword arguments are COMSOL property names (`r`, `h`, `pos`,
   `size`, `rot`, ...); an unknown name raises an error that often suggests
   the right one.
+- Sizes, positions, angles and counts may be numbers or COMSOL expressions
+  with parameters and units, e.g. `'L-2*t'` or `'5[mm]'`; define
+  parameters with `model.parameter('t', '0.3[mm]')`.
 - Build the geometry (`model.build(geom)`) before querying it, and again
   after adding a `where='geometry'` selection.
 
 Check the result without looking at it: `mk.sel.entities(geom, sel)`
 (entity numbers), `mk.sel.find(geom, 'domain', x=...)`,
 `mk.measure(geom, 'domain')` (volume, area or length) and
-`mk.bounding_box(geom, 'boundary', ...)`.
+`mk.bounding_box(geom, 'boundary', ...)`. Measured values, except point
+coordinates, are single precision (about seven digits of the
+coordinates): compare with a tolerance.
 
 Selection tips: `mk.sel.result(geom, feature, 'boundary')` gives the faces
 an object and its copies left, curved ones included, and the faces it cut
 into others, e.g. the spherical faces a subtracted sphere leaves in a
-block. For the side of a cylinder that is still whole, use a thin shell
-bounded just beyond it: `mk.sel.cylinder(geom, 'boundary', pos, 1.01*r,
-rin=0.99*r, bottom=-0.01*h, top=1.01*h, name='side')` (a name avoids a
-clash with the cylinder's own label). Sizes and coordinates are in the
-geometry's length unit.
+block. Curved surfaces are split into several faces: the side of a
+cylinder or cone, the wall of a hole or of an extruded circle into four,
+a sphere into eight. For the side of a cylinder that no other object cut,
+use a thin shell bounded just beyond it: `mk.sel.cylinder(geom,
+'boundary', pos, 1.01*r, rin=0.99*r, bottom=-0.01*h, top=1.01*h,
+name='side')` (a name avoids a clash with the cylinder's own label).
+Sizes and coordinates are in the geometry's length unit.
 
 More: `help(mk.sel)` for selections (also in work planes), `help(mk.block)`
 etc. for each helper, `mk.feature(geom, 'Type', ...)` for any other

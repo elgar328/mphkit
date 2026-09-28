@@ -99,3 +99,43 @@ def test_2d_and_1d(model):
     assert mk.bounding_box(line, 'domain') == {'x': pytest.approx((0, 2))}
     with pytest.raises(ValueError, match='Points have no size'):
         mk.measure(line, 'boundary')
+
+
+@pytest.mark.parametrize('pos', [(0, 0, 1000), (0, 0, 1000.3), (0, 0, 1),
+                                 (1000, 0, 0)])
+def test_measure_single_precision(model, pos):
+    # COMSOL measures with coordinates rounded to float32
+    geom = mk.geometry(model, 3)
+    mk.block(geom, (1, 1, 0.001), pos)
+    model.build(geom)
+    z = pos[2]
+    thickness = float(numpy.float32(z + 0.001)) - float(numpy.float32(z))
+    assert mk.measure(geom, 'domain') == pytest.approx(thickness, rel=1e-6)
+
+
+def test_bounding_box_points_keep_full_precision(model):
+    geom = mk.geometry(model, 3)
+    mk.block(geom, (1, 1, 0.001), (0, 0, 1000))
+    model.build(geom)
+    top = mk.bounding_box(geom, 'point')['z'][1]
+    assert top == pytest.approx(1000.001, abs=1e-9)
+    top = mk.bounding_box(geom, 'domain')['z'][1]
+    assert top == float(numpy.float32(1000.001))
+
+
+def test_bounding_box_precision(model):
+    geom = mk.geometry(model, 3)
+    mk.block(geom, (13, 2, 3), (1.1, 0.7, 0.3))
+    model.build(geom)
+    assert mk.bounding_box(geom, 'domain')['x'][0] == \
+        float(numpy.float32(1.1))
+    corner = mk.sel.find(geom, 'point', x=1.1, y=0.7, z=0.3)
+    assert mk.bounding_box(geom, 'point', corner)['x'] == (1.1, 1.1)
+    # after a rotation, 0 may read as a tiny number at every level
+    turned = mk.geometry(model, 3)
+    mk.rotate(turned, mk.block(turned, (2, 2, 2)), 90)
+    model.build(turned)
+    point = mk.sel.find(turned, 'point', x=0, y=2, z=0)
+    assert len(point) == 1
+    assert abs(mk.bounding_box(turned, 'point', point)['x'][0]) < 1e-12
+    assert abs(mk.bounding_box(turned, 'domain')['x'][1]) < 1e-12

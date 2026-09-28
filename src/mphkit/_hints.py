@@ -44,9 +44,16 @@ MEANINGS = {
     'subtract': 'mphkit.difference', 'cut': 'mphkit.difference',
     'minus': 'mphkit.difference', 'merge': 'mphkit.union',
     'fuse': 'mphkit.union', 'combine': 'mphkit.union',
+    'unite': 'mphkit.union',
     'translate': 'mphkit.move', 'shift': 'mphkit.move',
     'rotation': 'mphkit.rotate', 'extrusion': 'mphkit.extrude',
     'line': 'mphkit.line_segment', 'polyline': 'mphkit.polygon',
+}
+
+# Notes added when a helper is the only suggestion in `mphkit`.
+NOTES = {
+    'mphkit.union': 'Pass intbnd=False to merge touching or overlapping '
+                    'objects into one domain.',
 }
 
 # Geometry features without a named helper, created with `feature()`.
@@ -83,6 +90,8 @@ def missing_attribute(module: str, name: str) -> AttributeError:
 def _message(module: str, name: str) -> str:
     """Builds the error message with suggestions and a pointer to help()."""
     suggestions, note = _suggest(module, name)
+    if note is None and module == MAIN and len(suggestions) == 1:
+        note = NOTES.get(suggestions[0])
     message = f'module {module!r} has no attribute {name!r}.'
     if suggestions:
         message += f' Did you mean {" or ".join(suggestions)}?'
@@ -187,6 +196,11 @@ def _direct(module: str, names: dict[str, dict[str, str]],
         if key in names[where]:
             return [f'{where}.{names[where][key]}'], None
     if key in MEANINGS and MEANINGS[key] != module:
+        # In mphkit.sel, a word for a Boolean operation means the selection
+        # operation of that name
+        meant = MEANINGS[key].rsplit('.', 1)[1]
+        if module == SEL and meant in names[SEL]:
+            return [f'{SEL}.{names[SEL][meant]}'], None
         return [MEANINGS[key]], None
     if key in FEATURES:
         return [f'mphkit.feature(geom, {FEATURES[key]!r}, ...)'], None

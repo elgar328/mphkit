@@ -182,13 +182,30 @@ def point(geom: Node, /, p, *, name: str | None = None, **properties) -> Node:
 
 
 def union(geom: Node, /, input, *, name: str | None = None, **properties) -> Node:
-    """Creates a Union of the `input` objects."""
+    """
+    Creates a Union of the `input` objects. Works in a work plane as well.
+
+    Objects that touch or overlap keep the boundaries between them: they
+    stay separate domains, and an overlap becomes a domain of its own (two
+    overlapping blocks give three). This is COMSOL's default with or
+    without a union (`intbnd` is on, and a geometry ends with a Form
+    Union). Pass `intbnd=False` so that touching or overlapping inputs
+    become one domain, e.g. a boss standing on a plate. This removes every
+    interior boundary of the inputs, block layers and partition cuts
+    included; outer faces may stay split where the inputs met, and objects
+    that do not touch stay separate.
+    """
     return feature(geom, 'Union', name=name, input=input, **properties)
 
 
 def difference(geom: Node, /, input, input2, *, name: str | None = None,
                **properties) -> Node:
-    """Creates a Difference: `input` objects minus `input2` objects."""
+    """
+    Creates a Difference: `input` objects minus `input2` objects.
+
+    Touching or overlapping `input` objects stay separate domains unless
+    `intbnd=False`, see `union()`.
+    """
     return feature(geom, 'Difference', name=name, input=input,
                    input2=input2, **properties)
 
@@ -207,7 +224,12 @@ def rigid_transform(geom: Node, /, input, *, name: str | None = None,
 
 def intersection(parent: Node, /, input, *, name: str | None = None,
                  **properties) -> Node:
-    """Creates an Intersection: the part the `input` objects share."""
+    """
+    Creates an Intersection: the part the `input` objects share.
+
+    `intbnd=False` removes interior boundaries the inputs carry, such as
+    block layers; see `union()`.
+    """
     return feature(parent, 'Intersection', name=name, input=input,
                    **properties)
 
@@ -315,9 +337,17 @@ def revolve(geom: Node, /, input, angle=None, *, pos=None, axis=None,
     `angle` is left out for a full turn, one value in degrees (from 0), or
     two values (start, end). The axis is given in the work plane's own
     coordinates by default: `pos` and `axis` with two values each, the
-    work plane's y axis if left out. Three values, or `axis='x'|'y'|'z'`,
+    work plane's y axis if left out (parallel to the global z axis for
+    `quickplane='xz'` or `'yz'`). Three values, or `axis='x'|'y'|'z'`,
     give an axis in 3D coordinates instead (the model's x axis, not the
     work plane's); a 3D axis without `pos` passes through the origin.
+
+    A full turn keeps the drawn cross-section as an interior face; with
+    `angle` left out, `origfaces=False` drops it (with `angle=360` it
+    stays). Every face the revolve sweeps, flat ones included, is split
+    every 90° counted from the start angle: up to 90° gives one face, 100°
+    two, a full turn four. As in `extrude()`, objects that touch in the
+    plane become separate domains.
     """
     if _comsol.parent_dim(geom) != 3 or _comsol.is_workplane(geom.java):
         raise ValueError('Revolve needs a 3D geometry.')
@@ -511,6 +541,11 @@ def extrude(geom: Node, /, input, distance, *, name: str | None = None,
     The plane's 2D objects are extruded along its normal (see
     `workplane()`). `distance` is a length, or a list of distances from the
     plane, e.g. `[1, 3]` for layers from 0 to 1 and from 1 to 3.
+
+    Objects that touch or overlap in the plane become separate domains;
+    unite them there with `union(plane, [...], intbnd=False)` (uniting
+    after the extrusion also gives one domain but keeps the top and bottom
+    faces split).
     """
     if not isinstance(distance, (list, tuple)):
         distance = [distance]

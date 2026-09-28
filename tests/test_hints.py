@@ -63,6 +63,12 @@ def message(module, name):
     (mk, 'polyline', 'Did you mean mphkit.polygon?'),
     (mk, 'subtract', 'Did you mean mphkit.difference?'),
     (mk, 'merge', 'Did you mean mphkit.union?'),
+    (mk, 'fuse', 'Pass intbnd=False to merge touching'),
+    (mk, 'unite', 'Did you mean mphkit.union?'),
+    (mk, 'create_union', 'Pass intbnd=False'),
+    (mk.sel, 'unite', 'Did you mean mphkit.sel.union?'),
+    (mk.sel, 'merge', 'Did you mean mphkit.sel.union?'),
+    (mk.sel, 'subtract', 'Did you mean mphkit.sel.difference?'),
     (mk, 'translate', 'Did you mean mphkit.move?'),
     (mk, 'cone', "Did you mean mphkit.feature(geom, 'Cone', ...)?"),
     (mk, 'bounding', 'Did you mean mphkit.bounding_box?'),
@@ -107,12 +113,39 @@ def test_attribute_protocol_unchanged():
     assert type(mk).__name__ == type(mk.sel).__name__ == 'HintModule'
 
 
+def test_union_note_only_for_geometry():
+    # in mphkit.sel, "merge" means the selection union: no intbnd note
+    assert 'intbnd' not in message(mk.sel, 'merge')
+    assert 'intbnd' not in message(mk, 'unoin')     # two suggestions
+
+
 def test_broken_hint_falls_back(monkeypatch):
     def fail(module, name):
         raise RuntimeError('bug in the hints')
     monkeypatch.setattr(_hints, '_message', fail)
     with pytest.raises(AttributeError, match="has no attribute 'box'$"):
         mk.box
+
+
+def test_help_physics_levels(model):
+    # the levels named in the Rules of help(mphkit)
+    def level(feature):
+        return [int(d) for d in feature.java.selection().dimension()]
+
+    flat = mk.geometry(model, 2)
+    mk.square(flat, 1)
+    model.build(flat)
+    heat = (model/'physics').create('HeatTransfer', flat)
+    assert level(heat.create('TemperatureBoundary', 1)) == [1]
+    assert level(heat.create('HeatSource', 2)) == [2]
+    with pytest.raises(Exception, match='specified element dimension'):
+        heat.create('TemperatureBoundary', 2)
+    solid = mk.geometry(model, 3)
+    mk.block(solid, (1, 1, 1))
+    model.build(solid)
+    heat = (model/'physics').create('HeatTransfer', solid)
+    assert level(heat.create('TemperatureBoundary', 2)) == [2]
+    assert level(heat.create('HeatSource', 3)) == [3]
 
 
 def test_help_lists_no_hook():
