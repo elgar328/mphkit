@@ -1,5 +1,7 @@
 """Tests for geometry-based selections."""
+import inspect
 import math
+import re
 
 import pytest
 from mph import Node
@@ -95,6 +97,25 @@ def test_result_selection(model, geom):
     boundary = physics.create('TemperatureBoundary', 2)
     boundary.select(faces)
     assert boundary.selection() == faces
+
+
+def test_result_selects_subtracted_sphere(model, geom):
+    block = mk.block(geom, (20, 20, 20), (-10, -10, -10))
+    ball = mk.sphere(geom, 5)
+    mk.difference(geom, block, [ball])
+    model.build(geom)
+    faces = mk.sel.result(geom, ball, 'boundary')
+    assert len(mk.sel.entities(geom, faces)) == 8
+    assert mk.measure(geom, 'boundary', faces) == \
+        pytest.approx(4*math.pi*25, rel=0.005)
+
+
+def test_result_name_clash_message(model, geom):
+    cyl = mk.cylinder(geom, 1, 2)
+    model.build(geom)
+    mk.sel.cylinder(geom, 'boundary', (0, 0, 0), 1.1)   # "Cylinder 1" too
+    with pytest.raises(ValueError, match='`name=`'):
+        mk.sel.result(geom, cyl, 'boundary')
 
 
 def test_geometry_selection_drives_delete(model, geom):
@@ -399,6 +420,20 @@ def test_cylinder_axis(model, geom):
         assert mk.sel.entities(geom, along) == expected
 
 
+def test_cylinder_side_tip(model):
+    # the recipe in help(mphkit), at small sizes in meters
+    geom = mk.geometry(model, 3)
+    r, h, pos = 0.003, 0.007, (0.0011, 0.0013, 0.0003)
+    mk.cylinder(geom, r, h, pos)
+    mk.cylinder(geom, r, 0.005, (0.0011, 0.0013, 0.0073))   # on top of it
+    model.build(geom)
+    side = mk.sel.cylinder(geom, 'boundary', pos, 1.01*r, rin=0.99*r,
+                           bottom=-0.01*h, top=1.01*h, name='side')
+    assert len(mk.sel.entities(geom, side)) == 4
+    assert mk.measure(geom, 'boundary', side) == \
+        pytest.approx(2*math.pi*r*h, rel=0.005)
+
+
 def test_disk(model, geom):
     flat = mk.geometry(model, 2)
     mk.square(flat, 10)
@@ -433,6 +468,44 @@ def test_cumulative(model, geom):
     boundary = physics.create('TemperatureBoundary', 2)
     boundary.select(walls)
     assert boundary.selection() == walls
+
+
+def test_cumulative_docstring_example(model, geom):
+    doc = inspect.getdoc(mk.sel.cumulative)
+    code = re.search(r'```python\n(.*?)```', doc, re.S).group(1)
+    namespace = {'mk': mk, 'geom': geom}
+    exec(code, namespace)
+    model.build(geom)
+    assert len(mk.sel.entities(geom, namespace['walls'])) == 24
+
+
+def test_cumulative_on_copying_feature(model, geom):
+    plate = mk.block(geom, (60, 40, 5))
+    holes = mk.sel.cumulative(geom, 'holes', 'domain', create=True)
+    hole = mk.cylinder(geom, 3, 7, (15, 10, -1))
+    row = mk.array(geom, hole, size=(3, 2, 1), displ=(15, 20, 0),
+                   contributeto=holes)
+    mk.difference(geom, plate, [row])
+    model.build(geom)
+    walls = mk.sel.cumulative(geom, 'holes', 'boundary')
+    assert len(mk.sel.entities(geom, walls)) == 24
+
+
+@pytest.mark.parametrize('copy', ['move', 'rotate', 'mirror'])
+def test_cumulative_copies_kept(model, geom, copy):
+    plate = mk.block(geom, (10, 10, 3))
+    holes = mk.sel.cumulative(geom, 'holes', 'domain', create=True)
+    hole = mk.cylinder(geom, 1, 5, (3, 5, -1), contributeto=holes)
+    if copy == 'move':
+        twin = mk.move(geom, hole, (4, 0, 0), keep=True)
+    elif copy == 'rotate':
+        twin = mk.rotate(geom, hole, 180, pos=(5, 5, 0), keep=True)
+    else:
+        twin = mk.mirror(geom, hole, (1, 0, 0), pos=(5, 0, 0), keep=True)
+    mk.difference(geom, plate, [hole, twin])
+    model.build(geom)
+    walls = mk.sel.cumulative(geom, 'holes', 'boundary')
+    assert len(mk.sel.entities(geom, walls)) == 8
 
 
 def test_cumulative_errors(model, geom):
@@ -551,6 +624,21 @@ def test_workplane_fillet_one_corner(model):
     mk.fillet(plane, corner, 0.3)
     assert extruded_volume(model, geom, plane) == pytest.approx(rounded(1),
                                                                 rel=0.005)
+
+
+def test_workplane_corner_single_value(model):
+    # an L-shaped plate, its inner corner rounded
+    volumes = []
+    for corner in ({'x': 10, 'y': 10}, {'x': (9.9, 10.1), 'y': (9.9, 10.1)}):
+        geom = mk.geometry(model, 3, length_unit='mm')
+        plane = mk.workplane(geom)
+        mk.polygon(plane, [0, 40, 40, 10, 10, 0], [0, 0, 10, 10, 30, 30])
+        mk.fillet(plane, mk.sel.box(plane, 'point', **corner), 2)
+        mk.extrude(geom, plane, 10)
+        model.build(geom)
+        volumes.append(mk.measure(geom, 'domain'))
+    assert volumes[0] == pytest.approx(volumes[1])
+    assert volumes[0] == pytest.approx(10*(600 + (1 - math.pi/4)*4), rel=1e-4)
 
 
 def test_workplane_fillet_adjacent(model):

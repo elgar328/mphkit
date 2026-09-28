@@ -24,6 +24,9 @@ Rules:
 - Select entities by location with `mk.sel` (box, ball, cylinder, disk,
   adjacent, set operations), never by entity number: numbers change with
   the geometry, selections are re-evaluated by COMSOL.
+- Besides locations, `mk.sel.result` selects what a feature left in the
+  geometry and `mk.sel.cumulative` collects groups across operations
+  (features join with `contributeto=`).
 - Entity kinds are COMSOL's: 'domain' (volumes in 3D), 'boundary' (faces
   in 3D, edges in 2D), 'edge', 'point' (vertices).
 - Extra keyword arguments are COMSOL property names (`r`, `h`, `pos`,
@@ -36,6 +39,15 @@ Check the result without looking at it: `mk.sel.entities(geom, sel)`
 (entity numbers), `mk.sel.find(geom, 'domain', x=...)`,
 `mk.measure(geom, 'domain')` (volume, area or length) and
 `mk.bounding_box(geom, 'boundary', ...)`.
+
+Selection tips: `mk.sel.result(geom, feature, 'boundary')` gives the faces
+an object and its copies left, curved ones included, and the faces it cut
+into others, e.g. the spherical faces a subtracted sphere leaves in a
+block. For the side of a cylinder that is still whole, use a thin shell
+bounded just beyond it: `mk.sel.cylinder(geom, 'boundary', pos, 1.01*r,
+rin=0.99*r, bottom=-0.01*h, top=1.01*h, name='side')` (a name avoids a
+clash with the cylinder's own label). Sizes and coordinates are in the
+geometry's length unit.
 
 More: `help(mk.sel)` for selections (also in work planes), `help(mk.block)`
 etc. for each helper, `mk.feature(geom, 'Type', ...)` for any other

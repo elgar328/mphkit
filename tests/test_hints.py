@@ -3,6 +3,7 @@ Checks the guidance for guessed names and the documentation's references.
 
 Runs without COMSOL, except the tests that execute the documented examples.
 """
+import inspect
 import re
 import subprocess
 import sys
@@ -122,17 +123,28 @@ def test_help_lists_no_hook():
 
 
 def documented_names(text):
-    """Returns the `mk.x` and `mphkit.x.y` references in a text."""
-    return set(re.findall(r'(?<![\w./])(?:mk|mphkit)((?:\.[A-Za-z_]\w*)+)',
-                          text))
+    """Returns the `mk.x`, `mphkit.x.y` and `sel.x` references in a text."""
+    names = set(re.findall(r'(?<![\w./])(?:mk|mphkit)((?:\.[A-Za-z_]\w*)+)',
+                           text))
+    names |= {f'.sel.{name}' for name in
+              re.findall(r'(?<![\w./])sel\.([A-Za-z_]\w*)', text)}
+    return names
 
 
-@pytest.mark.parametrize('source', ['README.md', 'mphkit', 'mphkit.sel'])
+# README, the module docs and the docs of every public helper
+docs = {'README.md': readme, 'mphkit': mk.__doc__,
+        'mphkit.sel': mk.sel.__doc__}
+docs.update({f'mphkit.{name}': inspect.getdoc(getattr(mk, name)) or ''
+             for name in mk.__all__ + ['set'] if name != 'sel'})
+docs.update({f'mphkit.sel.{name}': inspect.getdoc(getattr(mk.sel, name)) or ''
+             for name in mk.sel.__all__})
+
+
+@pytest.mark.parametrize('source', docs)
 def test_documented_names_exist(source):
-    text = {'README.md': readme, 'mphkit': mk.__doc__,
-            'mphkit.sel': mk.sel.__doc__}[source]
-    names = documented_names(text)
-    assert names
+    names = documented_names(docs[source])
+    if source in ('README.md', 'mphkit', 'mphkit.sel'):
+        assert names
     for name in names:
         target = mk
         for part in name.strip('.').split('.'):

@@ -111,6 +111,10 @@ def feature(parent: Node, type: str, /, *, name: str | None = None,
     mix numbers and expressions are converted for COMSOL. Arguments that
     are `None` are skipped.
 
+    Every helper that creates a feature passes extra keyword arguments on
+    to COMSOL, e.g. `contributeto=` to add the result to a cumulative
+    selection (`sel.cumulative`).
+
     If setting a property fails, the new feature is removed again and the
     error is raised. Returns the feature node.
     """
@@ -269,7 +273,8 @@ def rotate(parent: Node, /, input, rot, *, pos=None, axis=None,
     """
     Creates a Rotate of the `input` objects by `rot` degrees.
 
-    A list of angles makes several copies. `pos` is a point on the axis.
+    A list of angles makes several copies; pass `keep=True` to keep the
+    originals. `pos` is a point on the axis.
     In 3D, `axis` is `'x'`, `'y'`, `'z'` (default) or a direction vector;
     2D rotations (also in a work plane) have no axis.
     """
@@ -455,6 +460,13 @@ def workplane(geom: Node, /, *, name: str | None = None, **properties) -> Node:
     """
     Creates a Work Plane, for example `quickz=5`.
 
+    By default the plane is the xy plane at z = 0 (`quickplane='xy'`,
+    `quickz=0`). `quickplane` names the global axes that the plane's x and
+    y lie on, e.g. `'yz'` or `'xz'`; the offset along the third axis is
+    `quickx`, `quicky` or `quickz`. `extrude()` goes along x × y: +x for
+    `'yz'`, +y for `'zx'`, but -y for `'xz'` (likewise -x for `'zy'` and
+    -z for `'yx'`).
+
     With `unite=True` the plane's 2D objects are imprinted into the 3D
     geometry, e.g. to create an evaluation surface. Add 2D features with
     `square(wp, ...)`, `rectangle(wp, ...)`, `circle(wp, ...)` or
@@ -493,7 +505,13 @@ def polygon(parent: Node, /, x, y, *, name: str | None = None,
 
 def extrude(geom: Node, /, input, distance, *, name: str | None = None,
             **properties) -> Node:
-    """Extrudes `input` (e.g. a work plane) by `distance` (scalar or list)."""
+    """
+    Extrudes `input`, usually a work plane, by `distance`.
+
+    The plane's 2D objects are extruded along its normal (see
+    `workplane()`). `distance` is a length, or a list of distances from the
+    plane, e.g. `[1, 3]` for layers from 0 to 1 and from 1 to 3.
+    """
     if not isinstance(distance, (list, tuple)):
         distance = [distance]
     return feature(geom, 'Extrude', name=name, input=input,

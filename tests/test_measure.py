@@ -16,6 +16,15 @@ def pair(model, geom):
     return geom
 
 
+@pytest.mark.parametrize('unit', ['m', 'mm'])
+def test_measure_length_unit(model, unit):
+    geom = mk.geometry(model, 3, length_unit=unit)
+    mk.block(geom, (10, 10, 10))
+    model.build(geom)
+    assert mk.measure(geom, 'domain') == pytest.approx(1000)
+    assert mk.bounding_box(geom, 'domain')['x'] == pytest.approx((0, 10))
+
+
 def test_measure_levels(pair):
     assert mk.measure(pair, 'domain', 1) == pytest.approx(1000)
     assert mk.measure(pair, 'domain') == pytest.approx(2000)

@@ -205,6 +205,9 @@ def cylinder(geom: Node, entity: str, /, pos, r, *, axis=None, top=None,
     `'z'` (default) or a vector. `top` and `bottom` are measured from `pos`
     along the axis; left out, the cylinder is unbounded. With `rin` it is a
     shell, e.g. `r=2.1, rin=1.9` picks the side faces of an r=2 cylinder.
+    Bound the shell with `top` and `bottom` slightly beyond the cylinder,
+    e.g. `bottom=-0.01*h, top=1.01*h`; unbounded, it also picks side faces
+    of other objects on the same axis.
     `condition` defaults to `'inside'`, see `box()`. In 2D use `disk()`.
     Radii and `top`/`bottom` get no automatic margin: give them a little
     room, e.g. `1.01*r`.
@@ -245,7 +248,12 @@ def disk(geom: Node, entity: str, /, center, r, *, rin=None,
 
 def all_(geom: Node, entity: str, /, *, where: str | None = None,
          name: str | None = None) -> Node:
-    """Selects all entities of one kind, e.g. all boundaries."""
+    """
+    Selects all entities of one kind, e.g. all boundaries.
+
+    Use it as `mk.sel.all`: `from mphkit.sel import *` would replace
+    Python's built-in `all`.
+    """
     properties = {'entitydim': _level(geom, entity, where),
                   'condition': 'intersects'}
     return _create(geom, 'Box', where, name, properties)
@@ -325,7 +333,8 @@ def result(geom: Node, feature: Node, entity: str, /, *,
     clash = _comsol.selection_labels(geom.model, exclude_prefix=own)
     if feature.name() in clash:
         raise ValueError(f'A selection is already named "{feature.name()}"; '
-                         'rename the feature first.')
+                         'rename the feature, or give that selection '
+                         'another name (`name=` when creating it).')
     was_on = str(java.getString('selresult')) == 'on'
     _comsol.set_property(java, 'selresult', True)
     if 'selresultshow' in known:
@@ -447,19 +456,25 @@ def cumulative(geom: Node, group, entity: str, /, *, create: bool = False,
     "holes (Boundary)". The same steps here:
 
     ```python
+    plate = mk.block(geom, (60, 40, 5))
     holes = mk.sel.cumulative(geom, 'holes', 'domain', create=True)  # New
-    mk.cylinder(geom, 1, 5, (x, 0, 0), contributeto=holes)  # Contribute to
-    walls = mk.sel.cumulative(geom, 'holes', 'boundary')    # holes (Boundary)
+    # Contribute to
+    hole = mk.cylinder(geom, 3, 7, (15, 10, -1), contributeto=holes)
+    row = mk.array(geom, hole, size=(3, 2, 1), displ=(15, 20, 0))
+    mk.difference(geom, plate, [row])
+    walls = mk.sel.cumulative(geom, 'holes', 'boundary')  # holes (Boundary)
     ```
 
     `group` is the cumulative selection's name, or a node returned by this
     function. `create=True` creates it and fails if it exists; otherwise it
     must exist, so a typo raises instead of giving an empty selection.
     Features take the node or the name as `contributeto`. It holds every
-    entity of the contributing objects and survives later Boolean
-    operations. Only top-level features of the geometry can contribute,
-    not features inside a work plane. Calling this again returns the same
-    selection.
+    entity of the contributing objects, including copies made by `array`,
+    `move`, `rotate` or `mirror` (also with `keep=True`), and survives
+    later Boolean operations: above, `walls` are the walls of the six
+    holes. The copying feature may also take `contributeto=` itself. Only
+    top-level features of the geometry can contribute, not features inside
+    a work plane. Calling this again returns the same selection.
     """
     _comsol.check_not_workplane(geom, 'sel.cumulative')
     entity = _comsol.entity_name(geom, entity)

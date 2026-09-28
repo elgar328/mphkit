@@ -62,7 +62,8 @@ def _final(geom: Node, entity: str, selection):
 
 def measure(geom: Node, entity: str, /, selection=None) -> float:
     """
-    Returns the size of entities: volume, area or length.
+    Returns the size of entities: volume, area or length, in the
+    geometry's length unit (mm³ for a volume with `length_unit='mm'`).
 
     What is measured follows the level of `entity`: the volume of domains
     (the area of 2D domains), the area of boundaries, the length of edges.
@@ -84,7 +85,8 @@ def measure(geom: Node, entity: str, /, selection=None) -> float:
 
 def bounding_box(geom: Node, entity: str, /, selection=None) -> dict | None:
     """
-    Returns the bounding box of entities as `{'x': (min, max), ...}`.
+    Returns the bounding box of entities as `{'x': (min, max), ...}`, in
+    the geometry's length unit.
 
     Has one pair per space dimension, so it can be passed on as
     `sel.box(geom, entity, **box)`. For a single point, min equals max: its

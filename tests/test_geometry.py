@@ -710,3 +710,37 @@ def test_property_suggestion_by_type(geom):
     # an alias without a candidate still gets the close names
     with pytest.raises(ValueError, match="'angles'|'angle1'"):
         mk.feature(geom, 'Revolve', input=[plane.tag()], angle=90)
+
+
+def test_workplane_defaults(geom):
+    plane = mk.workplane(geom)
+    assert plane.java.getString('quickplane') == 'xy'
+    assert plane.java.getString('quickz') == '0'
+
+
+@pytest.mark.parametrize('quickplane, box', [
+    ('xy', {'x': (0, 1), 'y': (0, 2), 'z': (0, 3)}),
+    ('yz', {'x': (0, 3), 'y': (0, 1), 'z': (0, 2)}),
+    ('zx', {'x': (0, 2), 'y': (0, 3), 'z': (0, 1)}),
+    ('xz', {'x': (0, 1), 'y': (-3, 0), 'z': (0, 2)}),
+    ('zy', {'x': (-3, 0), 'y': (0, 2), 'z': (0, 1)}),
+    ('yx', {'x': (0, 2), 'y': (0, 1), 'z': (-3, 0)}),
+])
+def test_workplane_axes(model, geom, quickplane, box):
+    plane = mk.workplane(geom, quickplane=quickplane)
+    mk.rectangle(plane, (1, 2))
+    mk.extrude(geom, plane, 3)
+    model.build(geom)
+    found = mk.bounding_box(geom, 'domain')
+    for axis in 'xyz':
+        assert found[axis] == pytest.approx(box[axis], abs=1e-6)
+
+
+def test_extrude_distance_list(model, geom):
+    plane = mk.workplane(geom)
+    mk.square(plane, 2)
+    mk.extrude(geom, plane, [1, 3])
+    model.build(geom)
+    assert count(geom, 'domains') == 2
+    assert len(mk.sel.find(geom, 'boundary', z=1)) == 1
+    assert len(mk.sel.find(geom, 'boundary', z=3)) == 1

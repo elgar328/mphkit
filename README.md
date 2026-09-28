@@ -51,6 +51,10 @@ Good to know:
   `'edge'`, `'point'`.
 - Extra keyword arguments are COMSOL property names (`r`, `h`, `pos`,
   `size`), so the COMSOL documentation of each feature applies.
+- `mk.measure` and `mk.bounding_box` return values in the geometry's
+  length unit.
+- Curved faces: `mk.sel.result(geom, feature, 'boundary')`, or for a whole
+  cylinder side a thin `mk.sel.cylinder` shell (see `help(mphkit)`).
 - `help(mphkit)` sums up the workflow and rules, and each helper has its
   own `help()`; it is also what to point an AI assistant to.
 
