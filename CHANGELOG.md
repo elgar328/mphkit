@@ -13,10 +13,13 @@ until 1.0, a minor release (0.2, 0.3, ...) may change the API. See
 
 - Unknown names on `mphkit` and `mphkit.sel` raise an `AttributeError`
   that names the helper probably meant, e.g. `mk.box` suggests
-  `mphkit.sel.box` to select or `mphkit.block` to create, and points to
+  `mphkit.sel.box` to select or `mphkit.block` to create, points to
+  `mphkit.feature` for features without a helper (`mk.cone`), and to
   `help(mphkit)`.
-- Unknown entity kinds suggest COMSOL's name (`'face'` → `'boundary'` in
-  3D), and unknown property names suggest COMSOL's (`radius` → `r`).
+- Unknown entity kinds, including entity levels given as numbers, suggest
+  COMSOL's name (`'face'` → `'boundary'` in 3D, `2` → `'boundary'`), and
+  unknown property names suggest COMSOL's (`radius` → `r`, or `rmaj` and
+  `rmin` on a torus).
 
 ## [0.1.0] - 2026-09-27
 

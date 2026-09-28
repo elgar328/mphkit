@@ -37,6 +37,35 @@ def message(module, name):
     (mk.sel, 'set', 'Did you mean mphkit.set?'),
     (mk.sel, 'faces', "mphkit.sel.box(geom, 'boundary', ...)"),
     (mk.sel, 'point', "mphkit.sel.all(geom, 'point')"),
+    # a prefix says what is meant
+    (mk, 'select_cylinder', 'Did you mean mphkit.sel.cylinder?'),
+    (mk.sel, 'create_cylinder', 'Did you mean mphkit.cylinder?'),
+    (mk, 'select_sphere', 'Did you mean mphkit.sel.ball (select) or'),
+    (mk, 'create_box', 'Did you mean mphkit.block (create) or'),
+    (mk.sel, 'create_box', 'Did you mean mphkit.block (create) or'),
+    (mk, 'select_line', "mphkit.sel.box(geom, 'edge', ...)"),
+    (mk, 'select_volume', "mphkit.sel.box(geom, 'domain', ...)"),
+    (mk, 'find_edges', "Did you mean mphkit.sel.find(geom, 'edge', ...)?"),
+    (mk.sel, 'find_faces', "Did you mean mphkit.sel.find(geom, 'boundary', ...)?"),
+    (mk, 'get_boundaries', 'or mphkit.sel.entities(geom, selection)?'),
+    (mk, 'get_volume', 'Did you mean mphkit.measure?'),
+    # entity words ask for a selection, except where they name a helper
+    (mk, 'faces', "mphkit.sel.box(geom, 'boundary', ...)"),
+    (mk, 'points', 'mphkit.point creates a point.'),
+    (mk.sel, 'points', 'mphkit.point creates a point.'),
+    (mk.sel, 'line', "mphkit.sel.box(geom, 'edge', ...)"),
+    (mk, 'line', 'Did you mean mphkit.line_segment?'),
+    (mk, 'volume', 'Did you mean mphkit.measure?'),
+    (mk.sel, 'all_boundaries', "Did you mean mphkit.sel.all(geom, 'boundary', ...)?"),
+    # plurals, meanings and features without a helper
+    (mk, 'boxes', 'Did you mean mphkit.sel.box (select)'),
+    (mk, 'polyline', 'Did you mean mphkit.polygon?'),
+    (mk, 'subtract', 'Did you mean mphkit.difference?'),
+    (mk, 'merge', 'Did you mean mphkit.union?'),
+    (mk, 'translate', 'Did you mean mphkit.move?'),
+    (mk, 'cone', "Did you mean mphkit.feature(geom, 'Cone', ...)?"),
+    (mk, 'bounding', 'Did you mean mphkit.bounding_box?'),
+    (mk, 'fillet_edges', 'Did you mean mphkit.fillet?'),
 ])
 def test_suggestion(module, name, expected):
     text = message(module, name)
@@ -49,6 +78,10 @@ def test_no_suggestion_still_points_to_help():
     text = message(mk, 'xyzzy')
     assert 'Did you mean' not in text
     assert 'help(mphkit)' in text
+    # no far-fetched matches, and no module suggesting itself
+    assert 'Did you mean' not in message(mk, 'rect')
+    assert 'mphkit.sel?' not in message(mk.sel, 'selection')
+    assert message(mk, 'bounding').count('mphkit.') == 1
 
 
 def test_python_adds_no_second_suggestion():

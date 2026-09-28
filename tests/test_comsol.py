@@ -105,9 +105,27 @@ def test_entity_unknown_explains_names(geom):
         mk.sel.box(geom, 'xyz', z=0)
     assert 'Did you mean' not in str(error.value)
     assert "COMSOL's names: 'domain'" in str(error.value)
-    # 'object' is suggested only where it is valid
-    with pytest.raises(ValueError, match="Did you mean 'object'\\?"):
+    # 'object' is suggested only by selections, with where='geometry'
+    with pytest.raises(ValueError, match="Did you mean 'object'\\?") as error:
         mk.sel.box(geom, 'objects', x=0, where='geometry')
+    assert 'needs' not in str(error.value)
+    with pytest.raises(ValueError, match="needs where='geometry'"):
+        mk.sel.box(geom, 'objects', x=0)
     with pytest.raises(ValueError) as error:
         mk.measure(geom, 'objects')
     assert 'Did you mean' not in str(error.value)
+
+
+def test_entity_level_number(model, geom):
+    # a level given as a number, as physics features take it
+    with pytest.raises(ValueError, match="Did you mean 'boundary'\\?"):
+        mk.sel.box(geom, 2, z=0)
+    with pytest.raises(ValueError, match="Did you mean 'edge'\\?"):
+        mk.sel.box(geom, 1, z=0)
+    flat = mk.geometry(model, 2, name='flat')
+    with pytest.raises(ValueError, match="Did you mean 'boundary'\\?"):
+        mk.sel.box(flat, 1, x=0)
+    for level in (5, True):
+        with pytest.raises(ValueError) as error:
+            mk.sel.box(geom, level, z=0)
+        assert 'Did you mean' not in str(error.value)

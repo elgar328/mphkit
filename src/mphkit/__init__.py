@@ -27,8 +27,8 @@ Rules:
 - Entity kinds are COMSOL's: 'domain' (volumes in 3D), 'boundary' (faces
   in 3D, edges in 2D), 'edge', 'point' (vertices).
 - Extra keyword arguments are COMSOL property names (`r`, `h`, `pos`,
-  `size`, `rot`, ...); an unknown name raises an error suggesting the right
-  one.
+  `size`, `rot`, ...); an unknown name raises an error that often suggests
+  the right one.
 - Build the geometry (`model.build(geom)`) before querying it, and again
   after adding a `where='geometry'` selection.
 

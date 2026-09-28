@@ -8,12 +8,13 @@ the helper that was probably meant and a pointer to `help()`.
 The hook is a module subclass rather than a module-level `__getattr__`:
 type checkers treat a module with `__getattr__` as having every attribute,
 so editors would stop flagging misspelled names, and `help()` would list
-the hook among the helpers.
+the hook among the helpers. `from mphkit import box` shows no hint: Python
+turns the error into its own `ImportError`.
 """
 from __future__ import annotations
 
 import sys
-from difflib import get_close_matches
+from difflib import SequenceMatcher
 from types import ModuleType
 
 from ._comsol import entity_suggestion
@@ -21,8 +22,9 @@ from ._comsol import entity_suggestion
 MAIN = 'mphkit'
 SEL = 'mphkit.sel'
 
-# Prefixes of guessed names, as in `create_block` or `select_box`.
-PREFIXES = ('create_', 'make_', 'add_', 'new_', 'get_', 'select_', 'find_')
+# Prefixes of guessed names and what they ask for, as in `select_box`.
+SELECT_PREFIXES = ('select_', 'find_', 'get_')
+CREATE_PREFIXES = ('create_', 'make_', 'add_', 'new_')
 
 # Shape words: the selection helper and the helper creating that shape.
 SHAPES = {
@@ -39,6 +41,19 @@ MEANINGS = {
     'length': 'mphkit.measure', 'bbox': 'mphkit.bounding_box',
     'bounds': 'mphkit.bounding_box', 'select': 'mphkit.sel',
     'selection': 'mphkit.sel', 'selections': 'mphkit.sel',
+    'subtract': 'mphkit.difference', 'cut': 'mphkit.difference',
+    'minus': 'mphkit.difference', 'merge': 'mphkit.union',
+    'fuse': 'mphkit.union', 'combine': 'mphkit.union',
+    'translate': 'mphkit.move', 'shift': 'mphkit.move',
+    'rotation': 'mphkit.rotate', 'extrusion': 'mphkit.extrude',
+    'line': 'mphkit.line_segment', 'polyline': 'mphkit.polygon',
+}
+
+# Geometry features without a named helper, created with `feature()`.
+FEATURES = {
+    'cone': 'Cone', 'torus': 'Torus', 'sweep': 'Sweep', 'loft': 'Loft',
+    'scale': 'Scale', 'copy': 'Copy', 'ellipse': 'Ellipse',
+    'ellipsoid': 'Ellipsoid', 'helix': 'Helix',
 }
 
 
@@ -76,44 +91,123 @@ def _message(module: str, name: str) -> str:
     return f'{message} See help({module}) for all helpers.'
 
 
-def _names() -> dict[str, list[str]]:
-    """Returns the public names of both modules."""
+def _names() -> dict[str, dict[str, str]]:
+    """Returns the public names of both modules, keyed by lower case."""
     main = sys.modules[MAIN]
     sel = sys.modules[SEL]
-    return {MAIN: sorted(set(main.__all__) | {'set'}), SEL: sorted(sel.__all__)}
+    return {MAIN: {n.lower(): n for n in [*main.__all__, 'set']},
+            SEL: {n.lower(): n for n in sel.__all__}}
 
 
-def _suggest(module: str, name: str) -> tuple[list[str], str | None]:
-    """Returns qualified names that `name` probably meant, and a note."""
+def _parse(low: str) -> tuple[str | None, str | None, str]:
+    """Splits a guessed name into its intent, its prefix and the rest."""
+    for intent, prefixes in (('select', SELECT_PREFIXES),
+                             ('create', CREATE_PREFIXES)):
+        for prefix in prefixes:
+            if low.startswith(prefix) and len(low) > len(prefix):
+                return intent, prefix, low[len(prefix):]
+    return None, None, low
+
+
+def _select_note(kind: str) -> str:
+    """Explains how entities of a kind are selected."""
+    note = (f'Entities are selected by location, e.g. '
+            f'mphkit.sel.box(geom, {kind!r}, ...) or '
+            f'mphkit.sel.all(geom, {kind!r}).')
+    if kind == 'point':
+        note += ' mphkit.point creates a point.'
+    return note
+
+
+Result = tuple[list[str], 'str | None']
+
+
+def _suggest(module: str, name: str) -> Result:
+    """Returns the qualified names that `name` probably meant, and a note."""
     names = _names()
-    other = SEL if module == MAIN else MAIN
-    low = name.lower()
-    keys = [low] + [low[len(p):] for p in PREFIXES
-                    if low.startswith(p) and len(low) > len(p)]
+    intent, prefix, rest = _parse(name.lower())
+
+    # Selecting or finding entities of a kind, as in `select_faces`
+    if intent == 'select':
+        if prefix == 'get_' and rest in MEANINGS:
+            return [MEANINGS[rest]], None
+        kind = entity_suggestion(rest)
+        if kind:
+            if prefix == 'select_':
+                return [], _select_note(kind)
+            found = [f'mphkit.sel.find(geom, {kind!r}, ...)']
+            if prefix == 'get_':
+                found.append('mphkit.sel.entities(geom, selection)')
+            return found, None
+    # In `mphkit.sel`, an entity word asks for a selection (`sel.lines`)
     if module == SEL:
-        for key in keys:
-            kind = entity_suggestion(key)
-            if kind:
-                return [], (f'Entities are selected by location, e.g. '
-                            f'mphkit.sel.box(geom, {kind!r}, ...) or '
-                            f'mphkit.sel.all(geom, {kind!r}).')
-    for key in keys:
-        if key in SHAPES:
-            select, create = SHAPES[key]
-            both = [f'mphkit.sel.{select} (select)',
-                    f'mphkit.{create} (create)']
-            if module == MAIN and key not in names[SEL]:
-                both.reverse()
-            return both, None
-    for key in keys:
-        for where in (module, other):
-            if key in names[where]:
-                return [f'{where}.{key}'], None
-    for key in keys:
-        if key in MEANINGS:
-            return [MEANINGS[key]], None
-    close = []
-    for where in (module, other):
-        close += [f'{where}.{n}'
-                  for n in get_close_matches(low, names[where], n=3)]
-    return close[:3], None
+        kind = entity_suggestion(rest)
+        if kind:
+            return [], _select_note(kind)
+    direct = _direct(module, names, intent, rest)
+    if direct:
+        return direct
+    if module == MAIN:
+        kind = entity_suggestion(rest)
+        if kind:
+            return [], _select_note(kind)
+    # A selection helper and an entity kind, as in `all_boundaries`, or a
+    # helper and what it acts on, as in `measure_volume`
+    head, _, tail = rest.partition('_')
+    kind = entity_suggestion(tail) if tail else None
+    if kind and head in names[SEL]:
+        return [f'mphkit.sel.{names[SEL][head]}(geom, {kind!r}, ...)'], None
+    if tail:
+        direct = _direct(module, names, intent, head)
+        if direct:
+            return direct
+    # Plurals, as in `boxes`
+    for stem in (rest[:-2] if rest.endswith('es') else None,
+                 rest[:-1] if rest.endswith('s') else None):
+        if stem:
+            direct = _direct(module, names, intent, stem)
+            if direct:
+                return direct
+    return _close(module, names, rest), None
+
+
+def _direct(module: str, names: dict[str, dict[str, str]],
+            intent: str | None, key: str) -> Result | None:
+    """Suggests helpers for a shape word, a helper name or a meaning."""
+    if key in SHAPES:
+        select, create = SHAPES[key]
+        both = [f'mphkit.sel.{select} (select)', f'mphkit.{create} (create)']
+        if intent == 'create' or (intent is None and module == MAIN
+                                  and key not in names[SEL]):
+            both.reverse()
+        return both, None
+    order = {'select': (SEL, MAIN), 'create': (MAIN, SEL)}.get(
+        intent or '', (module, SEL if module == MAIN else MAIN))
+    for where in order:
+        if key in names[where]:
+            return [f'{where}.{names[where][key]}'], None
+    if key in MEANINGS and MEANINGS[key] != module:
+        return [MEANINGS[key]], None
+    if key in FEATURES:
+        return [f'mphkit.feature(geom, {FEATURES[key]!r}, ...)'], None
+    return None
+
+
+def _close(module: str, names: dict[str, dict[str, str]],
+           key: str) -> list[str]:
+    """Returns up to three names close to `key`, from both modules."""
+    scored = []
+    for where in (module, SEL if module == MAIN else MAIN):
+        for low, real in names[where].items():
+            ratio = SequenceMatcher(None, key, low).ratio()
+            if ratio >= 0.7:
+                scored.append((-ratio, where != module, f'{where}.{real}'))
+    scored.sort()
+    if not scored:
+        return []
+    best = -scored[0][0]
+    found: list[str] = []
+    for ratio, _, qualified in scored:
+        if -ratio >= best - 0.1 and qualified not in found:
+            found.append(qualified)
+    return found[:3]

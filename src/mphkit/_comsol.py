@@ -6,6 +6,7 @@ here, so that a change in either needs a fix in one place only.
 """
 from __future__ import annotations
 
+import numbers
 from collections.abc import Iterable
 from difflib import get_close_matches
 
@@ -35,23 +36,27 @@ ENTITY_GLOSSARY = ("COMSOL's names: 'domain' (volumes in 3D, areas in 2D), "
                    "'boundary' (faces in 3D, edges in 2D), 'edge', 'point' "
                    "(vertices).")
 
-# Everyday words for COMSOL property names, suggested in error messages
-# when the target exists on the object. `count` and `copies` apply to
-# Array only, where `size` is the number of copies; `dimensions` and
-# `dims` to everything else, where `size` is a length.
+# Everyday words for COMSOL property names, suggested in error messages:
+# the candidates the object has (e.g. `rmaj` and `rmin` on a torus).
 PROPERTY_ALIASES = {
-    'radius': 'r', 'height': 'h',
-    'position': 'pos', 'origin': 'pos', 'location': 'pos',
-    'center': 'pos', 'centre': 'pos',
-    'angle': 'rot', 'rotation': 'rot',
-    'displacement': 'displ', 'offset': 'displ', 'spacing': 'displ',
-    'normal': 'axis',
-    'thickness': 'distance', 'length': 'distance', 'depth': 'distance',
-    'dimensions': 'size', 'dims': 'size',
-    'count': 'size', 'copies': 'size',
+    'radius': ('r', 'rmaj', 'rmin'), 'height': ('h',),
+    'position': ('pos',), 'origin': ('pos',), 'location': ('pos',),
+    'center': ('pos',), 'centre': ('pos',),
+    'angle': ('rot', 'angles', 'angle1', 'angle2'), 'rotation': ('rot',),
+    'displacement': ('displ', 'displx', 'disply', 'displz'),
+    'offset': ('displ', 'displx', 'disply', 'displz'), 'spacing': ('displ',),
+    'normal': ('normalvector', 'axis'),
+    'thickness': ('distance',), 'length': ('distance',),
+    'depth': ('distance',),
+    'dimensions': ('size',), 'dims': ('size',),
+    'count': ('size',), 'copies': ('size',),
 }
-ARRAY_ONLY = ('count', 'copies')
-NOT_ARRAY = ('dimensions', 'dims')
+# Aliases that hold for some feature types only: an Array's `size` is the
+# number of copies, and the `axis` of a Rotate or Revolve is the rotation
+# axis, not a normal.
+ALIAS_ONLY = {('count', 'size'): ('Array',), ('copies', 'size'): ('Array',),
+              ('normal', 'axis'): ('Mirror',)}
+ALIAS_NOT = {('dimensions', 'size'): ('Array',), ('dims', 'size'): ('Array',)}
 
 
 #########################
@@ -90,6 +95,16 @@ def entity_suggestion(entity, dim: int = 3) -> str | None:
     return ENTITY_ALIASES.get(key)
 
 
+def entity_level_name(level: int, dim: int) -> str | None:
+    """Names the entity level `level` (0 to `dim`) of a geometry."""
+    names = {0: 'point', dim: 'domain'}
+    if dim >= 2:
+        names[dim - 1] = 'boundary'
+    if dim == 3:
+        names[1] = 'edge'
+    return names.get(level)
+
+
 def entity_error(geom: Node, entity, allowed=ENTITIES) -> str:
     """Explains an unknown entity name, suggesting COMSOL's name for it."""
     try:
@@ -97,7 +112,10 @@ def entity_error(geom: Node, entity, allowed=ENTITIES) -> str:
     except Exception:
         dim = 3
     message = f'Entity must be one of {allowed}, not {entity!r}.'
-    suggestion = entity_suggestion(entity, dim)
+    if isinstance(entity, numbers.Integral) and not isinstance(entity, bool):
+        suggestion = entity_level_name(int(entity), dim)
+    else:
+        suggestion = entity_suggestion(entity, dim)
     if suggestion:
         message += f' Did you mean {suggestion!r}?'
     return f'{message} {ENTITY_GLOSSARY}'
@@ -474,20 +492,33 @@ def property_suggestions(java, name: str, known: list[str]) -> list[str]:
     An everyday word such as `radius` maps to COMSOL's name (`'r'`) when
     the object has it; otherwise the closest names are suggested.
     """
+    same = [k for k in known if k.lower() == name.lower()]
+    if same:
+        return [repr(same[0])]
     key = name.lower()
-    target = PROPERTY_ALIASES.get(key)
-    if target in known:
-        array = type_name(java) == 'Array'
-        if not (key in ARRAY_ONLY and not array or key in NOT_ARRAY and array):
-            if key in ('center', 'centre'):
-                try:
-                    corner = str(java.getString('base')) == 'corner'
-                except Exception:
-                    corner = False
-                if corner:
-                    return ["'pos' with base='center'"]
-            return [repr(target)]
-    return [repr(c) for c in get_close_matches(name, known, n=3)]
+    kind = type_name(java)
+    found = [target for target in PROPERTY_ALIASES.get(key, ())
+             if target in known
+             and kind in ALIAS_ONLY.get((key, target), (kind,))
+             and kind not in ALIAS_NOT.get((key, target), ())]
+    if found == ['pos'] and key in ('center', 'centre'):
+        return [center_hint(java, kind)]
+    if found:
+        return [repr(target) for target in found[:3]]
+    return [repr(c) for c in get_close_matches(name, known, n=3, cutoff=0.7)]
+
+
+def center_hint(java, kind: str) -> str:
+    """Suggests how to place an object by its center."""
+    try:
+        corner = str(java.getString('base')) == 'corner'
+    except Exception:
+        corner = False
+    if corner:
+        return "'pos' with base='center'"
+    if kind in ('Cylinder', 'Cone'):
+        return "'pos' (the center of the base)"
+    return "'pos'"
 
 
 def set_properties(java, properties: dict, owner: Node = None,

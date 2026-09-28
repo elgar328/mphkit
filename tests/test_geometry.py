@@ -682,6 +682,11 @@ def test_delete_explicit_selection(model, geom):
      "'size'"),
     (lambda g: (mk.block(g, (1, 1, 1)), mk.feature(g, 'Rotate', angle=45)),
      "'rot'"),
+    (lambda g: mk.feature(g, 'Torus', radius=1), "'rmaj', 'rmin'"),
+    (lambda g: mk.cylinder(g, 1, 2, center=(0, 0, 0)),
+     "'pos' (the center of the base)"),
+    (lambda g: mk.block(g, (1, 1, 1), POS=(0, 0, 0)), "'pos'?"),
+    (lambda g: mk.workplane(g, normal=(0, 0, 1)), "'normalvector'"),
 ])
 def test_property_suggestion(geom, make, meant):
     with pytest.raises(ValueError) as error:
@@ -690,3 +695,18 @@ def test_property_suggestion(geom, make, meant):
     assert f'Did you mean {meant}' in text
     assert text.endswith('Extra keyword arguments are COMSOL property names.')
     assert "'axis'" not in text
+
+
+def test_property_suggestion_by_type(geom):
+    mk.block(geom, (1, 1, 1), name='b')
+    with pytest.raises(ValueError, match="'displx', 'disply', 'displz'"):
+        mk.feature(geom, 'Move', input=['b'], offset=(1, 0, 0))
+    # the axis of a Revolve is its rotation axis, not a normal
+    plane = mk.workplane(geom)
+    mk.circle(plane, 1, (3, 0))
+    with pytest.raises(ValueError) as error:
+        mk.revolve(geom, plane, normal=(0, 1))
+    assert "'axis'" not in str(error.value)
+    # an alias without a candidate still gets the close names
+    with pytest.raises(ValueError, match="'angles'|'angle1'"):
+        mk.feature(geom, 'Revolve', input=[plane.tag()], angle=90)
