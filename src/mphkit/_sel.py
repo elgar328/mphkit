@@ -1,6 +1,9 @@
 """Geometry-based selections; documented in `mphkit.sel`."""
 from __future__ import annotations
 
+import math
+import numbers
+
 from mph.node import Node
 from mph.node import escape
 
@@ -8,6 +11,7 @@ from . import _comsol
 from .geometry import feature
 
 WHERE = ('component', 'geometry')
+MARGIN = 1e-6  # relative margin of box bounds, see box()
 
 
 def _where(parent: Node, where: str | None) -> str:
@@ -119,9 +123,25 @@ def _bounds(geom: Node, **ranges) -> dict:
             low, high = value
         else:
             low = high = value
-        properties[f'{axis}min'] = low
-        properties[f'{axis}max'] = high
+        properties[f'{axis}min'] = _widen(low, -1)
+        properties[f'{axis}max'] = _widen(high, +1)
     return properties
+
+
+def _widen(value, sign: int):
+    """Widens a bound by a millionth of its value, away from the range."""
+    if isinstance(value, str):
+        op = '-' if sign < 0 else '+'
+        return f'({value}){op}1e-6*abs({value})'  # same text as box()
+    if isinstance(value, bool) or not isinstance(value, numbers.Real):
+        return value
+    try:
+        number = float(value)
+    except OverflowError:
+        return value  # passed on as text, see _comsol.convert
+    if not math.isfinite(number):
+        return number  # inf - inf would be NaN
+    return number + sign*MARGIN*abs(number)
 
 
 def box(geom: Node, entity: str, /, x=None, y=None, z=None, *,
@@ -130,17 +150,25 @@ def box(geom: Node, entity: str, /, x=None, y=None, z=None, *,
     """
     Selects the entities inside a box.
 
-    `x`, `y`, `z` are `(min, max)` ranges; a single value such as `z=0`
-    selects on that plane. Omitted coordinates are unbounded. With
-    `where='geometry'` (or in a work plane), `entity` may be `'object'` to
-    select whole objects as input of a geometry operation. `geom` may also
-    be a work plane, in the plane's coordinates, e.g. to fillet one corner
-    there (see `mphkit.sel` for what such selections can be used for).
+    `x`, `y`, `z` are `(min, max)` ranges; a single value such as `z=0.3`
+    selects on that plane (in 2D or a work plane, `x=10, y=10` is a
+    corner). Omitted coordinates are unbounded. Each bound gets a margin of
+    a millionth of its value, since COMSOL compares faces, edges and
+    domains in single precision; features thinner than that may be picked
+    too. So `x=1.1` is stored as 1.0999989 to 1.1000011, and `z='L'` as
+    `(L)-1e-6*abs(L)` to `(L)+1e-6*abs(L)`; pass `xmin=`, `xmax=`, ... to
+    set a bound exactly.
+
+    With `where='geometry'` (or in a work plane), `entity` may be
+    `'object'` to select whole objects as input of a geometry operation.
+    `geom` may also be a work plane, in the plane's coordinates, e.g. to
+    fillet one corner there (see `mphkit.sel` for what such selections can
+    be used for).
 
     `condition` defaults to `'inside'` (entity entirely inside the box).
-    This differs from COMSOL's default `'intersects'`, which on a plane
-    would also pick every face touching it. Other values: `'intersects'`,
-    `'allvertices'`, `'somevertex'`.
+    This differs from COMSOL's default `'intersects'`, which also picks
+    entities that only touch the box, e.g. every face touching a plane.
+    Other values: `'intersects'`, `'allvertices'`, `'somevertex'`.
     """
     properties = {'entitydim': _level(geom, entity, where),
                   'condition': condition,
@@ -154,7 +182,8 @@ def ball(geom: Node, entity: str, /, center, r, *,
     """
     Selects the entities inside a ball of radius `r` around `center`.
 
-    `condition` defaults to `'inside'`, see `box()`.
+    `condition` defaults to `'inside'`, see `box()`. The radius gets no
+    automatic margin: give it a little room, e.g. `1.01*r`.
     """
     dim = _comsol.parent_dim(geom)
     if len(center) != dim:
@@ -177,6 +206,8 @@ def cylinder(geom: Node, entity: str, /, pos, r, *, axis=None, top=None,
     along the axis; left out, the cylinder is unbounded. With `rin` it is a
     shell, e.g. `r=2.1, rin=1.9` picks the side faces of an r=2 cylinder.
     `condition` defaults to `'inside'`, see `box()`. In 2D use `disk()`.
+    Radii and `top`/`bottom` get no automatic margin: give them a little
+    room, e.g. `1.01*r`.
     """
     _comsol.check_not_workplane(geom, 'sel.cylinder')
     if _comsol.sdim(geom) != 3:
@@ -199,7 +230,8 @@ def disk(geom: Node, entity: str, /, center, r, *, rin=None,
     Selects the entities inside a disk of radius `r` around `center` (2D).
 
     With `rin` it is a ring. `condition` defaults to `'inside'`, see
-    `box()`. In 3D use `cylinder()` or `ball()`.
+    `box()`. In 3D use `cylinder()` or `ball()`. Radii get no automatic
+    margin: give them a little room, e.g. `1.01*r`.
     """
     if _comsol.parent_dim(geom) != 2:
         raise ValueError('sel.disk needs a 2D geometry; use sel.cylinder or '
@@ -388,11 +420,12 @@ def find(geom: Node, entity: str, /, x=None, y=None, z=None, *,
     """
     Returns the numbers of the entities inside a box, without a selection.
 
-    Takes the same arguments as `box()`, but removes the selection again
-    and returns the entity numbers. Meant for checks and lookups: entity
-    numbers change with the geometry, so physics should use `box()`. For a
-    lookup of another kind, create the selection, read it with `entities()`
-    and `remove()` it; leave out `name` to avoid label clashes.
+    Takes the coordinates and `condition` of `box()`, but removes the
+    selection again and returns the entity numbers. Meant for checks and
+    lookups: entity numbers change with the geometry, so physics should use
+    `box()`. For a lookup of another kind, create the selection, read it
+    with `entities()` and `remove()` it; leave out `name` to avoid label
+    clashes.
     """
     _comsol.check_not_workplane(geom, 'sel.find')
     node = box(geom, entity, x, y, z, condition=condition)

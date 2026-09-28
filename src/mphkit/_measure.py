@@ -87,9 +87,7 @@ def bounding_box(geom: Node, entity: str, /, selection=None) -> dict | None:
     Returns the bounding box of entities as `{'x': (min, max), ...}`.
 
     Has one pair per space dimension, so it can be passed on as
-    `sel.box(geom, entity, **box)`. Allow a margin then: the values may
-    carry single-precision noise, which makes `condition='inside'` miss
-    the entity itself. For a single point, min equals max: its
+    `sel.box(geom, entity, **box)`. For a single point, min equals max: its
     coordinates. `selection` works as in `measure()`. Returns `None` for
     an empty selection.
     """

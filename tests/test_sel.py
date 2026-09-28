@@ -266,6 +266,99 @@ def test_find(model, geom):
     assert tags() == before
 
 
+def odd_block(model, unit='m', pos=(1.1, 0.7, 0.3)):
+    """A built block at coordinates single precision cannot represent."""
+    geom = mk.geometry(model, 3, length_unit=unit)
+    mk.block(geom, (13, 2, 3), pos)
+    model.build(geom)
+    return geom
+
+
+@pytest.mark.parametrize('unit', ['m', 'mm'])
+def test_box_non_round_coordinates(model, unit):
+    geom = odd_block(model, unit)
+    assert len(mk.sel.find(geom, 'boundary', x=1.1)) == 1
+    assert len(mk.sel.find(geom, 'boundary', z=0.3)) == 1
+    assert len(mk.sel.find(geom, 'boundary', x=14.1)) == 1
+    assert len(mk.sel.find(geom, 'edge', x=1.1, z=0.3)) == 1
+    assert mk.sel.find(geom, 'domain', x=(1.1, 14.1), y=(0.7, 2.7),
+                       z=(0.3, 3.3)) == [1]
+    assert len(mk.sel.find(geom, 'point', x=1.1, y=0.7, z=0.3)) == 1
+
+
+def test_box_non_round_negative(model):
+    geom = odd_block(model, pos=(-14.1, -2.7, -3.3))
+    assert len(mk.sel.find(geom, 'boundary', x=-1.1)) == 1
+    assert len(mk.sel.find(geom, 'boundary', z=-0.3)) == 1
+
+
+def test_box_non_round_2d(model):
+    flat = mk.geometry(model, 2)
+    mk.rectangle(flat, (13, 2), (1.1, 0.7))
+    model.build(flat)
+    assert len(mk.sel.find(flat, 'boundary', x=1.1)) == 1
+    assert len(mk.sel.find(flat, 'boundary', y=0.7)) == 1
+
+
+def test_box_non_round_in_geometry_sequence(model):
+    geom = mk.geometry(model, 3)
+    mk.block(geom, (13, 2, 3), (1.1, 0.7, 0.3))
+    face = mk.sel.box(geom, 'boundary', x=1.1, where='geometry')
+    model.build(geom)
+    assert len(entities(face, 2)) == 1
+    other = mk.geometry(model, 3)
+    mk.block(other, (13, 2, 3), (1.1, 0.7, 0.3))
+    mk.block(other, (1, 1, 1), (20, 0, 0))
+    odd = mk.sel.box(other, 'object', x=(1.1, 14.1), y=(0.7, 2.7),
+                     z=(0.3, 3.3), where='geometry')
+    mk.delete(other, odd)
+    model.build(other)
+    assert count(other, 'domains') == 1
+
+
+def test_box_expression_bounds(model):
+    model.parameter('L', '0.3')
+    geom = odd_block(model)
+    assert len(mk.sel.find(geom, 'boundary', z='L')) == 1
+    top = mk.sel.box(geom, 'boundary', z='L')
+    assert top.java.getString('zmin') == '(L)-1e-6*abs(L)'
+    assert top.java.getString('zmax') == '(L)+1e-6*abs(L)'
+    # COMSOL's own bounds are set as given, without a margin
+    exact = mk.sel.box(geom, 'boundary', zmin=0.3, zmax=0.3)
+    assert exact.java.getString('zmin') == exact.java.getString('zmax') \
+        == '0.3'
+
+
+def test_box_open_and_infinite_bounds(model):
+    geom = odd_block(model)
+    face = mk.sel.find(geom, 'boundary', x=1.1)
+    assert len(face) == 1
+    assert mk.sel.find(geom, 'boundary', x=(None, 1.1)) == face
+    assert mk.sel.find(geom, 'boundary', x=math.inf) == []
+    assert len(mk.sel.find(geom, 'boundary', x=(-math.inf, math.inf))) == 6
+    assert len(mk.sel.find(geom, 'boundary', x=(0, 10**400))) == 6
+
+
+def test_box_zero_after_rotation(model, geom):
+    # Guard: zero gets no margin, as COMSOL rounds coordinates near it to 0.
+    blk = mk.block(geom, (2, 2, 2))
+    mk.rotate(geom, blk, 90)
+    model.build(geom)
+    assert len(mk.sel.find(geom, 'boundary', x=0)) == 1
+
+
+def test_bounding_box_round_trip(model, geom):
+    # Regression guard for the box/bounding_box contract; it passed before
+    # the margin too.
+    mk.block(geom, (13, 2, 3), (1.1, 0.7, 0.3))
+    mk.sphere(geom, 0.7, (20.3, 1.1, 1.3))
+    model.build(geom)
+    for entity in ('domain', 'boundary', 'edge', 'point'):
+        for n in mk.sel.find(geom, entity):
+            box = mk.bounding_box(geom, entity, n)
+            assert n in mk.sel.find(geom, entity, **box)
+
+
 def test_cylinder(model, geom):
     mk.block(geom, (10, 10, 4), name='low')
     shaft = mk.cylinder(geom, 2, 10, (5, 5, 0), name='shaft')

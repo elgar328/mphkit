@@ -34,6 +34,14 @@ until 1.0, a minor release (0.2, 0.3, ...) may change the API. See
 - Integers outside the 32-bit range, such as `2**31` or `10**400`, are
   passed to COMSOL as they are, instead of raising `OverflowError` in
   vectors or silently wrapping around otherwise (`2**32 + 1` became 1).
+- `sel.box` and `sel.find` find faces, edges and domains at coordinates
+  such as 0.3 or 1.1 that single precision cannot represent exactly, also
+  when given as expressions (`z='L'`). COMSOL compares them in single
+  precision, so these were missed; each bound now gets a margin of a
+  millionth of its value. With `condition='intersects'`, entities that
+  only touch such a bound are now picked too, as they already were at
+  round coordinates; pass `xmin=`, `xmax=`, ... to `sel.box` for exact
+  bounds.
 
 ## [0.1.0] - 2026-09-27
 
