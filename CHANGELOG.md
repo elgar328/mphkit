@@ -9,6 +9,15 @@ until 1.0, a minor release (0.2, 0.3, ...) may change the API. See
 
 ## [Unreleased]
 
+### Added
+
+- Unknown names on `mphkit` and `mphkit.sel` raise an `AttributeError`
+  that names the helper probably meant, e.g. `mk.box` suggests
+  `mphkit.sel.box` to select or `mphkit.block` to create, and points to
+  `help(mphkit)`.
+- Unknown entity kinds suggest COMSOL's name (`'face'` → `'boundary'` in
+  3D), and unknown property names suggest COMSOL's (`radius` → `r`).
+
 ## [0.1.0] - 2026-09-27
 
 First release.

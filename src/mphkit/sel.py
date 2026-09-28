@@ -28,6 +28,9 @@ are inputs of operations in that plane only: COMSOL derives no
 model-level selection from them, and physics refuses them ("Unknown
 selection"). They are returned as the selection feature in the plane.
 """
+import sys as _sys
+
+from ._hints import HintModule as _HintModule
 from ._sel import adjacent, all_ as all, ball, box, complement, \
     cumulative, cylinder, difference, disk, entities, find, intersection, \
     layer, result, union
@@ -35,3 +38,7 @@ from ._sel import adjacent, all_ as all, ball, box, complement, \
 __all__ = ['adjacent', 'all', 'ball', 'box', 'complement', 'cumulative',
            'cylinder', 'difference', 'disk', 'entities', 'find',
            'intersection', 'layer', 'result', 'union']
+
+# Unknown names raise errors that name the right helper (see _hints).
+_sys.modules[__name__].__class__ = _HintModule
+del _sys, _HintModule

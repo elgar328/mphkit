@@ -80,3 +80,34 @@ def test_create_java_args(model, geom):
                                      args=(geom.tag(),))
     assert str(container.get(tag).getType()) == 'Rotated'
     assert label == 'turned'
+
+
+@pytest.mark.parametrize('entity, meant', [
+    ('face', 'boundary'), ('Surfaces', 'boundary'), ('Boundary', 'boundary'),
+    ('volume', 'domain'), ('vertices', 'point'), ('lines', 'edge'),
+])
+def test_entity_suggestion(geom, entity, meant):
+    with pytest.raises(ValueError, match=f"Did you mean '{meant}'\\?"):
+        mk.sel.box(geom, entity, z=0)
+
+
+def test_entity_suggestion_2d(model, geom):
+    # in 2D, and in a work plane, a face is a domain
+    plane = mk.workplane(geom, quickz=0)
+    flat = mk.geometry(model, 2, name='flat')
+    for parent in (plane, flat):
+        with pytest.raises(ValueError, match="Did you mean 'domain'\\?"):
+            mk.sel.box(parent, 'face', x=0)
+
+
+def test_entity_unknown_explains_names(geom):
+    with pytest.raises(ValueError) as error:
+        mk.sel.box(geom, 'xyz', z=0)
+    assert 'Did you mean' not in str(error.value)
+    assert "COMSOL's names: 'domain'" in str(error.value)
+    # 'object' is suggested only where it is valid
+    with pytest.raises(ValueError, match="Did you mean 'object'\\?"):
+        mk.sel.box(geom, 'objects', x=0, where='geometry')
+    with pytest.raises(ValueError) as error:
+        mk.measure(geom, 'objects')
+    assert 'Did you mean' not in str(error.value)

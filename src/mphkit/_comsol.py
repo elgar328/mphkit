@@ -18,6 +18,41 @@ from ._expr import vector
 ENTITIES = ('domain', 'boundary', 'edge', 'point')
 RESULT_SUFFIX = {'domain': 'dom', 'boundary': 'bnd', 'edge': 'edg', 'point': 'pnt'}
 
+# Everyday words for entities, suggested (not accepted) in error messages.
+# Faces are boundaries in 3D but domains in 2D; see `entity_suggestion`.
+ENTITY_ALIASES = {
+    'boundaries': 'boundary',
+    'domains': 'domain', 'volume': 'domain', 'volumes': 'domain',
+    'region': 'domain', 'regions': 'domain', 'subdomain': 'domain',
+    'subdomains': 'domain', 'body': 'domain', 'bodies': 'domain',
+    'edges': 'edge', 'line': 'edge', 'lines': 'edge', 'curve': 'edge',
+    'curves': 'edge',
+    'points': 'point', 'vertex': 'point', 'vertices': 'point',
+    'corner': 'point', 'corners': 'point', 'node': 'point', 'nodes': 'point',
+}
+FACES = ('face', 'faces', 'surface', 'surfaces')
+ENTITY_GLOSSARY = ("COMSOL's names: 'domain' (volumes in 3D, areas in 2D), "
+                   "'boundary' (faces in 3D, edges in 2D), 'edge', 'point' "
+                   "(vertices).")
+
+# Everyday words for COMSOL property names, suggested in error messages
+# when the target exists on the object. `count` and `copies` apply to
+# Array only, where `size` is the number of copies; `dimensions` and
+# `dims` to everything else, where `size` is a length.
+PROPERTY_ALIASES = {
+    'radius': 'r', 'height': 'h',
+    'position': 'pos', 'origin': 'pos', 'location': 'pos',
+    'center': 'pos', 'centre': 'pos',
+    'angle': 'rot', 'rotation': 'rot',
+    'displacement': 'displ', 'offset': 'displ', 'spacing': 'displ',
+    'normal': 'axis',
+    'thickness': 'distance', 'length': 'distance', 'depth': 'distance',
+    'dimensions': 'size', 'dims': 'size',
+    'count': 'size', 'copies': 'size',
+}
+ARRAY_ONLY = ('count', 'copies')
+NOT_ARRAY = ('dimensions', 'dims')
+
 
 #########################
 # Geometry and entities #
@@ -45,10 +80,33 @@ def sdim(geom: Node) -> int:
     return int(geom.java.getSDim())
 
 
+def entity_suggestion(entity, dim: int = 3) -> str | None:
+    """Returns the COMSOL entity name meant by `entity`, or `None`."""
+    key = str(entity).lower()
+    if key in ENTITIES:
+        return key
+    if key in FACES:
+        return 'boundary' if dim == 3 else 'domain'
+    return ENTITY_ALIASES.get(key)
+
+
+def entity_error(geom: Node, entity, allowed=ENTITIES) -> str:
+    """Explains an unknown entity name, suggesting COMSOL's name for it."""
+    try:
+        dim = parent_dim(geom)
+    except Exception:
+        dim = 3
+    message = f'Entity must be one of {allowed}, not {entity!r}.'
+    suggestion = entity_suggestion(entity, dim)
+    if suggestion:
+        message += f' Did you mean {suggestion!r}?'
+    return f'{message} {ENTITY_GLOSSARY}'
+
+
 def entity_name(geom: Node, entity: str) -> str:
     """Validates an entity name; in 2D (and work planes) an edge is a boundary."""
     if entity not in ENTITIES:
-        raise ValueError(f'Entity must be one of {ENTITIES}, not {entity!r}.')
+        raise ValueError(entity_error(geom, entity))
     dim = parent_dim(geom)
     if entity == 'edge':
         if dim < 2:
@@ -389,9 +447,10 @@ def set_property(java, name: str, value):
             raise
         if name not in known:
             message = f'"{type_name(java)}" has no property "{name}".'
-            close = get_close_matches(name, known, n=3)
+            close = property_suggestions(java, name, known)
             if close:
-                message += f' Did you mean {", ".join(repr(c) for c in close)}?'
+                message += f' Did you mean {", ".join(close)}?'
+            message += ' Extra keyword arguments are COMSOL property names.'
             raise ValueError(message) from error
         if isinstance(value, bool) and value_type(java, name) == 'String':
             try:
@@ -406,6 +465,29 @@ def set_property(java, name: str, value):
                 f'{", ".join(repr(v) for v in allowed)}, not {value!r}.'
             ) from error
         raise
+
+
+def property_suggestions(java, name: str, known: list[str]) -> list[str]:
+    """
+    Suggests property names for the unknown `name`, quoted for a message.
+
+    An everyday word such as `radius` maps to COMSOL's name (`'r'`) when
+    the object has it; otherwise the closest names are suggested.
+    """
+    key = name.lower()
+    target = PROPERTY_ALIASES.get(key)
+    if target in known:
+        array = type_name(java) == 'Array'
+        if not (key in ARRAY_ONLY and not array or key in NOT_ARRAY and array):
+            if key in ('center', 'centre'):
+                try:
+                    corner = str(java.getString('base')) == 'corner'
+                except Exception:
+                    corner = False
+                if corner:
+                    return ["'pos' with base='center'"]
+            return [repr(target)]
+    return [repr(c) for c in get_close_matches(name, known, n=3)]
 
 
 def set_properties(java, properties: dict, owner: Node = None,

@@ -43,6 +43,17 @@ Every helper takes MPh `Node`s, and those that create something return
 one, so mphkit and MPh mix freely. Physics, mesh, study and results stay
 plain MPh (or the COMSOL Java API through `node.java`).
 
+Good to know:
+
+- Select entities by location (`mk.sel`), not by number: numbers change
+  when the geometry changes.
+- Entity kinds are COMSOL's: `'domain'`, `'boundary'` (faces in 3D),
+  `'edge'`, `'point'`.
+- Extra keyword arguments are COMSOL property names (`r`, `h`, `pos`,
+  `size`), so the COMSOL documentation of each feature applies.
+- `help(mphkit)` sums up the workflow and rules, and each helper has its
+  own `help()`; it is also what to point an AI assistant to.
+
 ## Requirements
 
 - COMSOL Multiphysics with a license, installed where MPh can find it
@@ -118,9 +129,6 @@ And a few helpers outside geometry:
 mk.coordinate_system(geom, 'PML', selection=layer)   # e.g. perfectly matched layers
 mk.set(mesh_size, hmax=0.5, hgrad=2)   # any node or Java object; converts ints and lists
 ```
-
-Arguments are COMSOL property names, so the COMSOL documentation of each
-feature applies. The docstrings describe each helper in detail.
 
 [`examples/plate_with_holes.py`](https://github.com/elgar328/mphkit/blob/main/examples/plate_with_holes.py)
 is a complete script, from geometry to solved results: heat conduction in

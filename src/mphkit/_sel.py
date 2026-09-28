@@ -31,6 +31,10 @@ def _where(parent: Node, where: str | None) -> str:
 def _level(geom: Node, entity: str, where: str | None) -> int:
     """Maps an entity name to `entitydim`; `'object'` is -1 (geometry only)."""
     where = _where(geom, where)
+    if entity != 'object' and str(entity).lower() in ('object', 'objects'):
+        raise ValueError(f"Entity must be one of "
+                         f"{_comsol.ENTITIES + ('object',)}, not {entity!r}. "
+                         f"Did you mean 'object'?")
     if entity == 'object':
         if where != 'geometry':
             raise ValueError("The 'object' level is for inputs of geometry "

@@ -669,3 +669,24 @@ def test_delete_explicit_selection(model, geom):
     model.build(geom)
     assert count(geom, 'domains') == 1
     assert [str(o) for o in geom.java.objectNames()] == ['del1']
+
+
+@pytest.mark.parametrize('make, meant', [
+    (lambda g: mk.cylinder(g, radius=1, h=2), "'r'"),
+    (lambda g: mk.block(g, (1, 1, 1), position=(0, 0, 0)), "'pos'"),
+    (lambda g: mk.block(g, (1, 1, 1), center=(0, 0, 0)),
+     "'pos' with base='center'"),
+    (lambda g: mk.circle(mk.workplane(g), 1, center=(0, 0)), "'pos'?"),
+    (lambda g: mk.block(g, (1, 1, 1), dims=(1, 1, 1)), "'size'"),
+    (lambda g: (mk.block(g, (1, 1, 1)), mk.feature(g, 'Array', count=3)),
+     "'size'"),
+    (lambda g: (mk.block(g, (1, 1, 1)), mk.feature(g, 'Rotate', angle=45)),
+     "'rot'"),
+])
+def test_property_suggestion(geom, make, meant):
+    with pytest.raises(ValueError) as error:
+        make(geom)
+    text = str(error.value)
+    assert f'Did you mean {meant}' in text
+    assert text.endswith('Extra keyword arguments are COMSOL property names.')
+    assert "'axis'" not in text
