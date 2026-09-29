@@ -860,3 +860,19 @@ def cumulative_tag(geom: Node, value) -> str:
 def names(values: Iterable) -> list[str]:
     """Returns the tags of selection nodes, passing strings through."""
     return [tag_of(v) if isinstance(v, Node) else str(v) for v in values]
+
+
+##########
+# Errors #
+##########
+
+def reason(error: Exception) -> str:
+    """Returns the reason in a COMSOL error, without its boilerplate."""
+    useful: list[str] = []
+    for line in str(error).splitlines():
+        line = line.strip().lstrip('- ')
+        if (line and not line.startswith(('Exception', 'Messages'))
+                and 'com.comsol.' not in line and line not in useful):
+            useful.append(line)
+    return ' '.join(useful) if useful else str(error)
+

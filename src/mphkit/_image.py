@@ -130,7 +130,7 @@ def image(geom: Node, filename, /, selection: Node | None = None, *,
                 picture.export()
             except Exception as error:
                 raise OSError(f'COMSOL could not write the picture "{path}": '
-                              f'{_reason(error)}') from error
+                              f'{_comsol.reason(error)}') from error
         finally:
             try:
                 if tag in [str(t) for t in container.tags()]:
@@ -195,14 +195,3 @@ def _view(geom: Node):
         if shows:
             found.append(view)
     return found[0] if found else None
-
-
-def _reason(error: Exception) -> str:
-    """Returns the reason in a COMSOL error, without its boilerplate."""
-    useful: list[str] = []
-    for line in str(error).splitlines():
-        line = line.strip().lstrip('- ')
-        if (line and not line.startswith(('Exception', 'Messages'))
-                and 'com.comsol.' not in line and line not in useful):
-            useful.append(line)
-    return ' '.join(useful) if useful else str(error)

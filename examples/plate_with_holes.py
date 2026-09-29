@@ -7,7 +7,7 @@ One end is held at 100 degC; the hole walls are cooled by a coolant at
 The geometry is built with mphkit and the boundaries are selected by
 location, so the script works for any number of holes (one or more):
 the entity numbers change, the selections do not. Physics, mesh and
-study are plain MPh.
+study are plain MPh; mphkit reads the heat flowing in.
 
 Usage: python plate_with_holes.py [holes ...]
 """
@@ -78,8 +78,12 @@ def main(counts):
               f'volume {mk.measure(geom, "domain"):.0f} mm^3')
         model.solve()
         temperature = model.evaluate('T', 'degC')
+        # ht.ntflux is the flux out of the plate: negative where heat enters
+        heat = -mk.integral(geom, 'boundary', 'ht.ntflux',
+                            selections['hot end'], unit='W')
         print(f'  temperature from {temperature.min():.1f} to '
-              f'{temperature.max():.1f} degC')
+              f'{temperature.max():.1f} degC, {heat:.2f} W in at the hot '
+              'end')
         client.remove(model)
 
 

@@ -93,6 +93,22 @@ def message(module, name):
     (mk, 'mphgetadj', 'Did you mean mphkit.sel.neighbors?'),
     (mk, 'mphgetcoords', 'Did you mean mphkit.coordinates?'),
     (mk, 'mphviewselection', 'Did you mean mphkit.image?'),
+    (mk, 'mphint2', 'Did you mean mphkit.integral?'),
+    (mk, 'mphinterp', 'Did you mean mphkit.value?'),
+    # results: a last word for a result wins, max and min count first only
+    (mk, 'volume_integral', 'Did you mean mphkit.integral?'),
+    (mk, 'line_integral', 'Did you mean mphkit.integral?'),
+    (mk, 'surface_average', 'Did you mean mphkit.average?'),
+    (mk, 'point_values', 'Did you mean mphkit.value?'),
+    (mk, 'max_temperature', 'Did you mean mphkit.maximum?'),
+    (mk, 'bbox_max', 'Did you mean mphkit.bounding_box?'),
+    (mk, 'max_value', 'Did you mean mphkit.maximum?'),
+    (mk, 'mean_value', 'Did you mean mphkit.average?'),
+    (mk, 'mean', 'Did you mean mphkit.average?'),
+    (mk, 'probe', 'Did you mean mphkit.value?'),
+    (mk, 'evaluate_at', 'Did you mean mphkit.value?'),
+    (mk, 'evaluate', "MPh's model.evaluate(expression, unit) gives global"),
+    (mk.sel, 'eval', "MPh's model.evaluate(expression, unit)"),
     (mk, 'translate', 'Did you mean mphkit.move?'),
     (mk, 'cone', "Did you mean mphkit.feature(geom, 'Cone', ...)?"),
     (mk, 'bounding', 'Did you mean mphkit.bounding_box?'),
@@ -103,6 +119,14 @@ def test_suggestion(module, name, expected):
     assert text.startswith(f"module '{module.__name__}' has no attribute {name!r}.")
     assert expected in text
     assert text.endswith(f'See help({module.__name__}) for all helpers.')
+
+
+def test_meanings_name_helpers():
+    for meant in _hints.MEANINGS.values():
+        target = mk
+        for part in meant.split('.')[1:]:
+            target = getattr(target, part)
+    assert 'Did you mean' not in message(mk, 'evaluate')
 
 
 def test_no_suggestion_still_points_to_help():
@@ -270,6 +294,27 @@ def test_readme_example(client, monkeypatch, tmp_path):
 
     run_example(code, client, monkeypatch, tmp_path, check)
     assert (tmp_path/'demo.mph').exists()
+
+
+def test_readme_results(client):
+    # the results in the README, on the example script it links to
+    from test_example import plate_with_holes
+    lines = re.search(r'Results of the solved.*?```python\n(.*?)```', readme,
+                      re.S).group(1).splitlines()
+    assert len(lines) == 4, 'update the checks below with the README'
+    model, geom, selections = plate_with_holes.build_model(client, 2)
+    try:
+        model.solve()
+        namespace = {'mk': mk, 'geom': geom, 'selections': selections}
+        heat, mean, (low, where), points = [
+            eval(line.split('#')[0], namespace) for line in lines]
+        assert heat == pytest.approx(-2.74, abs=0.005)
+        assert mean == pytest.approx(90.3, abs=0.05)
+        assert low == pytest.approx(83.5, abs=0.05)
+        assert where[:2] == pytest.approx([88, 20])   # any z: T is flat in z
+        assert points == pytest.approx([89.9, 84.2], abs=0.05)
+    finally:
+        client.remove(model)
 
 
 def test_help_example(client, monkeypatch, tmp_path):

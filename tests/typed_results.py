@@ -1,0 +1,33 @@
+"""
+Return types of the results helpers as a caller sees them. Checked by
+mypy (test_types.py) and pyright, never run.
+"""
+from typing import Any
+
+import numpy
+from mph.node import Node
+from numpy.typing import NDArray
+from typing_extensions import assert_type  # typing has it from 3.11
+
+import mphkit as mk
+
+
+def check(geom: Node, flag: bool, step: int | str) -> None:
+    assert_type(mk.integral(geom, 'boundary', 'ht.ntflux', unit='W'), float)
+    assert_type(mk.average(geom, 'domain', 'T', step='last'), float)
+    assert_type(mk.average(geom, 'domain', 'T', step=numpy.int64(2)), float)
+    assert_type(mk.average(geom, 'domain', 'T', step='all'),
+                NDArray[Any])
+    assert_type(mk.integral(geom, 'domain', 'T', step=[1, 2]),
+                NDArray[Any])
+    assert_type(mk.maximum(geom, 'domain', 'T'), float)
+    assert_type(mk.maximum(geom, 'domain', 'T', position=True),
+                tuple[float, NDArray[Any]])
+    assert_type(mk.minimum(geom, 'domain', 'T', step='all', position=True),
+                tuple[NDArray[Any], NDArray[Any]])
+    assert_type(mk.value(geom, 'T', (0, 0, 0)), float | NDArray[Any])
+    # values not known before the call
+    mk.average(geom, 'domain', 'T', step=step)
+    mk.maximum(geom, 'domain', 'T', position=flag)
+    if mk.integral(geom, 'domain', 'T') > 0:
+        pass

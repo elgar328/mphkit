@@ -33,5 +33,12 @@ def test_solve(client):
         temperature = model.evaluate('T', 'degC')
         assert temperature.max() == pytest.approx(100, abs=0.1)
         assert 20 < temperature.min() < 100
+        # what flows in at the hot end leaves through the holes and the
+        # cold end; the other faces are insulated
+        hot, walls, cold = [mk.integral(geom, 'boundary', 'ht.ntflux',
+                                        selections[name], unit='W')
+                            for name in ('hot end', 'hole walls', 'cold end')]
+        assert hot < 0 < cold < walls
+        assert hot + walls + cold == pytest.approx(0, abs=1e-6*abs(hot))
     finally:
         client.remove(model)

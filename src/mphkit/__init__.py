@@ -1,8 +1,10 @@
 """
-Helpers on top of MPh for building COMSOL geometries and selections.
+Helpers on top of MPh for building COMSOL geometries and selections, and
+for reading results.
 
-mphkit builds geometry and named selections; physics, mesh, studies and
-results stay plain MPh (or the COMSOL Java API through `node.java`).
+mphkit builds geometry and named selections and reads results; physics,
+mesh and studies stay plain MPh (or the COMSOL Java API through
+`node.java`).
 Helpers take MPh nodes (`mk.geometry` the model, `mk.set` also Java
 objects), and those that create something return one.
 
@@ -48,7 +50,7 @@ Rules:
 - Build the geometry (`model.build(geom)`) before querying it, and again
   after adding a `where='geometry'` selection.
 
-Check the result from code:
+Check the geometry from code:
 
 - `mk.sel.entities(geom, selection)`: entity numbers of a selection
 - `mk.sel.find(geom, 'domain', x=...)`: entity numbers inside a box
@@ -79,6 +81,24 @@ name='side')` (`rin` needs about 1 % room, see
 `help(mk.sel.cylinder)`; a name avoids a clash with the cylinder's own
 label).
 
+Results, once the model is solved (`model.solve()`):
+
+    mk.integral(geom, 'boundary', 'ht.ntflux', bottom, unit='W')
+    mk.average(geom, 'domain', 'T', unit='degC')
+    mk.maximum(geom, 'domain', 'T', unit='degC', position=True)
+    mk.value(geom, 'T', [(50, 20, 5), (0, 0, 0)], unit='degC')
+
+They check what COMSOL would silently get wrong: a unit that does not
+fit, a geometry changed since the solve (unless built and meshed again),
+a point outside the geometry. Changed physics, materials or parameters
+need `model.solve()` again; that goes unnoticed.
+Values are in SI units unless `unit` is given, also in an mm geometry;
+positions and points in the geometry's length unit. `ht.ntflux` is the
+flux out of the domain, negative where heat enters. With several
+solutions pass `dataset=`, with several steps (time, sweep, frequency)
+`step='last'`, a number, a list or `'all'`. Global values and values at
+all mesh nodes: `model.evaluate('expression', 'unit')` in MPh.
+
 Existing models (e.g. built in the COMSOL Desktop): load one with
 `old = client.load('file.mph')`; `old.reset()` compacts its history and
 `old.save('old.java')` writes its current state as Java, with COMSOL's
@@ -107,6 +127,7 @@ from ._hints import HintModule as _HintModule
 from ._image import image
 from ._measure import bounding_box, coordinates, measure, summary
 from ._props import set_ as set  # not in __all__: keeps builtin set
+from ._results import average, integral, maximum, minimum, value
 from .errors import LicenseError
 from .geometry import (array, block, chamfer, circle, component_of,
                        coordinate_system, cylinder, delete, difference,
@@ -118,14 +139,14 @@ from .geometry import (array, block, chamfer, circle, component_of,
 
 __version__ = '0.3.0.dev0'
 
-__all__ = ['LicenseError', 'array', 'block', 'bounding_box', 'chamfer',
-           'circle', 'component_of', 'coordinate_system', 'coordinates',
-           'cylinder', 'delete', 'difference', 'extrude', 'feature',
-           'fillet', 'geometry', 'image', 'import_', 'intersection',
-           'interval', 'line_segment', 'measure', 'mirror', 'move',
-           'partition', 'point', 'polygon', 'rectangle', 'revolve',
-           'rigid_transform', 'rotate', 'sel', 'sphere', 'square', 'summary',
-           'union', 'workplane']
+__all__ = ['LicenseError', 'array', 'average', 'block', 'bounding_box',
+           'chamfer', 'circle', 'component_of', 'coordinate_system',
+           'coordinates', 'cylinder', 'delete', 'difference', 'extrude',
+           'feature', 'fillet', 'geometry', 'image', 'import_', 'integral',
+           'intersection', 'interval', 'line_segment', 'maximum', 'measure',
+           'minimum', 'mirror', 'move', 'partition', 'point', 'polygon',
+           'rectangle', 'revolve', 'rigid_transform', 'rotate', 'sel',
+           'sphere', 'square', 'summary', 'union', 'value', 'workplane']
 
 # Unknown names raise errors that name the right helper (see _hints).
 _sys.modules[__name__].__class__ = _HintModule

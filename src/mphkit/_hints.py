@@ -67,7 +67,31 @@ MEANINGS = {
     'mphgetcoords': 'mphkit.coordinates', 'mphgeom': 'mphkit.image',
     'mphviewselection': 'mphkit.image', 'mphmeasure': 'mphkit.measure',
     'mphselectbox': 'mphkit.sel.box', 'mphselectcoords': 'mphkit.sel.ball',
+    'mphint2': 'mphkit.integral', 'mphmean': 'mphkit.average',
+    'mphmax': 'mphkit.maximum', 'mphmin': 'mphkit.minimum',
+    'mphinterp': 'mphkit.value',
+    # Results
+    'integrate': 'mphkit.integral', 'mean': 'mphkit.average',
+    'avg': 'mphkit.average', 'max': 'mphkit.maximum',
+    'min': 'mphkit.minimum', 'interp': 'mphkit.value',
+    'interpolate': 'mphkit.value', 'probe': 'mphkit.value',
+    'evaluate': 'mphkit.value', 'eval': 'mphkit.value',
 }
+
+# Last words of guessed names that ask for a result whatever comes first,
+# as in `volume_integral` or `point_value`, unless the first word asks for
+# one too (`max_value`). `max` and `min` count only first: `bbox_max` asks
+# for a bounding box.
+RESULTS = ('integral', 'integrate', 'average', 'mean', 'avg', 'value',
+           'values')
+RESULT_FIRST = ('integral', 'integrate', 'average', 'mean', 'avg',
+                'maximum', 'max', 'minimum', 'min')
+
+# MPh evaluates global expressions and values at all mesh nodes.
+EVALUATE_NOTE = ("MPh's model.evaluate(expression, unit) gives global values "
+                 'and values at all mesh nodes; mphkit.integral, '
+                 'mphkit.average, mphkit.maximum, mphkit.minimum and '
+                 'mphkit.value evaluate over entities or at points.')
 
 # Notes added when a helper is the only suggestion.
 NOTES = {
@@ -176,6 +200,8 @@ def _suggest(module: str, name: str) -> Result:
     """Returns the qualified names that `name` probably meant, and a note."""
     names = _names()
     intent, prefix, rest = _parse(name.lower())
+    if rest in ('evaluate', 'eval'):
+        return [], EVALUATE_NOTE
 
     # Selecting or finding entities of a kind, as in `select_faces`
     if intent == 'select':
@@ -209,6 +235,11 @@ def _suggest(module: str, name: str) -> Result:
         found, note = _suggest(SEL, tail)
         if note or any(s.startswith(SEL) for s in found):
             return found, note
+    last = rest.rsplit('_', 1)[-1]
+    if tail and last in RESULTS and head not in RESULT_FIRST:
+        direct = _direct(module, names, intent, last.removesuffix('s'))
+        if direct:
+            return direct
     kind = entity_suggestion(tail) if tail else None
     real = names[SEL].get(head)
     if kind and real and '{kind}' in SEL_CALLS.get(real, SEL_CALL):

@@ -85,7 +85,8 @@ undone (see step 9); steps 10 to 14 publish and cannot.
    ```sh
    uv run pytest                                   # includes mypy
    uv run python examples/plate_with_holes.py
-   uvx pyright@1.1.414 --pythonpath .venv/bin/python src/mphkit
+   uvx pyright@1.1.414 --pythonpath .venv/bin/python src/mphkit \
+     tests/typed_results.py
    ```
    pyright needs `--pythonpath` to find MPh; it should report no errors.
    If `.github/workflows/publish.yml` changed since the last release

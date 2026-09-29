@@ -1,4 +1,7 @@
-"""Checks the package's type hints with mypy. Runs without COMSOL."""
+"""
+Checks the package's type hints with mypy, also as a caller sees them
+(typed_results.py). Runs without COMSOL.
+"""
 import subprocess
 import sys
 from pathlib import Path
@@ -10,6 +13,7 @@ root = Path(__file__).parents[1]
 
 def test_mypy():
     pytest.importorskip('mypy')
-    run = subprocess.run([sys.executable, '-m', 'mypy', 'src/mphkit'],
+    run = subprocess.run([sys.executable, '-m', 'mypy', 'src/mphkit',
+                          'tests/typed_results.py'],
                          cwd=root, capture_output=True, text=True)
     assert run.returncode == 0, run.stdout + run.stderr

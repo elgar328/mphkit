@@ -9,6 +9,18 @@ until 1.0, a minor release (0.2, 0.3, ...) may change the API. See
 
 ## [Unreleased]
 
+### Added
+
+- `mk.integral`, `mk.average`, `mk.maximum`, `mk.minimum` and `mk.value`
+  read results of a solved model over entities, selections or points.
+  They raise in most cases where COMSOL would silently give a wrong
+  number (a unit that does not fit, several solutions, a geometry changed
+  since the solve, a point outside the geometry) and leave nothing in the
+  model.
+- Unknown names such as `mk.volume_integral`, `mk.mphint2` or `mk.probe`
+  suggest the results helpers; `mk.evaluate` points to MPh's
+  `model.evaluate`.
+
 ## [0.2.0] - 2026-09-29
 
 ### Added

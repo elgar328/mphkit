@@ -6,9 +6,9 @@
 [![COMSOL](https://img.shields.io/badge/COMSOL-6.4-blue)](https://www.comsol.com/)
 
 Helpers on top of [MPh](https://github.com/MPh-py/MPh) for building COMSOL
-geometries and geometry-based selections in Python. Select boundaries by
-location instead of by entity number, so selections keep working when the
-geometry changes.
+geometries and geometry-based selections in Python, and for reading results.
+Select boundaries by location instead of by entity number, so selections
+keep working when the geometry changes.
 
 > [!WARNING]
 > **Early stage.** The API may change at any time, without deprecation
@@ -41,8 +41,8 @@ model.save('demo.mph')
 
 Helpers take MPh `Node`s (`mk.geometry` the model, `mk.set` also Java
 objects), and those that create something return one, so mphkit and MPh
-mix freely. Physics, mesh, study and results stay plain MPh (or the
-COMSOL Java API through `node.java`).
+mix freely. Physics, mesh and study stay plain MPh (or the COMSOL Java
+API through `node.java`).
 
 `help(mphkit)` sums up the workflow, the rules and the common pitfalls,
 and each helper has its own `help()`. Point an AI assistant to
@@ -121,6 +121,24 @@ mk.sel.neighbors(geom, 'domain', boundary=3)  # [1]: the domain beside it
 mk.coordinates(geom, 'boundary', 3)      # {1: (0.0, 0.0, 0.0), 3: (0.0, 100.0, 0.0), ...}
 ```
 
+Results of the solved
+[example script](https://github.com/elgar328/mphkit/blob/main/examples/plate_with_holes.py),
+over entities or at points, in SI units unless `unit` is given; they
+leave nothing in the model either:
+
+```python
+mk.integral(geom, 'boundary', 'ht.ntflux', selections['hot end'], unit='W')  # -2.74: flows in
+mk.average(geom, 'domain', 'T', unit='degC')                   # 90.3
+mk.minimum(geom, 'domain', 'T', unit='degC', position=True)    # (83.5, array([88.0, 20.0, ...])): a hole wall
+mk.value(geom, 'T', [(50, 20, 2.5), (100, 20, 2.5)], unit='degC')  # array([89.9, 84.2])
+```
+
+`ht.ntflux` is the flux out of the domain. With several solutions, pass
+`dataset=`; with time steps or a sweep, `step=`. A unit that does not fit,
+a point outside the geometry or, in most cases, a geometry changed since
+the solve raise instead of giving a wrong number. Global values come from MPh:
+`model.evaluate('expression', 'unit')`.
+
 Pictures, written to a file:
 
 ```python
@@ -141,8 +159,11 @@ a plate with a row of cooling holes, for one or more holes.
 
 ## Limitations
 
-- mphkit covers geometry and selections. Physics, mesh, studies and
-  results are left to MPh.
+- mphkit covers geometry, selections and reading results. Physics, mesh,
+  studies and plots are left to MPh.
+- Parametric sweeps that COMSOL stores as an outer loop, e.g. around a
+  time-dependent study or over a geometry parameter, cannot be read yet;
+  other sweeps of a stationary study can.
 - No named helpers yet for geometry parts (`PartInstance`), sweeps, cones
   and the other remaining primitives, virtual operations or repair. They
   work through `mk.feature(geom, 'Sweep', ...)`, which handles arguments
