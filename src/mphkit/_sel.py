@@ -398,9 +398,10 @@ def result(geom: Node, feature: Node, entity: str, /, *,
 
     Turns on the feature's result selection (`selresult`) and returns a
     named component selection that physics can use, without relying on
-    COMSOL's tag convention. Calling it again returns the same selection.
-    Because it switches on `selresult`, a Java export of the model shows
-    that setting on the feature; the geometry is not affected.
+    COMSOL's tag convention. Calling it again returns the same selection
+    (a new `name` is ignored). Because it switches on `selresult`, a Java
+    export of the model shows that setting on the feature; the geometry
+    is not affected.
     """
     if len(feature.path) != 3 or _comsol.geometry_of(feature) != geom:
         raise ValueError(f'"{feature}" is not a top-level feature of '
@@ -443,8 +444,9 @@ def layer(geom: Node, feature: Node, layer, /, *, name: str | None = None) -> No
     Boolean operations on the feature. They are empty when the feature is
     consumed, for instance as the subtracted object of a difference; a
     `sel.box` over the same region is the alternative then. Calling this
-    again returns the same selection. Like `result()`, it switches a
-    setting on the feature (`sellayer`), which shows in a Java export.
+    again returns the same selection (a new `name` is ignored). Like
+    `result()`, it switches a setting on the feature (`sellayer`), which
+    shows in a Java export.
     """
     if len(feature.path) != 3 or _comsol.geometry_of(feature) != geom:
         raise ValueError(f'"{feature}" is not a top-level feature of '
@@ -596,7 +598,8 @@ def cumulative(geom: Node, group, entity: str, /, *, create: bool = False,
     later Boolean operations: above, `walls` are the walls of the six
     holes. The copying feature may also take `contributeto=` itself. Only
     top-level features of the geometry can contribute, not features inside
-    a work plane. Calling this again returns the same selection.
+    a work plane. Calling this again without `create` returns the same
+    selection (a new `name` is ignored).
     """
     _comsol.check_not_workplane(geom, 'sel.cumulative')
     entity = _comsol.entity_name(geom, entity)

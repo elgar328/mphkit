@@ -4,6 +4,7 @@ Checks the guidance for guessed names and the documentation's references.
 Runs without COMSOL, except the tests that execute the documented examples.
 """
 import inspect
+import math
 import re
 import subprocess
 import sys
@@ -227,14 +228,20 @@ def test_documented_names_exist(source):
             target = getattr(target, part)
 
 
-def run_example(code, client, monkeypatch, tmp_path):
-    """Runs documented example code with the test session's client."""
+def run_example(code, client, monkeypatch, tmp_path, check=None):
+    """
+    Runs documented example code with the test session's client, and
+    `check` on its namespace before the models are removed.
+    """
     import mph
     monkeypatch.setattr(mph, 'start', lambda *args, **kwargs: client)
     code = code.replace("'demo.mph'", repr(str(tmp_path/'demo.mph')))
     before = client.models()
     try:
-        exec(code, {})
+        namespace: dict = {}
+        exec(code, namespace)
+        if check:
+            check(namespace)
     finally:
         for model in client.models():
             if model not in before:
@@ -243,7 +250,25 @@ def run_example(code, client, monkeypatch, tmp_path):
 
 def test_readme_example(client, monkeypatch, tmp_path):
     code = re.search(r'## Example\n\n```python\n(.*?)```', readme, re.S).group(1)
-    run_example(code, client, monkeypatch, tmp_path)
+    queries = re.search(r'Queries on the example above.*?```python\n(.*?)```',
+                        readme, re.S).group(1)
+
+    def check(namespace):
+        # the queries in the README, with the values their comments show
+        (entities, found, volume, bbox, summary, neighbors, vertices) = [
+            eval(line.split('#')[0], namespace)
+            for line in queries.splitlines()]
+        assert entities == [3]
+        assert found == [1]
+        assert volume == pytest.approx(100*100*10 - math.pi*5**2*10, rel=1e-4)
+        assert bbox['x'] == pytest.approx((0, 100))
+        assert bbox['y'] == pytest.approx((0, 100))
+        assert bbox['z'] == pytest.approx((0, 0))
+        assert summary['domains'] == 1
+        assert neighbors == [1]
+        assert vertices[1] == (0, 0, 0) and vertices[3] == (0, 100, 0)
+
+    run_example(code, client, monkeypatch, tmp_path, check)
     assert (tmp_path/'demo.mph').exists()
 
 

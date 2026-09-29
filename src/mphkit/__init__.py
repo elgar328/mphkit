@@ -3,7 +3,8 @@ Helpers on top of MPh for building COMSOL geometries and selections.
 
 mphkit builds geometry and named selections; physics, mesh, studies and
 results stay plain MPh (or the COMSOL Java API through `node.java`).
-Every helper takes MPh nodes, and those that create something return one.
+Helpers take MPh nodes (`mk.geometry` the model, `mk.set` also Java
+objects), and those that create something return one.
 
     import mph
     import mphkit as mk
@@ -47,17 +48,24 @@ Rules:
 - Build the geometry (`model.build(geom)`) before querying it, and again
   after adding a `where='geometry'` selection.
 
-Check the result from code: `mk.sel.entities(geom, sel)` (entity
-numbers), `mk.sel.find(geom, 'domain', x=...)`, `mk.measure(geom,
-'domain')` (volume, area or length), `mk.bounding_box(geom, 'boundary',
-...)`, `mk.summary(geom)` (counts, voids, size), `mk.sel.neighbors(geom,
-'domain', boundary=6)` and `mk.coordinates(geom, 'boundary', 6)`.
-`mk.measure` and `mk.bounding_box` use single precision (about seven
-digits of the coordinates; a point's box excepted), `mk.coordinates` and
-`mk.summary` double precision. Compare with a tolerance either way. Look
-at it with `mk.image(geom, 'geom.png')`, or `mk.image(geom,
-'selection.png', selection, labels=True)` to see a selection with entity
-numbers.
+Check the result from code:
+
+- `mk.sel.entities(geom, selection)`: entity numbers of a selection
+- `mk.sel.find(geom, 'domain', x=...)`: entity numbers inside a box
+- `mk.measure(geom, 'domain')`: volume, area or length
+- `mk.bounding_box(geom, 'boundary', 3)`: extents
+- `mk.summary(geom)`: counts, voids, size
+- `mk.sel.neighbors(geom, 'domain', boundary=3)`: adjacent entities
+- `mk.coordinates(geom, 'boundary', 3)`: vertex coordinates
+- `mk.image(geom, 'geom.png')`: a picture of the geometry
+- `mk.image(geom, 'selection.png', selection, labels=True)`: a selection
+  highlighted, with entity numbers
+
+Curved entities are measured approximately (see `help(mk.measure)`).
+`mk.measure` and `mk.bounding_box` use single precision, about seven
+digits of the coordinates (`mk.bounding_box` of points excepted);
+`mk.coordinates` and `mk.summary` use double precision. Compare with a
+tolerance either way.
 
 Selection tips: `mk.sel.result(geom, feature, 'boundary')` gives the faces
 that an object and its copies leave in the geometry, curved ones

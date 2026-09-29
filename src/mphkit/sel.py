@@ -6,18 +6,18 @@ physics, materials, mesh and other features can `select()`. The queries
 `entities`, `find` and `neighbors` return entity numbers instead and leave
 nothing in the model.
 
+`where='component'` (the default for a geometry) creates a selection in
+the component. It is evaluated on the finished geometry.
+`where='geometry'` creates it inside the geometry sequence instead. Then
+it can also be the input of later geometry operations, but it only sees
+objects created before it.
+
 With `where='geometry'`, the level can also be `'object'`: whole geometry
 objects, as COMSOL's "Object" level. Such a selection is only an input for
 geometry operations (e.g. deleting or uniting the unnamed copies of an
 array in a region), not something physics can use, so it is returned as
 the selection feature in the geometry sequence rather than a
 `selections/` node.
-
-`where='component'` (the default for a geometry) creates a selection in
-the component. It is evaluated on the finished geometry.
-`where='geometry'` creates it inside the geometry sequence instead. Then
-it can also be the input of later geometry operations, but it only sees
-objects created before it.
 
 A work plane can take the place of the geometry in `box`, `ball`, `disk`,
 `all`, `adjacent` and the set operations. There, selections can pick

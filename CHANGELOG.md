@@ -15,11 +15,11 @@ until 1.0, a minor release (0.2, 0.3, ...) may change the API. See
   that suggests the helper that was probably meant: `mk.box` suggests
   `mphkit.sel.box` to select or `mphkit.block` to create, and `mk.cone`
   suggests `mphkit.feature(geom, 'Cone', ...)`. The message also points
-  to `help(mphkit)`.
+  to `help(mphkit)` or `help(mphkit.sel)`.
 - Unknown entity kinds, including entity levels given as numbers, suggest
-  COMSOL's name (`'face'` → `'boundary'` in 3D, `2` → `'boundary'`), and
-  unknown property names suggest COMSOL's (`radius` → `r`, or `rmaj` and
-  `rmin` on a torus).
+  COMSOL's name (in 3D, `'face'` → `'boundary'` and `2` → `'boundary'`),
+  and unknown property names suggest COMSOL's (`radius` → `r`, or `rmaj`
+  and `rmin` on a torus).
 - `mk.summary` gives the entity counts, voids, bounding box and length
   unit of a geometry, `mk.sel.neighbors` returns the entities adjacent to
   others (e.g. the domains on either side of a boundary) and

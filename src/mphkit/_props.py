@@ -18,16 +18,19 @@ def set_(target, /, **properties):
     Sets properties of an MPh node or a Java object, and returns it.
 
     For example on a mesh size feature,
-    `mk.set(size, custom=True, hmax='L/10', hgrad=1.45)`. The target may be
-    any MPh node, or a Java object MPh does not reach, such as a probe, a
-    material function or `physics.java.prop('ShapeProperty')`. Keyword
-    arguments are COMSOL property names, set in the given order (e.g.
-    `custom` before `hmax`); `None` values are skipped.
+    `mk.set(size, hmax='L/10', hgrad=1.45)`. The target may be any MPh
+    node, or a Java object MPh does not reach, such as a probe, a material
+    function or `physics.java.prop('ShapeProperty')`. Keyword arguments
+    are COMSOL property names, set in the given order (e.g. `custom=False`
+    after `hmax` restores the predefined sizes; setting `hmax` alone turns
+    `custom` on); `None` values are skipped.
 
     Ints, numpy arrays and lists mixing numbers and expressions are
     converted for COMSOL; lists of numbers become string arrays. Unknown
-    names raise `ValueError` with a suggestion, invalid choices list the
-    allowed values. If one property fails, the ones before it stay set.
+    names raise `ValueError`, with a suggestion where one is close; objects
+    with no property list (variables) or an empty one (a new material
+    property group) do not check names. Invalid choices list the allowed
+    values. If one property fails, the ones before it stay set.
 
     A geometry feature node also takes input selections (`input`,
     `input2`) as in `feature()`; build the geometry again afterwards. To

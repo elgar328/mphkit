@@ -18,7 +18,7 @@ def geometry(model: Model, dim: int = 3, *, length_unit: str | None = None,
     The component is created explicitly, so this also works in models that
     already have components. `length_unit` is, for example, `'mm'`; plain
     numbers given to other helpers are then interpreted in that unit.
-    Returns the geometry node.
+    `name` labels the geometry. Returns the geometry node.
     """
     java = model.java
     taken = _comsol.labels(java.geom())
@@ -342,8 +342,8 @@ def revolve(geom: Node, /, input, angle=None, *, pos=None, axis=None,
     `quickplane='xz'` or `'yz'`). Three values, or `axis='x'|'y'|'z'`,
     give an axis in 3D coordinates instead (the model's x axis, not the
     work plane's); a 3D axis without `pos` passes through the origin.
-    With a 3D axis, `pos` needs three values as well, and a 3D `pos` needs
-    an `axis`.
+    With a 3D axis, `pos`, if given, needs three values as well, and a 3D
+    `pos` needs an `axis`.
 
     A full turn keeps the drawn cross-section as an interior face; with
     `angle` left out, `origfaces=False` drops it (with `angle=360` it
@@ -567,7 +567,9 @@ def import_(geom: Node, file, /, *, type: str | None = None, name: str | None = 
 
     `type` defaults from the extension: `'native'` for `.mphbin`/`.mphtxt`,
     otherwise `'cad'` (STEP, IGES, Parasolid, ...; needs a CAD-capable
-    license). The path is stored as an absolute path.
+    license). The path is stored as an absolute path. Raises
+    `FileNotFoundError` for a missing file and `mk.LicenseError` without a
+    license for CAD import.
     """
     from pathlib import Path
     from .errors import LicenseError

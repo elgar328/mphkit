@@ -2,11 +2,13 @@
 Heat conduction in a plate with a row of cooling holes.
 
 One end is held at 100 degC; the hole walls are cooled by a coolant at
-20 degC (h = 200 W/(m^2*K)), the other end by still air (h = 10).
+20 degC (h = 200 W/(m^2*K)), the other end by still air
+(h = 10 W/(m^2*K)).
 
 The geometry is built with mphkit and the boundaries are selected by
-location, so the script works for any number of holes: the entity numbers
-change, the selections do not. Physics, mesh and study are plain MPh.
+location, so the script works for any number of holes (one or more): the
+entity numbers change, the selections do not. Physics, mesh and study
+are plain MPh.
 
 Usage: python plate_with_holes.py [holes ...]
 """

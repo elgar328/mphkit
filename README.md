@@ -39,8 +39,9 @@ physics.create('TemperatureBoundary', 2).select(bottom)  # 2: boundaries in 3D
 model.save('demo.mph')
 ```
 
-Every helper takes MPh `Node`s, and those that create something return
-one, so mphkit and MPh mix freely. Physics, mesh, study and results stay
+Helpers take MPh `Node`s (`mk.geometry` the model, `mk.set` also Java
+objects), and those that create something return one, so mphkit and MPh
+mix freely. Physics, mesh, study and results stay
 plain MPh (or the COMSOL Java API through `node.java`).
 
 `help(mphkit)` sums up the workflow, the rules and the common pitfalls,
@@ -107,16 +108,17 @@ x=(20, 40), where='geometry')` to pick whole objects for `mk.delete`. In a
 work plane, selections can pick single corners or edges, e.g. to fillet
 one corner: `mk.fillet(plane, mk.sel.box(plane, 'point', x=1, y=1), 0.3)`.
 
-Queries return plain Python values and leave nothing in the model:
+Queries on the example above return plain Python values and leave
+nothing in the model:
 
 ```python
 mk.sel.entities(geom, bottom)            # [3]
-mk.sel.find(geom, 'domain', x=(0, 10))   # entity numbers inside a box
-mk.measure(geom, 'domain')               # volume (area, length for other levels)
-mk.bounding_box(geom, 'boundary', 3)     # {'x': (0, 10), 'y': ..., 'z': ...}
+mk.sel.find(geom, 'boundary', x=0)       # [1]: the face at x = 0
+mk.measure(geom, 'domain')               # 99216.5: volume, approximate where curved
+mk.bounding_box(geom, 'boundary', 3)     # {'x': (0.0, 100.0), 'y': ..., 'z': (0.0, 0.0)}
 mk.summary(geom)                         # counts, voids, bounding box, unit
-mk.sel.neighbors(geom, 'domain', boundary=6)  # [1, 2]: the domains beside it
-mk.coordinates(geom, 'boundary', 3)      # {vertex: (x, y, z)}
+mk.sel.neighbors(geom, 'domain', boundary=3)  # [1]: the domain beside it
+mk.coordinates(geom, 'boundary', 3)      # {1: (0.0, 0.0, 0.0), 3: (0.0, 100.0, 0.0), ...}
 ```
 
 Pictures, written to a file:
@@ -135,11 +137,11 @@ mk.set(mesh_size, hmax=0.5, hgrad=2)   # any node or Java object; converts ints 
 
 [`examples/plate_with_holes.py`](https://github.com/elgar328/mphkit/blob/main/examples/plate_with_holes.py)
 is a complete script, from geometry to solved results: heat conduction in
-a plate with a row of cooling holes, for any number of holes.
+a plate with a row of cooling holes, for one or more holes.
 
 ## Limitations
 
-- mphkit covers geometry and selections only. Physics, mesh, studies and
+- mphkit covers geometry and selections. Physics, mesh, studies and
   results are left to MPh.
 - No named helpers yet for geometry parts (`PartInstance`), sweeps, cones
   and the other remaining primitives, virtual operations or repair. They
