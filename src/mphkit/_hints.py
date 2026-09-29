@@ -2,8 +2,9 @@
 Suggestions for names that do not exist in `mphkit` or `mphkit.sel`.
 
 People and AI assistants guess helper names: `mk.box` for `mk.sel.box`,
-`mk.select_box`, `mk.sel.block`. Both modules answer an unknown name with
-the helper that was probably meant and a pointer to `help()`.
+`mk.select_box`, `mk.sel_box`, `mk.sel.block`. Both modules answer an
+unknown name with the helper that was probably meant and a pointer to
+`help()`.
 
 The hook is a module subclass rather than a module-level `__getattr__`:
 type checkers treat a module with `__getattr__` as having every attribute,
@@ -77,14 +78,14 @@ NOTES = {
     'mphkit.sel.neighbors': 'mphkit.sel.adjacent makes a selection instead.',
 }
 
-# Selection helpers whose call differs from `(geom, kind, ...)`; helpers
-# that take no kind (`entities`, `layer`) are suggested by name only.
+# How selection helpers are called; `{kind}` stands for the entity kind.
+SEL_CALL = '(geom, {kind}, ...)'
 SEL_CALLS = {
     'all': '(geom, {kind})', 'adjacent': '(geom, input, {kind})',
     'result': '(geom, feature, {kind})',
     'cumulative': '(geom, group, {kind})',
+    'entities': '(geom, selection)', 'layer': '(geom, feature, layer)',
 }
-NO_KIND = {'entities', 'layer'}
 
 # Geometry features without a named helper, created with `feature()`.
 FEATURES = {
@@ -148,11 +149,20 @@ def _parse(low: str) -> tuple[str | None, str | None, str]:
     return None, None, low
 
 
+def _call(helper: str, kind: str | None = None) -> str:
+    """
+    Returns a call of a selection helper, e.g.
+    `mphkit.sel.all(geom, 'domain')`.
+    """
+    shape = SEL_CALLS.get(helper, SEL_CALL)
+    assert kind is not None or '{kind}' not in shape
+    return f'{SEL}.{helper}' + shape.format(kind=repr(kind))
+
+
 def _select_note(kind: str) -> str:
     """Explains how entities of a kind are selected."""
     note = (f'Entities are selected by location, e.g. '
-            f'mphkit.sel.box(geom, {kind!r}, ...) or '
-            f'mphkit.sel.all(geom, {kind!r}).')
+            f'{_call("box", kind)} or {_call("all", kind)}.')
     if kind == 'point':
         note += ' mphkit.point creates a point.'
     return note
@@ -174,9 +184,9 @@ def _suggest(module: str, name: str) -> Result:
         if kind:
             if prefix == 'select_':
                 return [], _select_note(kind)
-            found = [f'mphkit.sel.find(geom, {kind!r}, ...)']
+            found = [_call('find', kind)]
             if prefix == 'get_':
-                found.append('mphkit.sel.entities(geom, selection)')
+                found.append(_call('entities'))
             return found, None
     # In `mphkit.sel`, an entity word asks for a selection (`sel.lines`)
     if module == SEL:
@@ -193,11 +203,15 @@ def _suggest(module: str, name: str) -> Result:
     # A selection helper and an entity kind, as in `all_boundaries`, or a
     # helper and what it acts on, as in `measure_volume`
     head, _, tail = rest.partition('_')
+    # A module prefix, as in `sel_box` for `sel.box`
+    if head == 'sel' and tail:
+        found, note = _suggest(SEL, tail)
+        if note or any(name.startswith(SEL) for name in found):
+            return found, note
     kind = entity_suggestion(tail) if tail else None
     real = names[SEL].get(head)
-    if kind and real and real not in NO_KIND:
-        call = SEL_CALLS.get(real, '(geom, {kind}, ...)')
-        return [f'mphkit.sel.{real}' + call.format(kind=repr(kind))], None
+    if kind and real and '{kind}' in SEL_CALLS.get(real, SEL_CALL):
+        return [_call(real, kind)], None
     if tail:
         direct = _direct(module, names, intent, head)
         if direct:

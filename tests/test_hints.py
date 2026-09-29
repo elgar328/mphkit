@@ -65,6 +65,12 @@ def message(module, name):
     (mk.sel, 'cumulative_edges', "Did you mean mphkit.sel.cumulative(geom, group, 'edge')?"),
     (mk.sel, 'entities_domains', 'Did you mean mphkit.sel.entities?'),
     (mk.sel, 'layer_domains', 'Did you mean mphkit.sel.layer?'),
+    # a module prefix, as in `sel_box`
+    (mk, 'sel_box', 'Did you mean mphkit.sel.box (select)'),
+    (mk.sel, 'sel_box', 'Did you mean mphkit.sel.box (select)'),
+    (mk, 'sel_faces', "mphkit.sel.box(geom, 'boundary', ...)"),
+    (mk, 'sel_xyzzy', 'Did you mean mphkit.sel?'),
+    (mk, 'sel_blok', 'Did you mean mphkit.sel?'),
     # plurals, meanings and features without a helper
     (mk, 'boxes', 'Did you mean mphkit.sel.box (select)'),
     (mk, 'polyline', 'Did you mean mphkit.polygon?'),
@@ -146,16 +152,16 @@ def test_broken_hint_falls_back(monkeypatch):
 
 def test_suggested_calls_match_signatures():
     # the call shapes the hints suggest follow the helpers' own arguments
+    kinds = (inspect.Parameter.POSITIONAL_ONLY,
+             inspect.Parameter.POSITIONAL_OR_KEYWORD)
+
     def positional(name):
         parameters = inspect.signature(getattr(mk.sel, name)).parameters.values()
-        return [p.name for p in parameters
-                if p.kind is not inspect.Parameter.KEYWORD_ONLY]
+        return [p.name for p in parameters if p.kind in kinds]
 
+    assert set(_hints.SEL_CALLS) <= set(mk.sel.__all__)
     for name in mk.sel.__all__:
-        if name in _hints.NO_KIND:
-            assert 'entity' not in positional(name)
-            continue
-        call = _hints.SEL_CALLS.get(name, '(geom, {kind}, ...)')
+        call = _hints.SEL_CALLS.get(name, _hints.SEL_CALL)
         shown = call.strip('()').replace('{kind}', 'entity').split(', ')
         if shown[-1] == '...':
             shown.pop()
