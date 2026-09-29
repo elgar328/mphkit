@@ -1,6 +1,9 @@
 """
 Heat conduction in a plate with a row of cooling holes.
 
+One end is held at 100 degC; the hole walls are cooled by a coolant at
+20 degC (h = 200 W/(m^2*K)), the other end by still air (h = 10).
+
 The geometry is built with mphkit and the boundaries are selected by
 location, so the script works for any number of holes: the entity numbers
 change, the selections do not. Physics, mesh and study are plain MPh.
@@ -53,6 +56,11 @@ def build_model(client, holes):
     cooling.property('HeatFluxType', 'ConvectiveHeatFlux')
     cooling.property('h', '200[W/(m^2*K)]')
     cooling.property('Text', '20[degC]')
+    air = heat.create('HeatFluxBoundary', 2, name='cold end')
+    air.select(selections['cold end'])
+    air.property('HeatFluxType', 'ConvectiveHeatFlux')
+    air.property('h', '10[W/(m^2*K)]')
+    air.property('Text', '20[degC]')
 
     (model/'meshes').create(geom, name='mesh')
     study = (model/'studies').create(name='static')
