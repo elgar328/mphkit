@@ -57,6 +57,7 @@ Good to know:
   length unit.
 - Curved faces: `mk.sel.result(geom, feature, 'boundary')`, or for a whole
   cylinder side a thin `mk.sel.cylinder` shell (see `help(mphkit)`).
+- Check a geometry with `mk.summary`, and look at it with `mk.image`.
 - `help(mphkit)` sums up the workflow and rules, and each helper has its
   own `help()`; it is also what to point an AI assistant to.
 
@@ -127,6 +128,16 @@ mk.sel.entities(geom, bottom)            # [3]
 mk.sel.find(geom, 'domain', x=(0, 10))   # entity numbers inside a box
 mk.measure(geom, 'domain')               # volume (area, length for other levels)
 mk.bounding_box(geom, 'boundary', 3)     # {'x': (0, 10), 'y': ..., 'z': ...}
+mk.summary(geom)                         # counts, voids, bounding box, unit
+mk.sel.neighbors(geom, 'domain', boundary=6)  # [1, 2]: the domains beside it
+mk.coordinates(geom, 'boundary', 3)      # {vertex: (x, y, z)}
+```
+
+Pictures, written to a file:
+
+```python
+mk.image(geom, 'geom.png')                              # the geometry
+mk.image(geom, 'selection.png', selection, labels=True) # with numbers
 ```
 
 And a few helpers outside geometry:

@@ -139,3 +139,75 @@ def test_bounding_box_precision(model):
     assert len(point) == 1
     assert abs(mk.bounding_box(turned, 'point', point)['x'][0]) < 1e-12
     assert abs(mk.bounding_box(turned, 'domain')['x'][1]) < 1e-12
+
+
+@pytest.fixture
+def two_blocks(model, geom):
+    """Two 1 mm cubes side by side: boundary 6 is the face between them."""
+    mk.block(geom, (1, 1, 1))
+    mk.block(geom, (1, 1, 1), (1, 0, 0))
+    model.build(geom)
+    return geom
+
+
+def test_summary(model, two_blocks):
+    info = mk.summary(two_blocks)
+    box = info.pop('bounding_box')
+    assert info == {'dimension': 3, 'domains': 2, 'boundaries': 11,
+                    'edges': 20, 'points': 12, 'voids': 0,
+                    'length_unit': 'mm'}
+    assert box == {'x': pytest.approx((0, 2)), 'y': pytest.approx((0, 1)),
+                   'z': pytest.approx((0, 1))}
+
+
+def test_summary_voids_and_dimensions(model):
+    hollow = mk.geometry(model, 3)
+    mk.difference(hollow, mk.block(hollow, (4, 4, 4), (-2, -2, -2)),
+                  [mk.sphere(hollow, 1)])
+    model.build(hollow)
+    assert mk.summary(hollow)['voids'] == 1
+    flat = mk.geometry(model, 2)
+    mk.difference(flat, mk.rectangle(flat, (4, 3)),
+                  [mk.circle(flat, 0.5, (2, 1.5))])
+    model.build(flat)
+    info = mk.summary(flat)
+    assert set(info) == {'dimension', 'domains', 'boundaries', 'points',
+                         'voids', 'bounding_box', 'length_unit'}
+    assert (info['dimension'], info['voids']) == (2, 1)
+    line = mk.geometry(model, 1)
+    mk.interval(line, [0, 1, 3])
+    model.build(line)
+    assert mk.summary(line) == {'dimension': 1, 'domains': 2, 'points': 3,
+                                'voids': 0, 'bounding_box': {'x': (0, 3)},
+                                'length_unit': 'm'}
+
+
+def test_summary_needs_a_built_geometry(model, geom):
+    mk.block(geom, (1, 1, 1))
+    with pytest.raises(RuntimeError, match='not built'):
+        mk.summary(geom)
+    with pytest.raises(TypeError, match='work plane'):
+        mk.summary(mk.workplane(geom))
+
+
+def test_coordinates(model, two_blocks):
+    assert mk.coordinates(two_blocks, 'boundary', 6) == {
+        5: (1, 0, 0), 6: (1, 0, 1), 7: (1, 1, 0), 8: (1, 1, 1)}
+    every = mk.coordinates(two_blocks)
+    assert len(every) == mk.summary(two_blocks)['points']
+    assert mk.coordinates(two_blocks, 'point', [1, 12]) == \
+        {1: every[1], 12: every[12]}
+
+
+def test_coordinates_are_exact(model):
+    geom = mk.geometry(model, 3)
+    mk.block(geom, (13, 2, 3), (1.1, 0.7, 0.3))
+    model.build(geom)
+    corner = mk.sel.find(geom, 'point', x=1.1, y=0.7, z=0.3)
+    [(number, point)] = mk.coordinates(geom, 'point', corner).items()
+    box = mk.bounding_box(geom, 'point', number)
+    assert point == (box['x'][0], box['y'][0], box['z'][0])
+    flat = mk.geometry(model, 2)
+    mk.rectangle(flat, (1, 2))
+    model.build(flat)
+    assert mk.coordinates(flat, 'point', 1) == {1: (0, 0)}

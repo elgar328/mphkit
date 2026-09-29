@@ -51,7 +51,11 @@ Check the result without looking at it: `mk.sel.entities(geom, sel)`
 `mk.measure(geom, 'domain')` (volume, area or length) and
 `mk.bounding_box(geom, 'boundary', ...)`. Measured values, except point
 coordinates, are single precision (about seven digits of the
-coordinates): compare with a tolerance.
+coordinates): compare with a tolerance. `mk.summary(geom)` (counts, voids,
+size), `mk.sel.neighbors(geom, 'domain', boundary=6)` and
+`mk.coordinates(geom, 'boundary', 6)` answer more. Look at it with
+`mk.image(geom, 'geom.png')`, or `mk.image(geom, 'selection.png',
+selection, labels=True)` to see a selection with entity numbers.
 
 Selection tips: `mk.sel.result(geom, feature, 'boundary')` gives the faces
 an object and its copies left, curved ones included, and the faces it cut
@@ -74,7 +78,8 @@ import sys as _sys
 
 from . import sel
 from ._hints import HintModule as _HintModule
-from ._measure import bounding_box, measure
+from ._image import image
+from ._measure import bounding_box, coordinates, measure, summary
 from ._props import set_ as set  # not in __all__: keeps builtin set
 from .errors import LicenseError
 from .geometry import (array, block, chamfer, circle, component_of,
@@ -88,12 +93,13 @@ from .geometry import (array, block, chamfer, circle, component_of,
 __version__ = '0.2.0.dev0'
 
 __all__ = ['LicenseError', 'array', 'block', 'bounding_box', 'chamfer',
-           'circle', 'component_of', 'coordinate_system', 'cylinder',
-           'delete', 'difference', 'extrude', 'feature', 'fillet',
-           'geometry', 'import_', 'intersection', 'interval',
-           'line_segment', 'measure', 'mirror', 'move', 'partition', 'point',
-           'polygon', 'rectangle', 'revolve', 'rigid_transform', 'rotate',
-           'sel', 'sphere', 'square', 'union', 'workplane']
+           'circle', 'component_of', 'coordinate_system', 'coordinates',
+           'cylinder', 'delete', 'difference', 'extrude', 'feature',
+           'fillet', 'geometry', 'image', 'import_', 'intersection',
+           'interval', 'line_segment', 'measure', 'mirror', 'move',
+           'partition', 'point', 'polygon', 'rectangle', 'revolve',
+           'rigid_transform', 'rotate', 'sel', 'sphere', 'square', 'summary',
+           'union', 'workplane']
 
 # Unknown names raise errors that name the right helper (see _hints).
 _sys.modules[__name__].__class__ = _HintModule

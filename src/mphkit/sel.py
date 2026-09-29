@@ -3,8 +3,8 @@ Geometry-based selections: select entities by location, not by number.
 
 Every helper takes the geometry node first and returns an MPh node that
 physics, materials, mesh and other features can `select()`. The queries
-`entities` and `find` return entity numbers instead and leave nothing in
-the model.
+`entities`, `find` and `neighbors` return entity numbers instead and leave
+nothing in the model.
 
 With `where='geometry'`, the level can also be `'object'`: whole geometry
 objects, as COMSOL's "Object" level. Such a selection is only an input for
@@ -33,11 +33,11 @@ import sys as _sys
 from ._hints import HintModule as _HintModule
 from ._sel import adjacent, all_ as all, ball, box, complement, \
     cumulative, cylinder, difference, disk, entities, find, intersection, \
-    layer, result, union
+    layer, neighbors, result, union
 
 __all__ = ['adjacent', 'all', 'ball', 'box', 'complement', 'cumulative',
            'cylinder', 'difference', 'disk', 'entities', 'find',
-           'intersection', 'layer', 'result', 'union']
+           'intersection', 'layer', 'neighbors', 'result', 'union']
 
 # Unknown names raise errors that name the right helper (see _hints).
 _sys.modules[__name__].__class__ = _HintModule

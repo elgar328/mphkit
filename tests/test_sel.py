@@ -917,3 +917,53 @@ def test_workplane_selection_errors(model):
         with pytest.raises(TypeError, match='work plane'):
             call()
     assert [str(t) for t in plane.java.geom().feature().tags()] == features
+
+
+def test_neighbors(model, geom):
+    mk.block(geom, (1, 1, 1))
+    mk.block(geom, (1, 1, 1), (1, 0, 0))
+    model.build(geom)
+    before = [str(t) for t in model.java.selection().tags()]
+    assert mk.sel.neighbors(geom, 'domain', boundary=6) == [1, 2]
+    assert mk.sel.neighbors(geom, 'boundary', domain=1) == [1, 2, 3, 4, 5, 6]
+    assert mk.sel.neighbors(geom, 'edge', point=1) == [1, 2, 3]
+    # at the same level: sharing one of a lower level, without the inputs
+    assert mk.sel.neighbors(geom, 'domain', domain=1) == [2]
+    assert mk.sel.neighbors(geom, 'domain', domain=[1, 2]) == []
+    left = mk.sel.box(geom, 'domain', x=(-1, 1.5))
+    assert mk.sel.neighbors(geom, 'boundary', domain=left) == \
+        [1, 2, 3, 4, 5, 6]
+    assert [str(t) for t in model.java.selection().tags()] == \
+        before + [left.tag()]
+
+
+def test_neighbors_touching_at_an_edge(model, geom):
+    # blocks that only share an edge have no boundary in common
+    mk.block(geom, (1, 1, 1))
+    mk.block(geom, (1, 1, 1), (1, 1, 0))
+    model.build(geom)
+    assert mk.sel.neighbors(geom, 'domain', domain=1) == []
+
+
+def test_neighbors_2d(model):
+    flat = mk.geometry(model, 2)
+    mk.square(flat, 1)
+    mk.square(flat, 1, (1, 0))
+    model.build(flat)
+    assert mk.sel.neighbors(flat, 'domain', boundary=4) == [1, 2]
+    assert mk.sel.neighbors(flat, 'boundary', edge=4) == \
+        mk.sel.neighbors(flat, 'boundary', boundary=4)
+
+
+def test_neighbors_errors(model, geom):
+    mk.block(geom, (1, 1, 1))
+    model.build(geom)
+    for given in ({}, {'domain': 1, 'boundary': 2}):
+        with pytest.raises(TypeError, match='as one keyword'):
+            mk.sel.neighbors(geom, 'domain', **given)
+    with pytest.raises(TypeError):
+        mk.sel.neighbors(geom, 'domain', face=1)
+    with pytest.raises(TypeError):
+        mk.sel.neighbors(geom, 'boundary', 1)
+    with pytest.raises(ValueError, match=r'No boundary \[99\]'):
+        mk.sel.neighbors(geom, 'domain', boundary=99)

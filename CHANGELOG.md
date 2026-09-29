@@ -20,6 +20,13 @@ until 1.0, a minor release (0.2, 0.3, ...) may change the API. See
   COMSOL's name (`'face'` → `'boundary'` in 3D, `2` → `'boundary'`), and
   unknown property names suggest COMSOL's (`radius` → `r`, or `rmaj` and
   `rmin` on a torus).
+- `mk.summary` gives the entity counts, voids, bounding box and length
+  unit of a geometry, `mk.sel.neighbors` returns the entities adjacent to
+  others (e.g. the domains on either side of a boundary) and
+  `mk.coordinates` the vertices of entities; they leave nothing in the
+  model.
+- `mk.image` saves a picture of a geometry, or of a selection highlighted
+  on it, optionally with entity numbers, and leaves the model as it was.
 
 ### Changed
 

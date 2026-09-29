@@ -7,7 +7,7 @@ import numbers
 from mph.node import Node
 from mph.node import escape
 
-from . import _comsol
+from . import _comsol, _measure
 from ._expr import expr
 from .geometry import feature
 
@@ -501,6 +501,45 @@ def entities(geom: Node, selection: Node, /) -> list[int]:
     _comsol.check_built(geom)
     java = _comsol.check_selection(geom, selection)
     return sorted(int(e) for e in java.entities())
+
+
+def neighbors(geom: Node, entity: str, /, *, domain=None, boundary=None,
+              edge=None, point=None) -> list[int]:
+    """
+    Returns the numbers of the `entity` entities adjacent to the given
+    ones, e.g. `neighbors(geom, 'domain', boundary=6)` for the domains on
+    either side of boundary 6.
+
+    The given entities are one keyword, `domain=`, `boundary=`, `edge=` or
+    `point=`: a number, a list of numbers or a selection node of that
+    kind. At the same level, entities are neighbors if they share one of a
+    lower level: in 3D, domains share a boundary, boundaries an edge,
+    edges a point; points neighbor points across an edge. The given
+    entities themselves are left out. In an assembly, the parts are not
+    neighbors of each other. Unlike `adjacent()`, which makes a selection
+    for physics (exterior boundaries by default), this returns every
+    adjacent entity and leaves nothing in the model.
+    """
+    _comsol.check_not_workplane(geom, 'sel.neighbors')
+    given = {kind: value for kind, value in (
+        ('domain', domain), ('boundary', boundary), ('edge', edge),
+        ('point', point)) if value is not None}
+    if len(given) != 1:
+        raise TypeError("Give the entities as one keyword, e.g. "
+                        "neighbors(geom, 'domain', boundary=6) for the "
+                        "domains next to boundary 6.")
+    [(kind, value)] = given.items()
+    found = _measure.numbers_of(geom, kind, value)
+    source = _comsol.entity_dim(geom, kind)
+    target = _comsol.entity_dim(geom, entity)
+    java = _comsol.java_of(geom)
+    adjacent_: set[int] = set()
+    for number in found:
+        adjacent_.update(int(n) for n in java.getAdj(source, target, number))
+    adjacent_.discard(0)
+    if source == target:
+        adjacent_ -= set(found)
+    return sorted(adjacent_)
 
 
 def find(geom: Node, entity: str, /, x=None, y=None, z=None, *,

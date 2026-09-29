@@ -1,8 +1,8 @@
 """
-Measurements of the finished geometry. Public as `mk.measure` and
-`mk.bounding_box`.
+Measurements of the finished geometry. Public as `mk.measure`,
+`mk.bounding_box`, `mk.summary` and `mk.coordinates`.
 
-Both return plain numbers in the geometry's length unit and leave nothing
+They return plain values in the geometry's length unit and leave nothing
 in the model. Curved geometry is measured on a rendering mesh, so volumes,
 areas and lengths of curved entities are approximate (a cylinder about
 0.3 % too small, a sphere 0.3 to 0.6 % depending on the geometry kernel).
@@ -24,9 +24,9 @@ from . import _comsol
 AXES = 'xyz'
 
 
-def _final(geom: Node, entity: str, selection):
+def numbers_of(geom: Node, entity: str, selection) -> list[int]:
     """
-    Returns a measurement of the finished geometry, or `None` if empty.
+    Returns the entity numbers `selection` stands for in the built geometry.
 
     `selection` is an entity number, a list of numbers, a selection node at
     the level of `entity`, or `None` for all entities of that level.
@@ -35,29 +35,39 @@ def _final(geom: Node, entity: str, selection):
     dim = _comsol.entity_dim(geom, entity)
     count = _comsol.entity_count(geom, dim)
     if selection is None:
-        found = list(range(1, count + 1))
-    elif isinstance(selection, Node):
+        return list(range(1, count + 1))
+    if isinstance(selection, Node):
         java = _comsol.check_selection(geom, selection)
         level = [int(d) for d in java.dimension()]
         if level != [dim]:
             raise ValueError(f'Selection "{selection}" is not a {entity} '
                              'selection.')
-        found = [int(e) for e in java.entities()]
-    else:
-        items = selection if isinstance(
-            selection, (list, tuple, numpy.ndarray)) else [selection]
-        found = []
-        for item in items:
-            if isinstance(item, bool) or not isinstance(item, numbers.Integral):
-                raise TypeError(f'Expected entity numbers, a selection node '
-                                f'or None, not {selection!r}.')
-            found.append(int(item))
-        wrong = [n for n in found if not 1 <= n <= count]
-        if wrong:
-            raise ValueError(f'No {entity} {wrong} in geometry "{geom}"; it '
-                             f'has {count} {entity} entities.')
+        return [int(e) for e in java.entities()]
+    items = selection if isinstance(
+        selection, (list, tuple, numpy.ndarray)) else [selection]
+    found = []
+    for item in items:
+        if isinstance(item, bool) or not isinstance(item, numbers.Integral):
+            raise TypeError(f'Expected entity numbers, a selection node '
+                            f'or None, not {selection!r}.')
+        found.append(int(item))
+    wrong = [n for n in found if not 1 <= n <= count]
+    if wrong:
+        raise ValueError(f'No {entity} {wrong} in geometry "{geom}"; it '
+                         f'has {count} {entity} entities.')
+    return found
+
+
+def _final(geom: Node, entity: str, selection):
+    """
+    Returns a measurement of the finished geometry, or `None` if empty.
+
+    `selection` works as in `numbers_of()`.
+    """
+    found = numbers_of(geom, entity, selection)
     if not found:
         return None
+    dim = _comsol.entity_dim(geom, entity)
     measurement = _comsol.java_of(geom).measureFinal()
     measurement.selection().geom(geom.tag(), dim)
     measurement.selection().set(found)
@@ -109,3 +119,65 @@ def bounding_box(geom: Node, entity: str, /, selection=None) -> dict | None:
     values = [float(v) for v in measurement.getBoundingBox()]
     return {axis: (values[2*i], values[2*i + 1])
             for i, axis in enumerate(AXES[:len(values) // 2])}
+
+
+def summary(geom: Node, /) -> dict:
+    """
+    Returns a summary of the finished geometry, for example::
+
+        {'dimension': 3, 'domains': 2, 'boundaries': 11, 'edges': 20,
+         'points': 12, 'voids': 0,
+         'bounding_box': {'x': (0.0, 2.0), 'y': (0.0, 1.0), 'z': (0.0, 1.0)},
+         'length_unit': 'mm'}
+
+    It has the dimension, the number of entities of each kind (2D has no
+    `'edges'`, 1D no `'boundaries'` either) and of voids, the bounding box
+    and the length unit. Voids are enclosed empty regions, e.g. left by a
+    sphere subtracted from a block, or a hole in 2D; a through-hole is not
+    one. The bounding box is in full precision, unlike `bounding_box()`. A
+    quick check that the geometry came out as meant, e.g. one domain after
+    a union.
+    """
+    _comsol.check_not_workplane(geom, 'summary')
+    _comsol.check_built(geom)
+    java = _comsol.java_of(geom)
+    dim = _comsol.sdim(geom)
+    result: dict = {'dimension': dim}
+    for entity in ('domain', 'boundary', 'edge', 'point'):
+        if entity == 'boundary' and dim < 2 or entity == 'edge' and dim < 3:
+            continue
+        level = _comsol.entity_dim(geom, entity)
+        plural = 'boundaries' if entity == 'boundary' else f'{entity}s'
+        result[plural] = _comsol.entity_count(geom, level)
+    result['voids'] = int(java.getNFiniteVoids())
+    values = [float(v) for v in java.getBoundingBox()]
+    result['bounding_box'] = {axis: (values[2*i], values[2*i + 1])
+                              for i, axis in enumerate(AXES[:dim])}
+    result['length_unit'] = str(java.lengthUnit())
+    return result
+
+
+def coordinates(geom: Node, entity: str = 'point', /,
+                selection=None) -> dict[int, tuple]:
+    """
+    Returns the vertices of entities as `{number: (x, y, z)}` (`(x, y)` in
+    2D, `(x,)` in 1D), in the geometry's length unit, e.g. the corners of a
+    face with `coordinates(geom, 'boundary', 6)`.
+
+    `selection` works as in `measure()`; left out, the vertices of all
+    entities of that kind, so `coordinates(geom)` gives every vertex.
+    Unlike `bounding_box()`, which gives single-precision extents for
+    faces and domains, these are the exact vertex coordinates.
+    """
+    _comsol.check_not_workplane(geom, 'coordinates')
+    found = numbers_of(geom, entity, selection)
+    java = _comsol.java_of(geom)
+    level = _comsol.entity_dim(geom, entity)
+    vertices: set[int] = set()
+    for number in found:
+        if level == 0:
+            vertices.add(number)
+        else:
+            vertices.update(int(v) for v in java.getAdj(level, 0, number))
+    table = [[float(v) for v in row] for row in java.getVertexCoord()]
+    return {n: tuple(row[n - 1] for row in table) for n in sorted(vertices)}

@@ -48,12 +48,33 @@ MEANINGS = {
     'translate': 'mphkit.move', 'shift': 'mphkit.move',
     'rotation': 'mphkit.rotate', 'extrusion': 'mphkit.extrude',
     'line': 'mphkit.line_segment', 'polyline': 'mphkit.polygon',
+    'info': 'mphkit.summary', 'geominfo': 'mphkit.summary',
+    'geometry_info': 'mphkit.summary', 'geom_info': 'mphkit.summary',
+    'describe': 'mphkit.summary', 'stats': 'mphkit.summary',
+    'plot': 'mphkit.image', 'picture': 'mphkit.image',
+    'screenshot': 'mphkit.image', 'snapshot': 'mphkit.image',
+    'render': 'mphkit.image', 'show': 'mphkit.image', 'draw': 'mphkit.image',
+    'save_image': 'mphkit.image', 'export_image': 'mphkit.image',
+    'view': 'mphkit.image', 'display': 'mphkit.image',
+    'statistics': 'mphkit.summary',
+    'coords': 'mphkit.coordinates',
+    'vertex_coordinates': 'mphkit.coordinates',
+    'neighbours': 'mphkit.sel.neighbors', 'adjacency': 'mphkit.sel.neighbors',
+    'adj': 'mphkit.sel.neighbors',
+    # LiveLink for MATLAB
+    'mphgeominfo': 'mphkit.summary', 'mphgetadj': 'mphkit.sel.neighbors',
+    'mphgetcoords': 'mphkit.coordinates', 'mphgeom': 'mphkit.image',
+    'mphviewselection': 'mphkit.image', 'mphmeasure': 'mphkit.measure',
+    'mphselectbox': 'mphkit.sel.box', 'mphselectcoords': 'mphkit.sel.ball',
 }
 
-# Notes added when a helper is the only suggestion in `mphkit`.
+# Notes added when a helper is the only suggestion.
 NOTES = {
     'mphkit.union': 'Pass intbnd=False to merge touching or overlapping '
                     'objects into one domain.',
+    'mphkit.image': 'Pictures of the geometry and selections; plot results '
+                    'with MPh.',
+    'mphkit.sel.neighbors': 'mphkit.sel.adjacent makes a selection instead.',
 }
 
 # Geometry features without a named helper, created with `feature()`.
@@ -90,7 +111,7 @@ def missing_attribute(module: str, name: str) -> AttributeError:
 def _message(module: str, name: str) -> str:
     """Builds the error message with suggestions and a pointer to help()."""
     suggestions, note = _suggest(module, name)
-    if note is None and module == MAIN and len(suggestions) == 1:
+    if note is None and len(suggestions) == 1:
         note = NOTES.get(suggestions[0])
     message = f'module {module!r} has no attribute {name!r}.'
     if suggestions:
