@@ -41,8 +41,8 @@ model.save('demo.mph')
 
 Helpers take MPh `Node`s (`mk.geometry` the model, `mk.set` also Java
 objects), and those that create something return one, so mphkit and MPh
-mix freely. Physics, mesh, study and results stay
-plain MPh (or the COMSOL Java API through `node.java`).
+mix freely. Physics, mesh, study and results stay plain MPh (or the
+COMSOL Java API through `node.java`).
 
 `help(mphkit)` sums up the workflow, the rules and the common pitfalls,
 and each helper has its own `help()`. Point an AI assistant to
@@ -108,8 +108,8 @@ x=(20, 40), where='geometry')` to pick whole objects for `mk.delete`. In a
 work plane, selections can pick single corners or edges, e.g. to fillet
 one corner: `mk.fillet(plane, mk.sel.box(plane, 'point', x=1, y=1), 0.3)`.
 
-Queries on the example above return plain Python values and leave
-nothing in the model:
+Queries on the plate from the Example section return plain Python values
+and leave nothing in the model:
 
 ```python
 mk.sel.entities(geom, bottom)            # [3]

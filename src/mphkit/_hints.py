@@ -155,7 +155,8 @@ def _call(helper: str, kind: str | None = None) -> str:
     `mphkit.sel.all(geom, 'domain')`.
     """
     shape = SEL_CALLS.get(helper, SEL_CALL)
-    assert kind is not None or '{kind}' not in shape
+    if kind is None and '{kind}' in shape:
+        raise ValueError(f'sel.{helper} needs an entity kind.')
     return f'{SEL}.{helper}' + shape.format(kind=repr(kind))
 
 
@@ -206,7 +207,7 @@ def _suggest(module: str, name: str) -> Result:
     # A module prefix, as in `sel_box` for `sel.box`
     if head == 'sel' and tail:
         found, note = _suggest(SEL, tail)
-        if note or any(name.startswith(SEL) for name in found):
+        if note or any(s.startswith(SEL) for s in found):
             return found, note
     kind = entity_suggestion(tail) if tail else None
     real = names[SEL].get(head)

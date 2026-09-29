@@ -21,9 +21,9 @@ def set_(target, /, **properties):
     `mk.set(size, hmax='L/10', hgrad=1.45)`. The target may be any MPh
     node, or a Java object MPh does not reach, such as a probe, a material
     function or `physics.java.prop('ShapeProperty')`. Keyword arguments
-    are COMSOL property names, set in the given order (e.g. `custom=False`
-    after `hmax` restores the predefined sizes; setting `hmax` alone turns
-    `custom` on); `None` values are skipped.
+    are COMSOL property names, set in the given order, which matters:
+    `custom=False` after `hmax` restores the predefined sizes (setting
+    `hmax` alone turns `custom` on). `None` values are skipped.
 
     Ints, numpy arrays and lists mixing numbers and expressions are
     converted for COMSOL; lists of numbers become string arrays. Unknown

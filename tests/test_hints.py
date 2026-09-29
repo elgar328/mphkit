@@ -250,14 +250,14 @@ def run_example(code, client, monkeypatch, tmp_path, check=None):
 
 def test_readme_example(client, monkeypatch, tmp_path):
     code = re.search(r'## Example\n\n```python\n(.*?)```', readme, re.S).group(1)
-    queries = re.search(r'Queries on the example above.*?```python\n(.*?)```',
-                        readme, re.S).group(1)
+    queries = re.search(r'Queries on the plate.*?```python\n(.*?)```',
+                        readme, re.S).group(1).splitlines()
+    assert len(queries) == 7, 'update the checks below with the README'
 
     def check(namespace):
         # the queries in the README, with the values their comments show
         (entities, found, volume, bbox, summary, neighbors, vertices) = [
-            eval(line.split('#')[0], namespace)
-            for line in queries.splitlines()]
+            eval(line.split('#')[0], namespace) for line in queries]
         assert entities == [3]
         assert found == [1]
         assert volume == pytest.approx(100*100*10 - math.pi*5**2*10, rel=1e-4)
