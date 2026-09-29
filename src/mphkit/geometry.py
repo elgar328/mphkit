@@ -107,9 +107,8 @@ def feature(parent: Node, type: str, /, *, name: str | None = None,
     Difference) accept geometry nodes, names, tags, or lists of those, or
     one selection: made with `sel.*(..., where='geometry')` (also at the
     `'object'` level), made in the work plane itself (`sel.box(plane,
-    ...)`), or `sel.cumulative()`. Lists that
-    mix numbers and expressions are converted for COMSOL. Arguments that
-    are `None` are skipped.
+    ...)`), or `sel.cumulative()`. Lists that mix numbers and expressions
+    are converted for COMSOL. Arguments that are `None` are skipped.
 
     Every helper that creates a feature passes extra keyword arguments on
     to COMSOL, e.g. `contributeto=` to add the result to a cumulative
@@ -181,7 +180,8 @@ def point(geom: Node, /, p, *, name: str | None = None, **properties) -> Node:
     return feature(geom, 'Point', name=name, p=p, **properties)
 
 
-def union(geom: Node, /, input, *, name: str | None = None, **properties) -> Node:
+def union(parent: Node, /, input, *, name: str | None = None,
+          **properties) -> Node:
     """
     Creates a Union of the `input` objects. Works in a work plane as well.
 
@@ -195,18 +195,19 @@ def union(geom: Node, /, input, *, name: str | None = None, **properties) -> Nod
     included; outer faces may stay split where the inputs met, and objects
     that do not touch stay separate.
     """
-    return feature(geom, 'Union', name=name, input=input, **properties)
+    return feature(parent, 'Union', name=name, input=input, **properties)
 
 
-def difference(geom: Node, /, input, input2, *, name: str | None = None,
+def difference(parent: Node, /, input, input2, *, name: str | None = None,
                **properties) -> Node:
     """
-    Creates a Difference: `input` objects minus `input2` objects.
+    Creates a Difference: `input` objects minus `input2` objects. Works in
+    a work plane as well.
 
     Touching or overlapping `input` objects stay separate domains unless
     `intbnd=False`, see `union()`.
     """
-    return feature(geom, 'Difference', name=name, input=input,
+    return feature(parent, 'Difference', name=name, input=input,
                    input2=input2, **properties)
 
 
@@ -281,7 +282,7 @@ def move(parent: Node, /, input, displ, *, name: str | None = None,
     """
     Creates a Move of the `input` objects by `displ`, e.g. `(0, 0, 5)`.
 
-    A component given as a list makes several copies, e.g.
+    A list of values for one axis makes several copies, e.g.
     `displ=([10, 20], 0, 0)`. Pass `keep=True` to keep the originals.
     """
     _comsol.check_vector(parent, 'displ', displ)
@@ -296,8 +297,8 @@ def rotate(parent: Node, /, input, rot, *, pos=None, axis=None,
     Creates a Rotate of the `input` objects by `rot` degrees.
 
     A list of angles makes several copies; pass `keep=True` to keep the
-    originals. `pos` is a point on the axis.
-    In 3D, `axis` is `'x'`, `'y'`, `'z'` (default) or a direction vector;
+    originals. `pos` is a point on the axis (the center of rotation in
+    2D). In 3D, `axis` is `'x'`, `'y'`, `'z'` (default) or a direction vector;
     2D rotations (also in a work plane) have no axis.
     """
     if pos is not None:
@@ -341,6 +342,8 @@ def revolve(geom: Node, /, input, angle=None, *, pos=None, axis=None,
     `quickplane='xz'` or `'yz'`). Three values, or `axis='x'|'y'|'z'`,
     give an axis in 3D coordinates instead (the model's x axis, not the
     work plane's); a 3D axis without `pos` passes through the origin.
+    With a 3D axis, `pos` needs three values as well, and a 3D `pos` needs
+    an `axis`.
 
     A full turn keeps the drawn cross-section as an interior face; with
     `angle` left out, `origfaces=False` drops it (with `angle=360` it
@@ -499,8 +502,8 @@ def workplane(geom: Node, /, *, name: str | None = None, **properties) -> Node:
 
     With `unite=True` the plane's 2D objects are imprinted into the 3D
     geometry, e.g. to create an evaluation surface. Add 2D features with
-    `square(wp, ...)`, `rectangle(wp, ...)`, `circle(wp, ...)` or
-    `polygon(wp, ...)`.
+    `square(plane, ...)`, `rectangle(plane, ...)`, `circle(plane, ...)` or
+    `polygon(plane, ...)`.
     """
     return feature(geom, 'WorkPlane', name=name, **properties)
 

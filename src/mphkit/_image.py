@@ -57,12 +57,13 @@ def image(geom: Node, filename, /, selection: Node | None = None, *,
     of the geometry as lines. `zoom='selection'` zooms to the selection
     instead of showing the whole geometry; `size` is `(width, height)` in
     pixels; `labels=True` adds the numbers of the visible entities at the
-    selection's level (hidden ones may lack one; `sel.entities` lists them
-    all). The selection is one of entities, as physics uses
-    them, not of `'object'` level. The file type follows the suffix,
-    `.png` or `.jpg`; COMSOL writes the file on the machine it runs on (by
-    default this one) and creates missing folders. The geometry must be
-    built. The model is left as it was.
+    selection's level (entities hidden from view may have no number;
+    `sel.entities` lists them all). The selection must be an entity
+    selection, the kind physics uses, not an `'object'`-level one. The
+    file type follows the suffix, `.png`, `.jpg` or `.jpeg`; COMSOL writes
+    the file on the machine it runs on (by default this one) and creates
+    missing folders. The geometry must be built. The model is left as it
+    was.
     """
     _comsol.check_not_workplane(geom, 'image')
     if isinstance(filename, Node):
@@ -71,8 +72,9 @@ def image(geom: Node, filename, /, selection: Node | None = None, *,
     path = Path(os.fspath(filename)).expanduser().absolute()
     suffix = path.suffix.lower()
     if suffix not in FORMATS:
-        raise ValueError(f'Save the picture as .png or .jpg, not '
-                         f'"{path.name}".')
+        *others, last = FORMATS
+        raise ValueError(f'Save the picture as {", ".join(others)} or '
+                         f'{last}, not "{path.name}".')
     path = path.with_suffix(suffix)  # COMSOL writes x.PNG as x.png
     imagetype, name_key = FORMATS[suffix]
     if zoom not in ('all', 'selection'):

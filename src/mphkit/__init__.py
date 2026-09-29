@@ -28,45 +28,48 @@ Rules:
 - Besides locations, `mk.sel.result` selects what a feature left in the
   geometry and `mk.sel.cumulative` collects groups across operations
   (features join with `contributeto=`).
-- Entity kinds are COMSOL's: 'domain' (volumes in 3D), 'boundary' (faces
-  in 3D, edges in 2D), 'edge', 'point' (vertices). Physics features take
-  the level as a number: 3 for domains and 2 for boundaries in 3D, 2 and 1
-  in 2D.
+- Entity kinds are COMSOL's: 'domain' (volumes in 3D, areas in 2D),
+  'boundary' (faces in 3D, edges in 2D, where 'edge' means the same),
+  'edge', 'point' (vertices). Physics features take the level as a
+  number: 3 for domains and 2 for boundaries in 3D, 2 and 1 in 2D.
 - Objects that touch or overlap stay separate domains, even after
   `mk.union`; merge them with `mk.union(geom, [a, b], intbnd=False)`,
   which also removes layers and partition cuts of its inputs. A full
   `mk.revolve` (no `angle`) keeps its cross-section as an interior face
   unless `origfaces=False`.
-- Extra keyword arguments are COMSOL property names (`r`, `h`, `pos`,
-  `size`, `rot`, ...); an unknown name raises an error that often suggests
-  the right one.
+- Extra keyword arguments are COMSOL property names (`intbnd`, `keep`,
+  `layername`, `base`, ...); an unknown name raises an error that often
+  suggests the right one.
 - Sizes, positions, angles and counts may be numbers or COMSOL expressions
   with parameters and units, e.g. `'L-2*t'` or `'5[mm]'`; define
   parameters with `model.parameter('t', '0.3[mm]')`.
+- Sizes and coordinates are in the geometry's length unit.
 - Build the geometry (`model.build(geom)`) before querying it, and again
   after adding a `where='geometry'` selection.
 
-Check the result without looking at it: `mk.sel.entities(geom, sel)`
-(entity numbers), `mk.sel.find(geom, 'domain', x=...)`,
-`mk.measure(geom, 'domain')` (volume, area or length) and
-`mk.bounding_box(geom, 'boundary', ...)`. Measured values, except point
-coordinates, are single precision (about seven digits of the
-coordinates): compare with a tolerance. `mk.summary(geom)` (counts, voids,
-size), `mk.sel.neighbors(geom, 'domain', boundary=6)` and
-`mk.coordinates(geom, 'boundary', 6)` answer more. Look at it with
-`mk.image(geom, 'geom.png')`, or `mk.image(geom, 'selection.png',
-selection, labels=True)` to see a selection with entity numbers.
+Check the result from code: `mk.sel.entities(geom, sel)` (entity
+numbers), `mk.sel.find(geom, 'domain', x=...)`, `mk.measure(geom,
+'domain')` (volume, area or length), `mk.bounding_box(geom, 'boundary',
+...)`, `mk.summary(geom)` (counts, voids, size), `mk.sel.neighbors(geom,
+'domain', boundary=6)` and `mk.coordinates(geom, 'boundary', 6)`.
+`mk.measure` and `mk.bounding_box` use single precision (about seven
+digits of the coordinates; a point's box excepted), `mk.coordinates` and
+`mk.summary` double precision. Compare with a tolerance either way. Look
+at it with `mk.image(geom, 'geom.png')`, or `mk.image(geom,
+'selection.png', selection, labels=True)` to see a selection with entity
+numbers.
 
 Selection tips: `mk.sel.result(geom, feature, 'boundary')` gives the faces
-an object and its copies left, curved ones included, and the faces it cut
-into others, e.g. the spherical faces a subtracted sphere leaves in a
-block. Curved surfaces are split into several faces: the side of a
-cylinder or cone, the wall of a hole or of an extruded circle into four,
-a sphere into eight. For the side of a cylinder that no other object cut,
-use a thin shell: `mk.sel.cylinder(geom, 'boundary', pos, r, rin=0.99*r,
-bottom=0, top=h, name='side')` (`rin` needs about 1 % room, see
+that an object and its copies leave in the geometry, curved ones
+included, and the faces it cuts into other objects, e.g. the spherical
+faces a subtracted sphere leaves in a block. Curved surfaces are split
+into several faces: the side of a cylinder or cone, the wall of a hole or
+of an extruded circle into four, a sphere into eight. For the side of a
+cylinder that no other object cut, use a thin shell:
+`mk.sel.cylinder(geom, 'boundary', pos, r, rin=0.99*r, bottom=0, top=h,
+name='side')` (`rin` needs about 1 % room, see
 `help(mk.sel.cylinder)`; a name avoids a clash with the cylinder's own
-label). Sizes and coordinates are in the geometry's length unit.
+label).
 
 More: `help(mk.sel)` for selections (also in work planes), `help(mk.block)`
 etc. for each helper, `mk.feature(geom, 'Type', ...)` for any other

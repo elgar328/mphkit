@@ -247,9 +247,9 @@ def ball(geom: Node, entity: str, /, center, r, *,
     coordinates involved (`|r|` plus the absolute coordinates of
     `center`), so the radius of a drawn sphere or circle selects it.
     Entities up to that margin outside (0.01 at 1e4 from the origin) may
-    be picked too, and with
-    `condition='intersects'` also entities that only touch the ball; for a
-    strict bound give room the other way, e.g. `0.999*r`.
+    be picked too, and with `condition='intersects'` also entities that
+    only touch the ball; for a strict bound give room the other way, e.g.
+    `0.999*r`.
     """
     dim = _comsol.parent_dim(geom)
     if len(center) != dim:
@@ -378,8 +378,11 @@ def adjacent(geom: Node, /, input, entity: str = 'boundary', *,
     """
     Selects the entities of kind `entity` adjacent to the `input` selections.
 
-    For example the exterior boundaries of a domain selection. The inputs
-    are of kind `input_entity`.
+    For example `adjacent(geom, domains)` gives the exterior boundaries of
+    a domain selection; `interior=True` adds the interior ones,
+    `exterior=False` leaves out the exterior ones. The inputs are of kind
+    `input_entity`; note that `entity`, the kind returned, comes after
+    `input`.
     """
     properties = {'entitydim': _comsol.entity_dim(geom, input_entity),
                   'outputdim': _comsol.entity_dim(geom, entity),
@@ -434,10 +437,10 @@ def layer(geom: Node, feature: Node, layer, /, *, name: str | None = None) -> No
     Layers are the shells a Block, Cylinder, Sphere or Rectangle can be
     given (`layername`, `layer`, `layertop`, ...), typically a perfectly
     matched layer. `layer` is a name from `layername`, its number counted
-    from 1, or `'core'` for the part outside every layer.
+    from 1, or `'core'` for the inner part that belongs to no layer.
 
     COMSOL derives these selections for domains only, and they survive
-    boolean operations on the feature. They are empty when the feature is
+    Boolean operations on the feature. They are empty when the feature is
     consumed, for instance as the subtracted object of a difference; a
     `sel.box` over the same region is the alternative then. Calling this
     again returns the same selection. Like `result()`, it switches a
@@ -491,11 +494,12 @@ def entities(geom: Node, selection: Node, /) -> list[int]:
     """
     Returns the entity numbers of a selection, in ascending order.
 
-    The numbers are at the selection's own level: an adjacent selection of
-    domains gives boundary numbers. Entity numbers change when the geometry
-    changes, so use them to check or inspect a model, not to set up physics.
-    The geometry must be built; a selection made with `where='geometry'`
-    changes the geometry sequence, so build again after creating one.
+    The numbers are at the selection's own level: a `sel.adjacent()`
+    selection made from domains gives boundary numbers. Entity numbers
+    change when the geometry changes, so use them to check or inspect a
+    model, not to set up physics. The geometry must be built; a selection
+    made with `where='geometry'` changes the geometry sequence, so build
+    again after creating one.
     """
     _comsol.check_not_workplane(geom, 'sel.entities')
     _comsol.check_built(geom)

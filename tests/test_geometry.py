@@ -868,6 +868,17 @@ def test_workplane_objects_stay_separate(model):
     assert built(model, geom)[0] == 2
 
 
+def test_workplane_difference(model):
+    geom = mk.geometry(model, 3)
+    plane = mk.workplane(geom)
+    outer = mk.square(plane, 2)
+    notch = mk.square(plane, 1, (1, 1))
+    mk.difference(plane, outer, [notch])
+    mk.extrude(geom, plane, 1)
+    assert built(model, geom)[0] == 1
+    assert mk.measure(geom, 'domain') == pytest.approx(3)
+
+
 def test_curved_faces_split(model):
     def boundaries(make):
         geom = mk.geometry(model, 3)

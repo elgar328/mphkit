@@ -11,8 +11,8 @@ location instead of by entity number, so selections keep working when the
 geometry changes.
 
 > [!WARNING]
-> **Early stage.** mphkit is at an early stage of development. The API may
-> change at any time, without deprecation warnings.
+> **Early stage.** The API may change at any time, without deprecation
+> warnings.
 
 Not affiliated with COMSOL AB.
 
@@ -44,8 +44,8 @@ one, so mphkit and MPh mix freely. Physics, mesh, study and results stay
 plain MPh (or the COMSOL Java API through `node.java`).
 
 `help(mphkit)` sums up the workflow, the rules and the common pitfalls,
-and each helper has its own `help()`; it is also what to point an AI
-assistant to.
+and each helper has its own `help()`. Point an AI assistant to
+`help(mphkit)` first.
 
 ## Requirements
 
@@ -58,8 +58,8 @@ assistant to.
 
 mphkit is developed and tested with COMSOL 6.4 and MPh 1.4. Feature types,
 property names and selection behavior can differ between COMSOL versions,
-so other versions may need adjustments; reports are welcome. It runs
-wherever MPh runs (checked on macOS and Windows).
+so other versions may need adjustments; reports are welcome. Checked on
+macOS and Windows; it should run wherever MPh runs.
 
 ## Installation
 
@@ -81,7 +81,7 @@ mk.block(geom, (10, 10, 5)); mk.cylinder(geom, r, h, pos); mk.sphere(geom, r)
 mk.union(geom, [a, b]); mk.difference(geom, a, [b]); mk.intersection(geom, [a, b])
 mk.move(geom, part, (10, 0, 0)); mk.rotate(geom, part, 90, axis='z')
 mk.mirror(geom, part, (1, 0, 0)); mk.array(geom, part, size=(5, 5, 1), displ=(10, 10, 0))
-mk.fillet(geom, block, 0.5); mk.chamfer(geom, block, 0.5)   # all edges, or a selection
+mk.fillet(geom, part, 0.5); mk.chamfer(geom, part, 0.5)     # all edges, or a selection
 mk.partition(geom, part, tool); mk.delete(geom, part)
 plane = mk.workplane(geom, quickz=0)
 mk.circle(plane, 2); mk.extrude(geom, plane, 5); mk.revolve(geom, plane)
@@ -104,8 +104,8 @@ mk.cylinder(geom, 1, 5, pos, contributeto=holes)  # collect from several feature
 `where='geometry'` makes a selection inside the geometry sequence instead,
 for use as input of a later operation, e.g. `mk.sel.box(geom, 'object',
 x=(20, 40), where='geometry')` to pick whole objects for `mk.delete`. In a
-work plane, selections pick single corners or edges:
-`mk.fillet(plane, mk.sel.box(plane, 'point', x=1, y=1), 0.3)`.
+work plane, selections can pick single corners or edges, e.g. to fillet
+one corner: `mk.fillet(plane, mk.sel.box(plane, 'point', x=1, y=1), 0.3)`.
 
 Queries return plain Python values and leave nothing in the model:
 
@@ -143,8 +143,8 @@ a plate with a row of cooling holes, for any number of holes.
   results are left to MPh.
 - No named helpers yet for geometry parts (`PartInstance`), sweeps, cones
   and the other remaining primitives, virtual operations or repair. They
-  work through `mk.feature(geom, 'Sweep', ...)` with the same conversions
-  and input handling.
+  work through `mk.feature(geom, 'Sweep', ...)`, which handles arguments
+  like the named helpers (expressions, lists, nodes as inputs).
 
 ## Development
 

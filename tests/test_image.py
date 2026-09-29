@@ -128,9 +128,9 @@ def test_image_2d_1d_and_second_component(model, tmp_path):
 
 
 def test_image_errors(model, plate, wall, tmp_path):
-    with pytest.raises(ValueError, match='.png or .jpg'):
+    with pytest.raises(ValueError, match=r'\.png, \.jpg or \.jpeg, not'):
         mk.image(plate, tmp_path/'g.gif')
-    with pytest.raises(ValueError, match='.png or .jpg'):
+    with pytest.raises(ValueError, match=r'\.png, \.jpg or \.jpeg, not'):
         mk.image(plate, tmp_path/'g')
     with pytest.raises(TypeError, match='file name comes second'):
         mk.image(plate, wall, tmp_path/'g.png')

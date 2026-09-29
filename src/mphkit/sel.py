@@ -20,8 +20,9 @@ it can also be the input of later geometry operations, but it only sees
 objects created before it.
 
 A work plane can take the place of the geometry in `box`, `ball`, `disk`,
-`all` and the set operations and `adjacent`, e.g. to fillet single
-corners: `mk.fillet(plane, mk.sel.box(plane, 'point', x=1, y=1), 0.3)`.
+`all`, `adjacent` and the set operations. There, selections can pick
+single corners or edges, e.g. to fillet one corner:
+`mk.fillet(plane, mk.sel.box(plane, 'point', x=1, y=1), 0.3)`.
 Coordinates are the plane's own. Such selections live in the plane's
 sequence (the default there), only see objects created before them, and
 are inputs of operations in that plane only: COMSOL derives no

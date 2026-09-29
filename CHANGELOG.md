@@ -12,10 +12,10 @@ until 1.0, a minor release (0.2, 0.3, ...) may change the API. See
 ### Added
 
 - Unknown names on `mphkit` and `mphkit.sel` raise an `AttributeError`
-  that names the helper probably meant, e.g. `mk.box` suggests
-  `mphkit.sel.box` to select or `mphkit.block` to create, points to
-  `mphkit.feature` for features without a helper (`mk.cone`), and to
-  `help(mphkit)`.
+  that suggests the helper that was probably meant: `mk.box` suggests
+  `mphkit.sel.box` to select or `mphkit.block` to create, and `mk.cone`
+  suggests `mphkit.feature(geom, 'Cone', ...)`. The message also points
+  to `help(mphkit)`.
 - Unknown entity kinds, including entity levels given as numbers, suggest
   COMSOL's name (`'face'` → `'boundary'` in 3D, `2` → `'boundary'`), and
   unknown property names suggest COMSOL's (`radius` → `r`, or `rmaj` and
@@ -53,12 +53,12 @@ until 1.0, a minor release (0.2, 0.3, ...) may change the API. See
   round coordinates; pass `xmin=`, `xmax=`, ... to `sel.box` for exact
   bounds.
 - `sel.ball`, `sel.disk` and `sel.cylinder` find a drawn sphere, circle
-  or cylinder given its exact radius, top and bottom, such as 0.3 or far
-  from the origin; COMSOL compares in single precision, so these were
-  missed. `r`, `top`, `bottom` and `rin`
-  now get a margin of a millionth of the size of the coordinates involved,
-  so with `condition='intersects'` entities that only touch them are
-  picked too; for a strict bound, give room the other way, e.g.
+  or cylinder given its exact radius, top and bottom, also for values
+  such as 0.3 and for shapes far from the origin; COMSOL compares in
+  single precision, so these were missed. `r`, `top`, `bottom` and `rin`
+  now get a margin of a millionth of the size of the coordinates
+  involved. So with `condition='intersects'`, entities that only touch
+  them are picked too; for a strict bound, give room the other way, e.g.
   `0.999*r`.
 
 ## [0.1.0] - 2026-09-27

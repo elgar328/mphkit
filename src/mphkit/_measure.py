@@ -105,12 +105,13 @@ def bounding_box(geom: Node, entity: str, /, selection=None) -> dict | None:
     the geometry's length unit.
 
     Has one pair per space dimension, so it can be passed on as
-    `sel.box(geom, entity, **box)`. For a single point, min equals max: its
-    coordinates. `selection` works as in `measure()`. Returns `None` for
-    an empty selection. Values at the `'domain'`, `'boundary'` and `'edge'`
-    levels are single precision (1.1 reads 1.100000023841858); points keep
-    full precision. After a rotation, 0 may read about 1e-16 at any level.
-    Compare with a tolerance; `sel.box` allows for that.
+    `sel.box(geom, entity, **bbox)`. For a single point, min equals max:
+    its coordinates. `selection` works as in `measure()`. Returns `None`
+    for an empty selection. Values at the `'domain'`, `'boundary'` and
+    `'edge'` levels are single precision (1.1 reads 1.100000023841858);
+    points keep double precision. After a rotation, 0 may read about
+    1e-16 at any level. Compare with a tolerance; `sel.box` allows for
+    that.
     """
     _comsol.check_not_workplane(geom, 'bounding_box')
     measurement = _final(geom, entity, selection)
@@ -134,9 +135,10 @@ def summary(geom: Node, /) -> dict:
     `'edges'`, 1D no `'boundaries'` either) and of voids, the bounding box
     and the length unit. Voids are enclosed empty regions, e.g. left by a
     sphere subtracted from a block, or a hole in 2D; a through-hole is not
-    one. The bounding box is in full precision, unlike `bounding_box()`. A
-    quick check that the geometry came out as meant, e.g. one domain after
-    a union.
+    one. The bounding box is in double precision, unlike `bounding_box()`,
+    but may differ from the drawn size in the last digits; compare with a
+    tolerance. A quick check that the geometry came out as meant, e.g. one
+    domain after a union.
     """
     _comsol.check_not_workplane(geom, 'summary')
     _comsol.check_built(geom)
@@ -167,7 +169,7 @@ def coordinates(geom: Node, entity: str = 'point', /,
     `selection` works as in `measure()`; left out, the vertices of all
     entities of that kind, so `coordinates(geom)` gives every vertex.
     Unlike `bounding_box()`, which gives single-precision extents for
-    faces and domains, these are the exact vertex coordinates.
+    domains, boundaries and edges, these are the exact vertex coordinates.
     """
     _comsol.check_not_workplane(geom, 'coordinates')
     found = numbers_of(geom, entity, selection)
