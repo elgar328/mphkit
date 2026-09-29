@@ -77,6 +77,15 @@ NOTES = {
     'mphkit.sel.neighbors': 'mphkit.sel.adjacent makes a selection instead.',
 }
 
+# Selection helpers whose call differs from `(geom, kind, ...)`; helpers
+# that take no kind (`entities`, `layer`) are suggested by name only.
+SEL_CALLS = {
+    'all': '(geom, {kind})', 'adjacent': '(geom, input, {kind})',
+    'result': '(geom, feature, {kind})',
+    'cumulative': '(geom, group, {kind})',
+}
+NO_KIND = {'entities', 'layer'}
+
 # Geometry features without a named helper, created with `feature()`.
 FEATURES = {
     'cone': 'Cone', 'torus': 'Torus', 'sweep': 'Sweep', 'loft': 'Loft',
@@ -185,8 +194,10 @@ def _suggest(module: str, name: str) -> Result:
     # helper and what it acts on, as in `measure_volume`
     head, _, tail = rest.partition('_')
     kind = entity_suggestion(tail) if tail else None
-    if kind and head in names[SEL]:
-        return [f'mphkit.sel.{names[SEL][head]}(geom, {kind!r}, ...)'], None
+    real = names[SEL].get(head)
+    if kind and real and real not in NO_KIND:
+        call = SEL_CALLS.get(real, '(geom, {kind}, ...)')
+        return [f'mphkit.sel.{real}' + call.format(kind=repr(kind))], None
     if tail:
         direct = _direct(module, names, intent, head)
         if direct:
