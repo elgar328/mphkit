@@ -43,23 +43,9 @@ Every helper takes MPh `Node`s, and those that create something return
 one, so mphkit and MPh mix freely. Physics, mesh, study and results stay
 plain MPh (or the COMSOL Java API through `node.java`).
 
-Good to know:
-
-- Select entities by location (`mk.sel`), not by number: numbers change
-  when the geometry changes.
-- Entity kinds are COMSOL's: `'domain'`, `'boundary'` (faces in 3D),
-  `'edge'`, `'point'`.
-- Objects that touch or overlap stay separate domains, even after
-  `mk.union`; merge them with `mk.union(geom, [a, b], intbnd=False)`.
-- Extra keyword arguments are COMSOL property names (`r`, `h`, `pos`,
-  `size`), so the COMSOL documentation of each feature applies.
-- `mk.measure` and `mk.bounding_box` return values in the geometry's
-  length unit.
-- Curved faces: `mk.sel.result(geom, feature, 'boundary')`, or for a whole
-  cylinder side a thin `mk.sel.cylinder` shell (see `help(mphkit)`).
-- Check a geometry with `mk.summary`, and look at it with `mk.image`.
-- `help(mphkit)` sums up the workflow and rules, and each helper has its
-  own `help()`; it is also what to point an AI assistant to.
+`help(mphkit)` sums up the workflow, the rules and the common pitfalls,
+and each helper has its own `help()`; it is also what to point an AI
+assistant to.
 
 ## Requirements
 
