@@ -155,10 +155,14 @@ undone (see step 9); steps 10 to 14 publish and cannot.
     moving or deleting `v*` tags.
 
 11. **Create the GitHub Release as a draft** from the changelog section.
-    A draft does not start the upload:
+    A draft does not start the upload. GitHub shows every line break in
+    release notes, so the second `awk` joins each wrapped entry into one
+    line:
     ```sh
     awk -v v="X.Y.Z" '/^## \[/ { p = index($0, "## [" v "]") == 1; next }
       /^\[[^]]+\]: / { p = 0 } p' CHANGELOG.md |
+      awk '/^  +[^ ]/ { sub(/^ +/, ""); line = line " " $0; next }
+        NR > 1 { print line } { line = $0 } END { print line }' |
       { cat; echo "**Full Changelog**: https://github.com/elgar328/mphkit/compare/vA.B.C...vX.Y.Z"; } |
       gh release create vX.Y.Z --title "vX.Y.Z" --verify-tag --draft \
         --notes-file -
