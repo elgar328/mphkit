@@ -79,6 +79,21 @@ name='side')` (`rin` needs about 1 % room, see
 `help(mk.sel.cylinder)`; a name avoids a clash with the cylinder's own
 label).
 
+Existing models (e.g. built in the COMSOL Desktop): load one with
+`old = client.load('file.mph')`; `old.reset()` compacts its history and
+`old.save('old.java')` writes its current state as Java, with COMSOL's
+feature and property names (`old.save()` without a path would overwrite
+the .mph). Rebuild the geometry with mphkit and the rest with plain MPh.
+A plain number, as in `selection().set(4)`, counts entities of the
+finished geometry. Look it up in the loaded one,
+`g = (old/'geometries').children()[0]` if it is the only one: check that
+`mk.sel.find(g, 'boundary', **mk.bounding_box(g, 'boundary', 4))` gives
+`[4]`, then pass the same ranges to `mk.sel.box(geom, 'boundary', ...)`.
+Numbers after an object name, as in `set("dif1(1)", 3)`, count that
+object's entities during the build, not in the finished geometry: select
+them by location from the drawn shapes, with `where='geometry'`, or in a
+work plane.
+
 More: `help(mk.sel)` for selections (also in work planes), `help(mk.block)`
 etc. for each helper, `mk.feature(geom, 'Type', ...)` for any other
 geometry feature, `mk.set(node_or_java, **properties)` to set properties

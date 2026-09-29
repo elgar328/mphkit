@@ -278,3 +278,38 @@ def test_help_example(client, monkeypatch, tmp_path):
     code = re.search(r'import mph\n.*?\.select\(bottom\)[^\n]*\n',
                      '\n'.join(lines), re.S).group(0)
     run_example(code, client, monkeypatch, tmp_path)
+
+
+def test_help_java_export(client, model, tmp_path):
+    # the route from an existing model that help(mphkit) describes
+    geom = mk.geometry(model, 3)
+    mk.block(geom, (1, 1, 1))
+    mk.cylinder(geom, 0.1, 1, (2, 0, 0)).remove()   # history to compact
+    model.build(geom)
+    bottom = mk.sel.find(geom, 'boundary', z=0)
+    assert len(bottom) == 1
+    heat = (model/'physics').create('HeatTransfer', geom)
+    temp = heat.create('TemperatureBoundary', 2)
+    temp.select(bottom)                              # a numbered selection
+    model.save(tmp_path/'demo.mph')
+    saved = (tmp_path/'demo.mph').read_bytes()
+    old = client.load(tmp_path/'demo.mph')
+    try:
+        g = (old/'geometries').children()[0]
+        assert mk.sel.find(g, 'boundary', z=0) == bottom   # loaded, built
+        old.save(tmp_path/'before.java')
+        old.reset()
+        old.save(tmp_path/'old.java')
+        before = (tmp_path/'before.java').read_text()
+        text = (tmp_path/'old.java').read_text()
+        assert '"Cylinder"' in before, 'no history to compact'
+        assert '"Block"' in text and '"Cylinder"' not in text
+        assert f'feature("{temp.tag()}").selection().set({bottom[0]})' in text
+        # the documented round trip: look up in old, select in the rebuild
+        box = mk.bounding_box(g, 'boundary', bottom[0])
+        assert mk.sel.find(g, 'boundary', **box) == bottom
+        rebuilt = mk.sel.box(geom, 'boundary', **box)
+        assert mk.sel.entities(geom, rebuilt) == bottom
+        assert (tmp_path/'demo.mph').read_bytes() == saved
+    finally:
+        client.remove(old)
