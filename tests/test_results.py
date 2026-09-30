@@ -12,6 +12,7 @@ import numpy
 import pytest
 
 import mphkit as mk
+from conftest import java_export
 
 HELPERS = ('integral', 'average', 'maximum', 'minimum', 'value')
 
@@ -601,9 +602,7 @@ def test_1d_and_workplane(model):
 
 def test_history(fresh, tmp_path):
     model, geom, faces = fresh()
-    path = tmp_path/'model.java'
-    model.save(path)
-    before = path.read_text()
+    before = java_export(model, tmp_path/'model.java')
     mk.integral(geom, 'boundary', 'ht.ntflux', faces['hot'], unit='W')
     mk.maximum(geom, 'domain', 'T', unit='degC', position=True)
     mk.value(geom, 'T', [(0, 0, 0)], unit='degC')
@@ -611,5 +610,4 @@ def test_history(fresh, tmp_path):
         mk.average(geom, 'domain', 'T', unit='kg')
     with pytest.raises(ValueError):
         mk.value(geom, 'T', (1, 1, 1))
-    model.save(path)
-    assert path.read_text() == before
+    assert java_export(model, tmp_path/'model.java') == before

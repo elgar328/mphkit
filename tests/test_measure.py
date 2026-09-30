@@ -5,6 +5,7 @@ import numpy
 import pytest
 
 import mphkit as mk
+from conftest import java_export
 
 
 @pytest.fixture
@@ -214,14 +215,11 @@ def test_coordinates_are_exact(model):
 
 
 def test_queries_leave_no_history(model, pair, tmp_path):
-    path = tmp_path/'model.java'
-    model.save(path)
-    before = path.read_text()
+    before = java_export(model, tmp_path/'model.java')
     mk.measure(pair, 'domain')
     mk.bounding_box(pair, 'boundary', 1)
     mk.sel.find(pair, 'boundary', x=0)
     mk.summary(pair)
     mk.coordinates(pair, 'boundary', 1)
     mk.sel.neighbors(pair, 'domain', boundary=1)
-    model.save(path)
-    assert path.read_text() == before
+    assert java_export(model, tmp_path/'model.java') == before

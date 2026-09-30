@@ -13,6 +13,7 @@ from test_example import plate_with_holes
 from test_results import plate as heat_plate
 
 import mphkit as mk
+from conftest import java_export
 
 
 def png_size(path):
@@ -140,15 +141,12 @@ def test_view_camera_and_history_unchanged(solved, tmp_path):
     model, geom, selections = solved
     camera = model.java.component('comp1').view('view1').camera()
     position = str(camera.getString('position'))
-    path = tmp_path/'model.java'
-    model.save(path)
-    before = path.read_text()
+    before = java_export(model, tmp_path/'model.java')
     mk.plot(geom, 'T', tmp_path/'top.png', view='top', z=2.5)
     mk.image(geom, tmp_path/'mesh.png', mesh=True)
     with pytest.raises(ValueError):
         mk.plot(geom, 'T', tmp_path/'kg.png', unit='kg')
-    model.save(path)
-    assert path.read_text() == before
+    assert java_export(model, tmp_path/'model.java') == before
     assert str(camera.getString('position')) == position
 
 
