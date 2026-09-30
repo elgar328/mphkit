@@ -41,3 +41,13 @@ def count(geom, what):
     java = geom.java
     return {'domains': java.getNDomains(),
             'boundaries': java.getNBoundaries()}[what]
+
+
+def java_export(model, path):
+    """
+    Returns the lines of the model's Java export, without the one with the
+    export time, which changes every minute.
+    """
+    model.save(path)
+    return [line for line in path.read_text().splitlines()
+            if not line.startswith('/** Model exported on')]

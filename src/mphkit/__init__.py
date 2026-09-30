@@ -4,7 +4,7 @@ for reading and drawing results.
 
 mphkit builds geometry and named selections, and reads and draws results;
 physics, mesh and studies stay plain MPh (or the COMSOL Java API through
-`node.java`).
+`node.java`), and mphkit looks up the COMSOL names they need.
 Helpers take MPh nodes (`mk.geometry` the model, `mk.set` also Java
 objects), and those that create something return one.
 
@@ -21,7 +21,8 @@ objects), and those that create something return one.
     bottom = mk.sel.box(geom, 'boundary', z=0)    # select by location
     physics = (model/'physics').create('HeatTransfer', geom)
     # 2: boundaries in 3D
-    physics.create('TemperatureBoundary', 2).select(bottom)
+    temp = physics.create('TemperatureBoundary', 2)
+    temp.select(bottom)
 
 Rules:
 
@@ -83,6 +84,21 @@ name='side')` (`rin` needs about 1 % room, see
 `help(mk.sel.cylinder)`; a name avoids a clash with the cylinder's own
 label).
 
+Finding COMSOL's names, instead of guessing them (search first, the
+full lists are long):
+
+    mk.physics_types(geom, search='heat')        # 'HeatTransfer', ...
+    mk.feature_types(physics, search='convective')  # types and levels
+    mk.feature_types(geom)        # also a mesh, mesh feature or study
+    mk.properties(physics, 'HeatFluxBoundary')   # before creating one
+    mk.properties(temp, search='temperature')    # 'T0': value, default
+    mk.variables(physics, search='heat flux')    # 'ht.ntflux', ...
+
+For physics features, `levels` gives the number `create()` takes for each
+level, e.g. `{'boundary': 2}`; geometry, mesh and study types have
+`levels=None`. `properties` also takes geometry, mesh and study features,
+materials and `mk.properties(mesh, 'FreeTet')`-style types.
+
 Results, once the model is solved (`model.solve()`):
 
     mk.integral(geom, 'boundary', 'ht.ntflux', bottom, unit='W')
@@ -130,6 +146,7 @@ rest of the COMSOL API.
 import sys as _sys
 
 from . import sel
+from ._catalog import feature_types, physics_types, properties, variables
 from ._hints import HintModule as _HintModule
 from ._image import image
 from ._measure import bounding_box, coordinates, measure, summary
@@ -150,12 +167,13 @@ __version__ = '0.3.0.dev0'
 __all__ = ['LicenseError', 'array', 'average', 'block', 'bounding_box',
            'chamfer', 'circle', 'component_of', 'coordinate_system',
            'coordinates', 'cylinder', 'delete', 'difference', 'extrude',
-           'feature', 'fillet', 'geometry', 'image', 'import_', 'integral',
-           'intersection', 'interval', 'line_segment', 'maximum', 'measure',
-           'minimum', 'mirror', 'move', 'partition', 'plot', 'point',
-           'polygon', 'rectangle', 'revolve', 'rigid_transform', 'rotate',
-           'sel', 'sphere', 'square', 'summary', 'union', 'value',
-           'workplane']
+           'feature', 'feature_types', 'fillet', 'geometry', 'image',
+           'import_', 'integral', 'intersection', 'interval',
+           'line_segment', 'maximum', 'measure', 'minimum', 'mirror', 'move',
+           'partition', 'physics_types', 'plot', 'point', 'polygon',
+           'properties', 'rectangle', 'revolve', 'rigid_transform',
+           'rotate', 'sel', 'sphere', 'square', 'summary', 'union', 'value',
+           'variables', 'workplane']
 
 # Unknown names raise errors that name the right helper (see _hints).
 _sys.modules[__name__].__class__ = _HintModule

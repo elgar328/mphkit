@@ -29,6 +29,10 @@ def check(geom: Node, flag: bool, step: int | str) -> None:
     assert_type(mk.value(geom, 'T', (0, 0, 0)), float | NDArray[Any])
     assert_type(mk.plot(geom, 'T', 'T.png', view='top', step='last'), Path)
     assert_type(mk.image(geom, 'mesh.png', mesh=True), Path)
+    assert_type(mk.physics_types(geom, search='heat'), list[dict])
+    assert_type(mk.feature_types(geom, search='flux'), list[dict])
+    assert_type(mk.properties(geom, 'Block'), dict[str, dict])
+    assert_type(mk.variables(geom), list[dict])
     # values not known before the call
     mk.average(geom, 'domain', 'T', step=step)
     mk.maximum(geom, 'domain', 'T', position=flag)

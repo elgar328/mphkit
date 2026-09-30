@@ -29,6 +29,16 @@ until 1.0, a minor release (0.2, 0.3, ...) may change the API. See
 - Unknown names such as `mk.mphplot`, `mk.slice` or `mk.surface_plot`
   suggest `mk.plot`, and `mk.mphmesh` or `mk.mesh_plot` suggest
   `mk.image`.
+- `mk.physics_types`, `mk.feature_types`, `mk.properties` and
+  `mk.variables` look up COMSOL's names instead of guessing them: physics
+  interfaces for a geometry, the features of a physics interface with the
+  levels they go on (also the geometry, mesh and study types), the
+  properties of a node or feature type with their descriptions, defaults
+  and choices, and the variables for result
+  expressions, each with `search=`. They read the undocumented
+  code-completion data of the installed COMSOL, raise if it is missing or
+  changed, and leave nothing in the model. Unknown names such as
+  `mk.list_features`, `mk.property_values` or `mk.vars` suggest them.
 
 ### Fixed
 

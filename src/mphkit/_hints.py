@@ -37,7 +37,7 @@ SHAPES = {
 }
 
 # Words for what a helper does rather than its name.
-MEANINGS = {
+MEANINGS: dict[str, str | tuple[str, ...]] = {
     'volume': 'mphkit.measure', 'area': 'mphkit.measure',
     'length': 'mphkit.measure', 'bbox': 'mphkit.bounding_box',
     'bounds': 'mphkit.bounding_box', 'select': 'mphkit.sel',
@@ -78,6 +78,33 @@ MEANINGS = {
     'interpolate': 'mphkit.value', 'probe': 'mphkit.value',
     'evaluate': 'mphkit.value', 'eval': 'mphkit.value',
     'slice': 'mphkit.plot', 'slices': 'mphkit.plot',
+    # COMSOL's names; "features" may also mean a geometry feature
+    'features': ('mphkit.feature_types', 'mphkit.feature'),
+    'feature_type': 'mphkit.feature_types',
+    'list_features': 'mphkit.feature_types',
+    'feature_list': 'mphkit.feature_types',
+    'physics_features': 'mphkit.feature_types',
+    'physics_feature': 'mphkit.feature_types',
+    'mesh_types': 'mphkit.feature_types',
+    'study_types': 'mphkit.feature_types',
+    'mesh_features': 'mphkit.feature_types',
+    'study_steps': 'mphkit.feature_types',
+    'types': 'mphkit.feature_types', 'list_types': 'mphkit.feature_types',
+    'geometry_features': ('mphkit.feature_types', 'mphkit.feature'),
+    'geometry_types': ('mphkit.feature_types', 'mphkit.feature'),
+    'geom_types': ('mphkit.feature_types', 'mphkit.feature'),
+    'feature_properties': 'mphkit.properties',
+    'property_values': 'mphkit.properties',
+    'list_properties': 'mphkit.properties', 'props': 'mphkit.properties',
+    'settings': ('mphkit.properties', 'mphkit.set'),
+    'options': ('mphkit.properties', 'mphkit.set'),
+    'list_variables': 'mphkit.variables', 'vars': 'mphkit.variables',
+    'variable': 'mphkit.variables', 'expressions': 'mphkit.variables',
+    'physics': 'mphkit.physics_types', 'physics_type': 'mphkit.physics_types',
+    'interfaces': 'mphkit.physics_types',
+    'list_physics': 'mphkit.physics_types',
+    'physics_list': 'mphkit.physics_types',
+    'physics_interfaces': 'mphkit.physics_types',
 }
 
 # Words that, next to `mesh`, ask for a picture of it, as in `plot_mesh`.
@@ -214,7 +241,7 @@ def _suggest(module: str, name: str) -> Result:
     # Selecting or finding entities of a kind, as in `select_faces`
     if intent == 'select':
         if prefix == 'get_' and rest in MEANINGS:
-            return [MEANINGS[rest]], None
+            return _meant(rest), None
         kind = entity_suggestion(rest)
         if kind:
             if prefix == 'select_':
@@ -282,15 +309,22 @@ def _direct(module: str, names: dict[str, dict[str, str]],
         if key in names[where]:
             return [f'{where}.{names[where][key]}'], None
     if key in MEANINGS and MEANINGS[key] != module:
+        found = _meant(key)
         # In mphkit.sel, a word for a Boolean operation means the selection
         # operation of that name
-        meant = MEANINGS[key].rsplit('.', 1)[1]
-        if module == SEL and meant in names[SEL]:
+        meant = found[0].rsplit('.', 1)[1]
+        if module == SEL and len(found) == 1 and meant in names[SEL]:
             return [f'{SEL}.{names[SEL][meant]}'], None
-        return [MEANINGS[key]], None
+        return found, None
     if key in FEATURES:
         return [f'mphkit.feature(geom, {FEATURES[key]!r}, ...)'], None
     return None
+
+
+def _meant(key: str) -> list[str]:
+    """Returns the helpers a meaning word stands for."""
+    meant = MEANINGS[key]
+    return list(meant) if isinstance(meant, tuple) else [meant]
 
 
 def _close(module: str, names: dict[str, dict[str, str]],

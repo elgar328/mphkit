@@ -123,6 +123,45 @@ def message(module, name):
     (mk, 'cone', "Did you mean mphkit.feature(geom, 'Cone', ...)?"),
     (mk, 'bounding', 'Did you mean mphkit.bounding_box?'),
     (mk, 'fillet_edges', 'Did you mean mphkit.fillet?'),
+    # COMSOL's names
+    (mk, 'features', 'Did you mean mphkit.feature_types or mphkit.feature?'),
+    (mk, 'feature_type', 'Did you mean mphkit.feature_types?'),
+    (mk, 'get_feature_types', 'Did you mean mphkit.feature_types?'),
+    (mk, 'list_features', 'Did you mean mphkit.feature_types?'),
+    (mk, 'feature_list', 'Did you mean mphkit.feature_types?'),
+    (mk, 'physics_features', 'Did you mean mphkit.feature_types?'),
+    (mk, 'feature_properties', 'Did you mean mphkit.properties?'),
+    (mk, 'property_values', 'Did you mean mphkit.properties?'),
+    (mk, 'get_properties', 'Did you mean mphkit.properties?'),
+    (mk, 'list_properties', 'Did you mean mphkit.properties?'),
+    (mk, 'get_props', 'Did you mean mphkit.properties?'),
+    (mk, 'props', 'Did you mean mphkit.properties?'),
+    (mk, 'settings', 'Did you mean mphkit.properties or mphkit.set?'),
+    (mk, 'options', 'Did you mean mphkit.properties or mphkit.set?'),
+    (mk.sel, 'settings', 'Did you mean mphkit.properties or mphkit.set?'),
+    (mk, 'list_variables', 'Did you mean mphkit.variables?'),
+    (mk, 'vars', 'Did you mean mphkit.variables?'),
+    (mk, 'get_variables', 'Did you mean mphkit.variables?'),
+    (mk, 'find_variable', 'Did you mean mphkit.variables?'),
+    (mk, 'expressions', 'Did you mean mphkit.variables?'),
+    (mk, 'physics', 'Did you mean mphkit.physics_types?'),
+    (mk, 'physics_type', 'Did you mean mphkit.physics_types?'),
+    (mk, 'interfaces', 'Did you mean mphkit.physics_types?'),
+    (mk, 'list_physics', 'Did you mean mphkit.physics_types?'),
+    (mk, 'physics_list', 'Did you mean mphkit.physics_types?'),
+    (mk, 'physics_interfaces', 'Did you mean mphkit.physics_types?'),
+    (mk, 'physics_feature', 'Did you mean mphkit.feature_types?'),
+    (mk, 'mesh_types', 'Did you mean mphkit.feature_types?'),
+    (mk, 'study_types', 'Did you mean mphkit.feature_types?'),
+    (mk, 'mesh_features', 'Did you mean mphkit.feature_types?'),
+    (mk, 'study_steps', 'Did you mean mphkit.feature_types?'),
+    (mk, 'types', 'Did you mean mphkit.feature_types?'),
+    (mk, 'list_types', 'Did you mean mphkit.feature_types?'),
+    (mk, 'geometry_features',
+     'Did you mean mphkit.feature_types or mphkit.feature?'),
+    (mk, 'geometry_types',
+     'Did you mean mphkit.feature_types or mphkit.feature?'),
+    (mk, 'geom_types', 'Did you mean mphkit.feature_types or mphkit.feature?'),
 ])
 def test_suggestion(module, name, expected):
     text = message(module, name)
@@ -132,10 +171,11 @@ def test_suggestion(module, name, expected):
 
 
 def test_meanings_name_helpers():
-    for meant in _hints.MEANINGS.values():
-        target = mk
-        for part in meant.split('.')[1:]:
-            target = getattr(target, part)
+    for key in _hints.MEANINGS:
+        for meant in _hints._meant(key):
+            target = mk
+            for part in meant.split('.')[1:]:
+                target = getattr(target, part)
     assert 'Did you mean' not in message(mk, 'evaluate')
 
 
@@ -339,9 +379,20 @@ def test_readme_results(client, tmp_path):
 def test_help_example(client, monkeypatch, tmp_path):
     lines = [line[4:] for line in mk.__doc__.splitlines()
              if line.startswith('    ') or not line.strip()]
+    joined = '\n'.join(lines)
     code = re.search(r'import mph\n.*?\.select\(bottom\)[^\n]*\n',
-                     '\n'.join(lines), re.S).group(0)
-    run_example(code, client, monkeypatch, tmp_path)
+                     joined, re.S).group(0)
+    # the name lookups, on the example's model
+    lookups = re.search(r'(mk\.physics_types\(geom.*?)\n\n', joined,
+                        re.S).group(1).splitlines()
+    assert len(lookups) == 6, 'update the checks below with the help'
+
+    def check(namespace):
+        found = [eval(line.split('#')[0], namespace) for line in lookups]
+        assert 'T0' in found[4]
+        assert any(v['name'] == 'ht.ntflux' for v in found[5])
+
+    run_example(code, client, monkeypatch, tmp_path, check)
 
 
 def test_help_java_export(client, model, tmp_path):

@@ -43,7 +43,7 @@ model.save('demo.mph')
 Helpers take MPh `Node`s (`mk.geometry` the model, `mk.set` also Java
 objects), and those that create something return one, so mphkit and MPh
 mix freely. Physics, mesh and study stay plain MPh (or the COMSOL Java
-API through `node.java`).
+API through `node.java`); mphkit looks up the COMSOL names they need.
 
 `help(mphkit)` sums up the workflow, the rules and the common pitfalls,
 and each helper has its own `help()`. Point an AI assistant to
@@ -61,7 +61,11 @@ and each helper has its own `help()`. Point an AI assistant to
 mphkit is developed and tested with COMSOL 6.4 and MPh 1.4. Feature types,
 property names and selection behavior can differ between COMSOL versions,
 so other versions may need adjustments; reports are welcome. Checked on
-macOS and Windows; it should run wherever MPh runs.
+macOS and Windows; it should run wherever MPh runs. The name lookups read
+COMSOL's code-completion data in the installation (`data/completion`),
+which COMSOL does not document; they were checked with COMSOL 6.4 on
+macOS only. A missing or changed catalogue raises an error rather than
+giving wrong names.
 
 ## Installation
 
@@ -153,6 +157,25 @@ mk.plot(geom, 'T', 'mid.png', unit='degC', z=2.5, view='top')  # a slice from ab
 `mk.plot` also draws a selection only and deformed shapes
 (`deform=True`); like the other helpers it leaves nothing in the model.
 
+COMSOL's names, looked up instead of guessed (search first, the full
+lists are long), here on the example script's model with
+`heat = model/'physics'/'heat'`, `mesh = model/'meshes'/'mesh'` and
+`study = model/'studies'/'static'`:
+
+```python
+mk.physics_types(geom, search='heat')         # 'HeatTransfer', ...
+mk.feature_types(heat, search='convective')   # 'ConvectiveOutflow', then 'HeatFluxBoundary' ({'boundary': 2}) via a choice
+mk.feature_types(mesh)                        # 'FreeTet', 'Size', ...: what mesh.create() takes
+mk.feature_types(study, search='time')        # ..., 'Transient', ...: by name first
+mk.properties(heat, 'HeatFluxBoundary')       # descriptions, defaults, choices
+mk.properties(heat/'cooling', search='flux')  # and current values
+mk.variables(heat, search='heat flux')        # 'ht.ntflux' [W/m^2], on boundaries
+```
+
+Physics features come with the level numbers `create()` takes.
+`mk.properties` also takes geometry, mesh and study features and
+materials, or a type to create there, e.g. `mk.properties(mesh, 'FreeTet')`.
+
 And a few helpers outside geometry:
 
 ```python
@@ -166,9 +189,9 @@ a plate with a row of cooling holes, for one or more holes.
 
 ## Limitations
 
-- mphkit covers geometry, selections and reading and drawing results.
-  Physics, mesh, studies and plots beyond `mk.plot` (arrows, streamlines,
-  graphs, animations) are left to MPh.
+- mphkit covers geometry, selections, reading and drawing results, and
+  looking up COMSOL's names. Physics, mesh, studies and plots beyond
+  `mk.plot` (arrows, streamlines, graphs, animations) are left to MPh.
 - Parametric sweeps that COMSOL stores as an outer loop, e.g. around a
   time-dependent study or over a geometry parameter, cannot be read yet;
   other sweeps of a stationary study can.
