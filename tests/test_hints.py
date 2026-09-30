@@ -151,6 +151,15 @@ def message(module, name):
     (mk, 'physics_list', 'Did you mean mphkit.physics_types?'),
     (mk, 'physics_interfaces', 'Did you mean mphkit.physics_types?'),
     (mk, 'physics_feature', 'Did you mean mphkit.feature_types?'),
+    # materials
+    (mk, 'matlib', 'Did you mean mphkit.materials or mphkit.material?'),
+    (mk, 'material_library',
+     'Did you mean mphkit.materials or mphkit.material?'),
+    (mk, 'library_materials', 'Did you mean mphkit.materials?'),
+    (mk, 'list_materials', 'Did you mean mphkit.materials?'),
+    (mk, 'get_materials', 'Did you mean mphkit.materials?'),
+    (mk, 'insert_material', 'Did you mean mphkit.material?'),
+    (mk, 'add_material', 'Did you mean mphkit.material?'),
     (mk, 'mesh_types', 'Did you mean mphkit.feature_types?'),
     (mk, 'study_types', 'Did you mean mphkit.feature_types?'),
     (mk, 'mesh_features', 'Did you mean mphkit.feature_types?'),
@@ -366,10 +375,10 @@ def test_readme_results(client, tmp_path):
         heat, mean, (low, where), points = [
             eval(line.split('#')[0], namespace) for line in lines]
         assert heat == pytest.approx(-2.74, abs=0.005)
-        assert mean == pytest.approx(90.3, abs=0.05)
-        assert low == pytest.approx(83.5, abs=0.05)
+        assert mean == pytest.approx(90.2, abs=0.05)
+        assert low == pytest.approx(83.4, abs=0.05)
         assert where[:2] == pytest.approx([88, 20])   # any z: T is flat in z
-        assert points == pytest.approx([89.9, 84.2], abs=0.05)
+        assert points == pytest.approx([89.8, 84.1], abs=0.05)
         for line in pictures:
             assert eval(line, namespace).exists()
     finally:

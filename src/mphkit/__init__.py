@@ -1,10 +1,12 @@
 """
-Helpers on top of MPh for building COMSOL geometries and selections, and
-for reading and drawing results.
+Helpers on top of MPh for building COMSOL geometries and selections,
+inserting materials from COMSOL's libraries, and reading and drawing
+results.
 
-mphkit builds geometry and named selections, and reads and draws results;
-physics, mesh and studies stay plain MPh (or the COMSOL Java API through
-`node.java`), and mphkit looks up the COMSOL names they need.
+mphkit builds geometry and named selections, inserts materials from
+COMSOL's libraries, and reads and draws results; physics, mesh and
+studies stay plain MPh (or the COMSOL Java API through `node.java`), and
+mphkit looks up the COMSOL names they need.
 Helpers take MPh nodes (`mk.geometry` the model, `mk.set` also Java
 objects), and those that create something return one.
 
@@ -99,6 +101,17 @@ level, e.g. `{'boundary': 2}`; geometry, mesh and study types have
 `levels=None`. `properties` also takes geometry, mesh and study features,
 materials and `mk.properties(mesh, 'FreeTet')`-style types.
 
+Materials from COMSOL's libraries, instead of typing property values:
+
+    mk.materials(search='structural steel')    # names, groups, properties
+    steel = mk.material(geom, 'Structural steel')      # all domains
+    water = mk.material(geom, 'Water, liquid', channel)  # a selection
+
+Add the background material first, without a selection; later materials
+need one, since each domain takes the material added last among those
+that select it. `mk.materials()` lists the basic library, a `search`
+looks in all of them (`library=` in `mk.material` for the others).
+
 Results, once the model is solved (`model.solve()`):
 
     mk.integral(geom, 'boundary', 'ht.ntflux', bottom, unit='W')
@@ -149,6 +162,7 @@ from . import sel
 from ._catalog import feature_types, physics_types, properties, variables
 from ._hints import HintModule as _HintModule
 from ._image import image
+from ._materials import material, materials
 from ._measure import bounding_box, coordinates, measure, summary
 from ._plot import plot
 from ._props import set_ as set  # not in __all__: keeps builtin set
@@ -169,7 +183,8 @@ __all__ = ['LicenseError', 'array', 'average', 'block', 'bounding_box',
            'coordinates', 'cylinder', 'delete', 'difference', 'extrude',
            'feature', 'feature_types', 'fillet', 'geometry', 'image',
            'import_', 'integral', 'intersection', 'interval',
-           'line_segment', 'maximum', 'measure', 'minimum', 'mirror', 'move',
+           'line_segment', 'material', 'materials', 'maximum', 'measure',
+           'minimum', 'mirror', 'move',
            'partition', 'physics_types', 'plot', 'point', 'polygon',
            'properties', 'rectangle', 'revolve', 'rigid_transform',
            'rotate', 'sel', 'sphere', 'square', 'summary', 'union', 'value',

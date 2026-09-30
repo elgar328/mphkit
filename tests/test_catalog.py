@@ -534,7 +534,7 @@ def test_properties_mesh_study_material(plate):
     assert set(step) <= set(stationary.props) and 'useparam' in step
     assert 'tlist' in mk.properties(model/'studies'/'static', 'Transient')
     basic = mk.properties(model/'materials'/'steel'/'Basic')
-    assert basic['thermalconductivity']['value'] == ['45[W/(m*K)]']
+    assert basic['thermalconductivity']['value'] == ['44.5[W/(m*K)]']
     assert basic['thermalconductivity']['description'] is None
     steel = mk.properties(model/'materials'/'steel')
     assert 'thickness' in steel and 'bndType' not in steel

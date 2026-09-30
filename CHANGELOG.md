@@ -40,6 +40,14 @@ until 1.0, a minor release (0.2, 0.3, ...) may change the API. See
   changed, and leave nothing in the model. Unknown names such as
   `mk.list_features`, `mk.property_values` or `mk.vars` suggest them.
 
+- `mk.materials` lists the materials in COMSOL's material libraries
+  (names, property groups and basic properties, with `search=`), and
+  `mk.material` inserts one into the component of a geometry, on all
+  domains or a selection, instead of typing property values by hand.
+  Unknown material names suggest close ones or the library to pass.
+  Unknown names such as `mk.list_materials` or `mk.matlib` suggest them.
+  The example script takes its structural steel from the library.
+
 ### Fixed
 
 - `mk.measure`, `mk.bounding_box` and `mk.sel.find` no longer leave lines

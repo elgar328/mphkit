@@ -6,8 +6,9 @@ One end is held at 100 degC; the hole walls are cooled by a coolant at
 
 The geometry is built with mphkit and the boundaries are selected by
 location, so the script works for any number of holes (one or more):
-the entity numbers change, the selections do not. Physics, mesh and
-study are plain MPh; mphkit reads the heat flowing in.
+the entity numbers change, the selections do not. The steel comes from
+COMSOL's material library; physics, mesh and study are plain MPh; mphkit
+reads the heat flowing in.
 
 Usage: python plate_with_holes.py [holes ...]
 """
@@ -43,10 +44,8 @@ def build_model(client, holes):
     model = client.create(f'plate with {holes} holes')
     geom, selections = build_geometry(model, holes)
 
-    steel = (model/'materials').create('Common', name='steel')
-    (steel/'Basic').property('thermalconductivity', ['45[W/(m*K)]'])
-    (steel/'Basic').property('density', ['7850[kg/m^3]'])
-    (steel/'Basic').property('heatcapacity', ['475[J/(kg*K)]'])
+    # from COMSOL's material library, on all domains
+    mk.material(geom, 'Structural steel', name='steel')
 
     heat = (model/'physics').create('HeatTransfer', geom, name='heat')
     hot = heat.create('TemperatureBoundary', 2, name='hot end')

@@ -6,8 +6,8 @@
 [![COMSOL](https://img.shields.io/badge/COMSOL-6.4-blue)](https://www.comsol.com/)
 
 Helpers on top of [MPh](https://github.com/MPh-py/MPh) for building COMSOL
-geometries and geometry-based selections in Python, and for reading and
-drawing results.
+geometries and geometry-based selections in Python, inserting materials
+from COMSOL's libraries, and reading and drawing results.
 Select boundaries by location instead of by entity number, so selections
 keep working when the geometry changes.
 
@@ -133,9 +133,9 @@ leave nothing in the model either:
 
 ```python
 mk.integral(geom, 'boundary', 'ht.ntflux', selections['hot end'], unit='W')  # -2.74: flows in
-mk.average(geom, 'domain', 'T', unit='degC')                   # 90.3
-mk.minimum(geom, 'domain', 'T', unit='degC', position=True)    # (83.5, array([88.0, 20.0, ...])): a hole wall
-mk.value(geom, 'T', [(50, 20, 2.5), (100, 20, 2.5)], unit='degC')  # array([89.9, 84.2])
+mk.average(geom, 'domain', 'T', unit='degC')                   # 90.2
+mk.minimum(geom, 'domain', 'T', unit='degC', position=True)    # (83.4, array([88.0, 20.0, ...])): a hole wall
+mk.value(geom, 'T', [(50, 20, 2.5), (100, 20, 2.5)], unit='degC')  # array([89.8, 84.1])
 ```
 
 `ht.ntflux` is the flux out of the domain. With several solutions, pass
@@ -176,6 +176,18 @@ Physics features come with the level numbers `create()` takes.
 `mk.properties` also takes geometry, mesh and study features and
 materials, or a type to create there, e.g. `mk.properties(mesh, 'FreeTet')`.
 
+Materials from COMSOL's libraries, instead of typing property values:
+
+```python
+mk.materials(search='structural steel')             # names, groups, properties
+steel = mk.material(geom, 'Structural steel')       # background first: all domains
+water = mk.material(geom, 'Water, liquid', channel) # later ones take a selection
+```
+
+`mk.materials()` lists the basic library and a search looks in all of
+them; `mk.material(..., library='acdc')` takes the others. Each domain
+takes the material added last among those that select it.
+
 And a few helpers outside geometry:
 
 ```python
@@ -189,8 +201,8 @@ a plate with a row of cooling holes, for one or more holes.
 
 ## Limitations
 
-- mphkit covers geometry, selections, reading and drawing results, and
-  looking up COMSOL's names. Physics, mesh, studies and plots beyond
+- mphkit covers geometry, selections, materials from COMSOL's
+  libraries, reading and drawing results, and looking up COMSOL's names. Physics, mesh, studies and plots beyond
   `mk.plot` (arrows, streamlines, graphs, animations) are left to MPh.
 - Parametric sweeps that COMSOL stores as an outer loop, e.g. around a
   time-dependent study or over a geometry parameter, cannot be read yet;

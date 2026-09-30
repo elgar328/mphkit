@@ -105,6 +105,13 @@ MEANINGS: dict[str, str | tuple[str, ...]] = {
     'list_physics': 'mphkit.physics_types',
     'physics_list': 'mphkit.physics_types',
     'physics_interfaces': 'mphkit.physics_types',
+    # Materials from COMSOL's libraries
+    'matlib': ('mphkit.materials', 'mphkit.material'),
+    'material_library': ('mphkit.materials', 'mphkit.material'),
+    'library_materials': 'mphkit.materials',
+    'list_materials': 'mphkit.materials',
+    'insert_material': 'mphkit.material',
+    'add_material': 'mphkit.material',
 }
 
 # Words that, next to `mesh`, ask for a picture of it, as in `plot_mesh`.

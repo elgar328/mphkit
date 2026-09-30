@@ -33,6 +33,9 @@ def check(geom: Node, flag: bool, step: int | str) -> None:
     assert_type(mk.feature_types(geom, search='flux'), list[dict])
     assert_type(mk.properties(geom, 'Block'), dict[str, dict])
     assert_type(mk.variables(geom), list[dict])
+    assert_type(mk.materials(search='steel'), list[dict])
+    assert_type(mk.material(geom, 'Copper', [1], library='basic_material'),
+                Node)
     # values not known before the call
     mk.average(geom, 'domain', 'T', step=step)
     mk.maximum(geom, 'domain', 'T', position=flag)
