@@ -7,7 +7,8 @@ here, so that a change in either needs a fix in one place only.
 from __future__ import annotations
 
 import numbers
-from collections.abc import Iterable
+from collections.abc import Iterable, Iterator
+from contextlib import contextmanager
 from difflib import get_close_matches
 from typing import Any
 
@@ -868,6 +869,26 @@ def cumulative_tag(geom: Node, value) -> str:
 def names(values: Iterable) -> list[str]:
     """Returns the tags of selection nodes, passing strings through."""
     return [tag_of(v) if isinstance(v, Node) else str(v) for v in values]
+
+
+###########
+# History #
+###########
+
+@contextmanager
+def history_off(model) -> Iterator[None]:
+    """
+    Switches the history of a Java model off meanwhile, so that temporary
+    selections and measurements leave no trace in it (or in a Java
+    export). disable() and enable() nest: a history the user switched off
+    stays off afterwards.
+    """
+    history = model.hist()
+    history.disable()
+    try:
+        yield
+    finally:
+        history.enable()
 
 
 ##########

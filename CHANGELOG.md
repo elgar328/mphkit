@@ -30,6 +30,11 @@ until 1.0, a minor release (0.2, 0.3, ...) may change the API. See
   suggest `mk.plot`, and `mk.mphmesh` or `mk.mesh_plot` suggest
   `mk.image`.
 
+### Fixed
+
+- `mk.measure`, `mk.bounding_box` and `mk.sel.find` no longer leave lines
+  in the model's history, which showed up in a Java export of the model.
+
 ## [0.2.0] - 2026-09-29
 
 ### Added

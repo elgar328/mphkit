@@ -777,22 +777,16 @@ def scratch(model) -> Iterator[Callable[[Any, str], Any]]:
         made.append((container, tag))
         return container.get(tag)
 
-    history = model.hist()
-    # disable() and enable() nest: a history the user switched off stays
-    # off afterwards.
-    history.disable()
-    try:
-        yield create
-    finally:
+    with _comsol.history_off(model):
         try:
+            yield create
+        finally:
             for container, tag in reversed(made):
                 try:
                     if tag in [str(t) for t in container.tags()]:
                         container.remove(tag)
                 except Exception:
                     pass
-        finally:
-            history.enable()
 
 
 def axisymmetric(geom: Node) -> bool:

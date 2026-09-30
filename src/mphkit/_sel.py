@@ -561,11 +561,12 @@ def find(geom: Node, entity: str, /, x=None, y=None, z=None, *,
     clashes.
     """
     _comsol.check_not_workplane(geom, 'sel.find')
-    node = box(geom, entity, x, y, z, condition=condition)
-    try:
-        return entities(geom, node)
-    finally:
-        _comsol.component_of(geom).selection().remove(node.tag())
+    with _comsol.history_off(geom.model.java):
+        node = box(geom, entity, x, y, z, condition=condition)
+        try:
+            return entities(geom, node)
+        finally:
+            _comsol.component_of(geom).selection().remove(node.tag())
 
 
 def cumulative(geom: Node, group, entity: str, /, *, create: bool = False,

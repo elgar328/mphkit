@@ -69,8 +69,9 @@ def _final(geom: Node, entity: str, selection):
         return None
     dim = _comsol.entity_dim(geom, entity)
     measurement = _comsol.java_of(geom).measureFinal()
-    measurement.selection().geom(geom.tag(), dim)
-    measurement.selection().set(found)
+    with _comsol.history_off(geom.model.java):
+        measurement.selection().geom(geom.tag(), dim)
+        measurement.selection().set(found)
     return measurement
 
 

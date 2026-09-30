@@ -211,3 +211,17 @@ def test_coordinates_are_exact(model):
     mk.rectangle(flat, (1, 2))
     model.build(flat)
     assert mk.coordinates(flat, 'point', 1) == {1: (0, 0)}
+
+
+def test_queries_leave_no_history(model, pair, tmp_path):
+    path = tmp_path/'model.java'
+    model.save(path)
+    before = path.read_text()
+    mk.measure(pair, 'domain')
+    mk.bounding_box(pair, 'boundary', 1)
+    mk.sel.find(pair, 'boundary', x=0)
+    mk.summary(pair)
+    mk.coordinates(pair, 'boundary', 1)
+    mk.sel.neighbors(pair, 'domain', boundary=1)
+    model.save(path)
+    assert path.read_text() == before
