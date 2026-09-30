@@ -1,9 +1,9 @@
 """
 Helpers on top of MPh for building COMSOL geometries and selections, and
-for reading results.
+for reading and drawing results.
 
-mphkit builds geometry and named selections and reads results; physics,
-mesh and studies stay plain MPh (or the COMSOL Java API through
+mphkit builds geometry and named selections, and reads and draws results;
+physics, mesh and studies stay plain MPh (or the COMSOL Java API through
 `node.java`).
 Helpers take MPh nodes (`mk.geometry` the model, `mk.set` also Java
 objects), and those that create something return one.
@@ -62,6 +62,8 @@ Check the geometry from code:
 - `mk.image(geom, 'geom.png')`: a picture of the geometry
 - `mk.image(geom, 'selection.png', selection, labels=True)`: a selection
   highlighted, with entity numbers
+- `mk.image(geom, 'mesh.png', mesh=True)`: the mesh, coloured by element
+  quality (after `model.mesh()`)
 
 Curved entities are measured approximately (see `help(mk.measure)`).
 `mk.measure` and `mk.bounding_box` use single precision, about seven
@@ -87,6 +89,8 @@ Results, once the model is solved (`model.solve()`):
     mk.average(geom, 'domain', 'T', unit='degC')
     mk.maximum(geom, 'domain', 'T', unit='degC', position=True)
     mk.value(geom, 'T', [(50, 20, 5), (0, 0, 0)], unit='degC')
+    mk.plot(geom, 'T', 'T.png', unit='degC')           # a picture
+    mk.plot(geom, 'T', 'mid.png', unit='degC', z=2.5, view='top')
 
 They check what COMSOL would silently get wrong: a unit that does not
 fit, a geometry changed since the solve (unless built and meshed again),
@@ -96,8 +100,11 @@ Values are in SI units unless `unit` is given, also in an mm geometry;
 positions and points in the geometry's length unit. `ht.ntflux` is the
 flux out of the domain, negative where heat enters. With several
 solutions pass `dataset=`, with several steps (time, sweep, frequency)
-`step='last'`, a number, a list or `'all'`. Global values and values at
-all mesh nodes: `model.evaluate('expression', 'unit')` in MPh.
+`step='last'`, a number, a list or `'all'` (a picture shows one step).
+`mk.plot` also draws a selection only, slices (`x=`, `y=` or `z=`), views
+from a side (`view='top'`, ...) and deformed shapes (`deform=True`).
+Global values and values at all mesh nodes:
+`model.evaluate('expression', 'unit')` in MPh.
 
 Existing models (e.g. built in the COMSOL Desktop): load one with
 `old = client.load('file.mph')`; `old.reset()` compacts its history and
@@ -126,6 +133,7 @@ from . import sel
 from ._hints import HintModule as _HintModule
 from ._image import image
 from ._measure import bounding_box, coordinates, measure, summary
+from ._plot import plot
 from ._props import set_ as set  # not in __all__: keeps builtin set
 from ._results import average, integral, maximum, minimum, value
 from .errors import LicenseError
@@ -144,9 +152,10 @@ __all__ = ['LicenseError', 'array', 'average', 'block', 'bounding_box',
            'coordinates', 'cylinder', 'delete', 'difference', 'extrude',
            'feature', 'fillet', 'geometry', 'image', 'import_', 'integral',
            'intersection', 'interval', 'line_segment', 'maximum', 'measure',
-           'minimum', 'mirror', 'move', 'partition', 'point', 'polygon',
-           'rectangle', 'revolve', 'rigid_transform', 'rotate', 'sel',
-           'sphere', 'square', 'summary', 'union', 'value', 'workplane']
+           'minimum', 'mirror', 'move', 'partition', 'plot', 'point',
+           'polygon', 'rectangle', 'revolve', 'rigid_transform', 'rotate',
+           'sel', 'sphere', 'square', 'summary', 'union', 'value',
+           'workplane']
 
 # Unknown names raise errors that name the right helper (see _hints).
 _sys.modules[__name__].__class__ = _HintModule

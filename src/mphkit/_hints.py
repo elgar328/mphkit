@@ -52,7 +52,7 @@ MEANINGS = {
     'info': 'mphkit.summary', 'geominfo': 'mphkit.summary',
     'geometry_info': 'mphkit.summary', 'geom_info': 'mphkit.summary',
     'describe': 'mphkit.summary', 'stats': 'mphkit.summary',
-    'plot': 'mphkit.image', 'picture': 'mphkit.image',
+    'picture': 'mphkit.image',
     'screenshot': 'mphkit.image', 'snapshot': 'mphkit.image',
     'render': 'mphkit.image', 'show': 'mphkit.image', 'draw': 'mphkit.image',
     'save_image': 'mphkit.image', 'export_image': 'mphkit.image',
@@ -69,21 +69,26 @@ MEANINGS = {
     'mphselectbox': 'mphkit.sel.box', 'mphselectcoords': 'mphkit.sel.ball',
     'mphint2': 'mphkit.integral', 'mphmean': 'mphkit.average',
     'mphmax': 'mphkit.maximum', 'mphmin': 'mphkit.minimum',
-    'mphinterp': 'mphkit.value',
+    'mphinterp': 'mphkit.value', 'mphplot': 'mphkit.plot',
+    'mphmesh': 'mphkit.image',
     # Results
     'integrate': 'mphkit.integral', 'mean': 'mphkit.average',
     'avg': 'mphkit.average', 'max': 'mphkit.maximum',
     'min': 'mphkit.minimum', 'interp': 'mphkit.value',
     'interpolate': 'mphkit.value', 'probe': 'mphkit.value',
     'evaluate': 'mphkit.value', 'eval': 'mphkit.value',
+    'slice': 'mphkit.plot', 'slices': 'mphkit.plot',
 }
 
+# Words that, next to `mesh`, ask for a picture of it, as in `plot_mesh`.
+PICTURES = ('plot', 'image', 'picture', 'png', 'quality', 'show', 'view')
+
 # Last words of guessed names that ask for a result whatever comes first,
-# as in `volume_integral` or `point_value`, unless the first word asks for
-# one too (`max_value`). `max` and `min` count only first: `bbox_max` asks
-# for a bounding box.
+# as in `volume_integral`, `point_value` or `surface_plot`, unless the
+# first word asks for one too (`max_value`). `max` and `min` count only
+# first: `bbox_max` asks for a bounding box.
 RESULTS = ('integral', 'integrate', 'average', 'mean', 'avg', 'value',
-           'values')
+           'values', 'plot')
 RESULT_FIRST = ('integral', 'integrate', 'average', 'mean', 'avg',
                 'maximum', 'max', 'minimum', 'min')
 
@@ -97,8 +102,8 @@ EVALUATE_NOTE = ("MPh's model.evaluate(expression, unit) gives global values "
 NOTES = {
     'mphkit.union': 'Pass intbnd=False to merge touching or overlapping '
                     'objects into one domain.',
-    'mphkit.image': 'Pictures of the geometry and selections; plot results '
-                    'with MPh.',
+    'mphkit.image': 'Pictures of the geometry, selections and the mesh '
+                    '(mesh=True); mphkit.plot draws results.',
     'mphkit.sel.neighbors': 'mphkit.sel.adjacent makes a selection instead.',
 }
 
@@ -202,6 +207,9 @@ def _suggest(module: str, name: str) -> Result:
     intent, prefix, rest = _parse(name.lower())
     if rest in ('evaluate', 'eval'):
         return [], EVALUATE_NOTE
+    words = rest.split('_')
+    if 'mesh' in words and any(word in PICTURES for word in words):
+        return [f'{MAIN}.image'], "Pass mesh=True for a picture of the mesh."
 
     # Selecting or finding entities of a kind, as in `select_faces`
     if intent == 'select':

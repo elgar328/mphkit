@@ -80,6 +80,14 @@ def tag_of(node: Node) -> str:
     return tag
 
 
+def name_of(java) -> str:
+    """
+    Returns the MPh name of a Java node, as in `model.datasets()`: its
+    label with slashes doubled.
+    """
+    return escape(str(java.label()))
+
+
 def parent_of(node: Node) -> Node:
     """Returns the parent of `node`, which must not be the model root."""
     parent = node.parent()

@@ -17,7 +17,7 @@ from contextlib import contextmanager
 from typing import Any, Literal, overload
 
 import numpy
-from mph.node import Node, escape
+from mph.node import Node
 from numpy.typing import NDArray
 
 from . import _comsol
@@ -30,6 +30,7 @@ LEVELS = {3: 'Volume', 2: 'Surface', 1: 'Line'}
 
 CALLS = {name: f'mk.{name}(geom, entity, expr, selection)' for name in KINDS}
 CALLS['value'] = 'mk.value(geom, expr, points)'
+CALLS['plot'] = 'mk.plot(geom, expr, filename, selection)'
 
 # Properties the helpers set themselves, and what to use instead.
 RESERVED = {'expr': 'the expression argument', 'data': 'dataset=',
@@ -259,20 +260,20 @@ def value(geom: Node, expr: str, points, /, *, unit: str | None = None,
     `dataset` and `step` work as in `integral()`.
     """
     name = 'value'
-    _check_expr(name, expr)
+    check_expr(name, expr)
     if outside not in ('error', 'nan'):
         raise ValueError(f"outside must be 'error' or 'nan', not "
                          f'{outside!r}.')
-    _check_geometry(name, geom)
+    check_geometry(name, geom)
     sdim = _comsol.sdim(geom)
     coordinates, single = _points(geom, points, sdim)
-    _steps(step, None, '')
+    steps(step, None, '')
     model = geom.model.java
-    data = _dataset(geom, dataset)
-    _check_current(geom)
-    solnums, many = _steps(step, _count(model, data), _name(data))
+    data = solved_dataset(geom, dataset)
+    check_current(geom)
+    solnums, many = steps(step, step_count(model, data), _comsol.name_of(data))
     unique, order = _unique(solnums)
-    with _scratch(model) as create:
+    with scratch(model) as create:
         feature = create(model.result().numerical(), 'Interp')
         _comsol.set_properties(feature, {
             'data': str(data.tag()), 'expr': [expr, '1'],
@@ -284,11 +285,11 @@ def value(geom: Node, expr: str, points, /, *, unit: str | None = None,
         except Exception as error:
             if 'Undefined variable' in _comsol.reason(error):
                 raise RuntimeError(
-                    f'{_failed(expr, error)} value() evaluates domain '
+                    f'{failed(expr, error)} value() evaluates domain '
                     f'variables; if "{expr}" exists on boundaries only, as '
                     'ht.ntflux does, use mk.average or mk.maximum over a '
                     'boundary selection.') from error
-            raise _failed(expr, error) from error
+            raise failed(expr, error) from error
         count = len(coordinates)
         shape = (count, 2 * len(unique))
         if real.shape != shape:
@@ -328,19 +329,19 @@ def _over(name: str, geom: Node, entity: str, expr: str, selection,
           unit: str | None, dataset, step, position: bool,
           properties: dict) -> Any:
     """Evaluates integrals, averages, maxima and minima."""
-    _check_expr(name, expr)
+    check_expr(name, expr)
     _check_reserved(name, properties)
-    _check_geometry(name, geom)
+    check_geometry(name, geom)
     level = _comsol.entity_dim(geom, entity)
     if level == 0:
         raise ValueError(f'{name}() works on domains, boundaries and edges; '
                          'use mk.value(geom, expr, points) for values at '
                          'points.')
-    _steps(step, None, '')
+    steps(step, None, '')
     model = geom.model.java
-    data = _dataset(geom, dataset)
-    _check_current(geom)
-    solnums, many = _steps(step, _count(model, data), _name(data))
+    data = solved_dataset(geom, dataset)
+    check_current(geom)
+    solnums, many = steps(step, step_count(model, data), _comsol.name_of(data))
     unique, order = _unique(solnums)
     found = numbers_of(geom, entity, selection)
     if not found:
@@ -352,11 +353,11 @@ def _over(name: str, geom: Node, entity: str, expr: str, selection,
                                 'innerinput': 'manual', 'solnum': unique}
     if position:
         settings['includepos'] = True
-    if name in ('integral', 'average') and _axisymmetric(geom):
+    if name in ('integral', 'average') and axisymmetric(geom):
         settings['intvolume' if level == 2 else 'intsurface'] = True
     ftype = KINDS[name] + LEVELS[level]
     column = -(sdim + 1) if position else -1
-    with _scratch(model) as create:
+    with scratch(model) as create:
         def evaluate(settings: dict) -> tuple[str, Array, Array | None]:
             feature = create(model.result().numerical(), ftype)
             table = create(model.result().table(), 'Table')
@@ -374,7 +375,7 @@ def _over(name: str, geom: Node, entity: str, expr: str, selection,
                         'Some of these entities have no solution (no '
                         'physics or mesh there); pass a selection of the '
                         'solved ones.') from error
-                raise _failed(expr, error) from error
+                raise failed(expr, error) from error
             real = numpy.array(table.getReal(), dtype=float)
             imag = (numpy.array(table.getImag(), dtype=float)
                     if table.isComplex() else None)
@@ -404,7 +405,7 @@ def _over(name: str, geom: Node, entity: str, expr: str, selection,
 # Checking #
 ############
 
-def _check_expr(name: str, expr):
+def check_expr(name: str, expr):
     """Raises for anything but one expression, e.g. swapped arguments."""
     call = CALLS[name]
     if isinstance(expr, str):
@@ -440,7 +441,7 @@ def _check_reserved(name: str, properties: dict):
             raise ValueError(f'{name}() sets "{key}" itself; use {use}.')
 
 
-def _check_geometry(name: str, geom: Node):
+def check_geometry(name: str, geom: Node):
     """Raises for work planes and 1D geometries."""
     _comsol.check_not_workplane(geom, name)
     if _comsol.sdim(geom) < 2:
@@ -448,7 +449,7 @@ def _check_geometry(name: str, geom: Node):
                          '1D.')
 
 
-def _check_current(geom: Node):
+def check_current(geom: Node):
     """
     Raises if the geometry changed since the solve.
 
@@ -476,9 +477,14 @@ def _check_unit(expr: str, unit: str, header: str, plain: str):
     spelled as requested, e.g. "Temperature (degC)".
     """
     if header == plain:
-        raise ValueError(f'COMSOL evaluated "{expr}" in {_unit_of(header)}, '
-                         f'not {unit!r}; give a unit of the same kind, or '
-                         'none for SI units.')
+        raise unit_error(expr, _unit_of(header), unit)
+
+
+def unit_error(expr: str, applied: str, unit: str) -> ValueError:
+    """Returns the error for a unit COMSOL ignored."""
+    return ValueError(f'COMSOL evaluated "{expr}" in {applied}, not '
+                      f'{unit!r}; give a unit of the same kind, or none for '
+                      'SI units.')
 
 
 def _check_point_unit(create, model, data, expr: str, unit: str,
@@ -503,7 +509,7 @@ def _check_point_unit(create, model, data, expr: str, unit: str,
         try:
             feature.setResult()
         except Exception as error:
-            raise _failed(expr, error) from error
+            raise failed(expr, error) from error
         # e.g. "Temperature (K), Point: (0.05, 0.01, 0.005)"
         return str(table.getColumnHeaders()[-1]).split(', Point:')[0]
 
@@ -516,7 +522,7 @@ def _check_point_unit(create, model, data, expr: str, unit: str,
 # Datasets #
 ############
 
-def _dataset(geom: Node, dataset):
+def solved_dataset(geom: Node, dataset):
     """
     Returns the Java solution dataset to evaluate.
 
@@ -527,18 +533,19 @@ def _dataset(geom: Node, dataset):
     datasets = model.result().dataset()
     if dataset is not None:
         java = _find_dataset(geom, dataset)
+        name = _comsol.name_of(java)
         kind = str(java.getType())
         if kind != 'Solution':
-            raise ValueError(f'Dataset "{_name(java)}" is a {kind} dataset; '
-                             'pass a solution dataset.')
+            raise ValueError(f'Dataset "{name}" is a {kind} dataset; pass a '
+                             'solution dataset.')
         owner = _geometry_tag(java)
         if owner != geom.tag():
             other = f', but to {owner}' if owner else ''
-            raise ValueError(f'Dataset "{_name(java)}" does not belong to '
-                             f'geometry "{geom}" ({geom.tag()}){other}.')
+            raise ValueError(f'Dataset "{name}" does not belong to geometry '
+                             f'"{geom}" ({geom.tag()}){other}.')
         if not _solved(model, java):
-            raise RuntimeError(f'Dataset "{_name(java)}" has no solution; '
-                               'run model.solve() first.')
+            raise RuntimeError(f'Dataset "{name}" has no solution; run '
+                               'model.solve() first.')
         _check_outer(model, [java])
         return java
     solved = [datasets.get(tag) for tag in datasets.tags()
@@ -552,7 +559,8 @@ def _dataset(geom: Node, dataset):
         raise RuntimeError('No solved dataset; run model.solve() first.')
     _check_outer(model, own)
     if len(own) > 1:
-        names = ', '.join(f'"{_name(java)}" ({java.tag()})' for java in own)
+        names = ', '.join(f'"{_comsol.name_of(java)}" ({java.tag()})'
+                          for java in own)
         raise ValueError(f'Geometry "{geom}" has several solved datasets: '
                          f'{names}; pass dataset= one of these.')
     return own[0]
@@ -560,28 +568,32 @@ def _dataset(geom: Node, dataset):
 
 def _find_dataset(geom: Node, dataset):
     """Returns the Java dataset given by node, MPh name, label or tag."""
-    datasets = geom.model.java.result().dataset()
-    if isinstance(dataset, Node):
-        if len(dataset.path) != 2 or dataset.path[0] != 'datasets':
-            raise TypeError(f'"{dataset}" is not a dataset node.')
-        key = _comsol.tag_of(dataset)
-    elif isinstance(dataset, str):
-        key = dataset
+    return find(geom.model.java.result().dataset(), dataset, 'dataset',
+                'datasets', f'dataset must be a name, tag or node, not '
+                f'{dataset!r}.')
+
+
+def find(container, value, what: str, group: str, wrong: str):
+    """
+    Returns the Java object in `container` given by a node of the MPh
+    group `group`, an MPh name, a label or a tag. `wrong` is the message
+    for a value of another type; `what` names the object in messages.
+    """
+    if isinstance(value, Node):
+        if len(value.path) != 2 or value.path[0] != group:
+            raise TypeError(f'"{value}" is not a {what} node.')
+        key = _comsol.tag_of(value)
+    elif isinstance(value, str):
+        key = value
     else:
-        raise TypeError(f'dataset must be a name, tag or node, not '
-                        f'{dataset!r}.')
-    for tag in datasets.tags():
-        java = datasets.get(tag)
-        if key in (str(tag), _name(java), str(java.label())):
+        raise TypeError(wrong)
+    for tag in container.tags():
+        java = container.get(tag)
+        if key in (str(tag), _comsol.name_of(java), str(java.label())):
             return java
-    known = [_name(datasets.get(tag)) for tag in datasets.tags()]
-    raise LookupError(f'No dataset "{key}"; the model has '
+    known = [_comsol.name_of(container.get(tag)) for tag in container.tags()]
+    raise LookupError(f'No {what} "{key}"; the model has '
                       f'{", ".join(repr(n) for n in known) or "none"}.')
-
-
-def _name(dataset) -> str:
-    """Returns the MPh name of a Java dataset, as in `model.datasets()`."""
-    return escape(str(dataset.label()))
 
 
 def _geometry_tag(dataset) -> str | None:
@@ -637,23 +649,31 @@ def _check_outer(model, datasets: list):
                                       f'are not supported yet ("{label}").')
 
 
-def _count(model, dataset) -> int:
+def step_count(model, dataset) -> int:
     """Returns the number of steps (inner solutions) of a dataset."""
     solution = _solution(model, dataset)
     if solution is None:
-        raise LookupError(f'Dataset "{_name(dataset)}" has no solution.')
+        raise LookupError(f'Dataset "{_comsol.name_of(dataset)}" has no '
+                          'solution.')
     return len(solution.getSolutioninfo().getSolnum(1, True))
 
 
-def _steps(step, count: int | None, name: str) -> tuple[list[int], bool]:
+def steps(step, count: int | None, name: str, *,
+          single: str | None = None) -> tuple[list[int], bool]:
     """
     Returns the step numbers `step` stands for and whether it asks for
     several (an array). With `count=None`, only checks its form.
+    `single` names a caller that takes one step only, such as `'plot'`.
     """
+    if single and (step == 'all' if isinstance(step, str)
+                   else numpy.ndim(step) > 0):
+        raise ValueError(f"{single}() draws one step; pass step='last' or "
+                         f'a number, not {step!r}.')
     if isinstance(step, str):
         if step not in STEPS:
-            raise ValueError(f"step must be 'first', 'last', 'all', a number "
-                             f'or a list of numbers, not {step!r}.')
+            forms = ("'first', 'last' or a number" if single else
+                     "'first', 'last', 'all', a number or a list of numbers")
+            raise ValueError(f'step must be {forms}, not {step!r}.')
         if count is None:
             return [], step == 'all'
         return {'all': list(range(1, count + 1)), 'first': [1],
@@ -661,11 +681,12 @@ def _steps(step, count: int | None, name: str) -> tuple[list[int], bool]:
     if step is None:
         if count is None or count == 1:
             return [1], False
+        choices = (f' or a number from 1 to {count}' if single else
+                   f", a number from 1 to {count}, a list of them or 'all'")
         raise ValueError(
-            f"Dataset \"{name}\" has {count} steps; pass step='last', a "
-            f"number from 1 to {count}, a list of them or 'all' "
-            f'(model.inner("{name}") gives their times or parameter '
-            'values).')
+            f"Dataset \"{name}\" has {count} steps; pass step='last'"
+            f'{choices} (model.inner("{name}") gives their times or '
+            'parameter values).')
     many = numpy.ndim(step) > 0
     items = list(step) if many else [step]
     if many and not items:
@@ -673,8 +694,9 @@ def _steps(step, count: int | None, name: str) -> tuple[list[int], bool]:
     for item in items:
         if (isinstance(item, (bool, numpy.bool_))
                 or not isinstance(item, numbers.Integral)):
-            raise TypeError(f"step must be 'first', 'last', 'all', a number "
-                            f'or a list of numbers, not {step!r}.')
+            forms = ("'first', 'last' or a number" if single else
+                     "'first', 'last', 'all', a number or a list of numbers")
+            raise TypeError(f'step must be {forms}, not {step!r}.')
     found = [int(item) for item in items]
     if any(n < 1 for n in found):
         raise ValueError("step counts from 1 as in COMSOL: step=1 for the "
@@ -682,8 +704,8 @@ def _steps(step, count: int | None, name: str) -> tuple[list[int], bool]:
     if count is not None:
         wrong = [n for n in found if n > count]
         if wrong:
-            steps = 'step' if count == 1 else 'steps'
-            raise ValueError(f'Dataset "{name}" has {count} {steps}, not '
+            noun = 'step' if count == 1 else 'steps'
+            raise ValueError(f'Dataset "{name}" has {count} {noun}, not '
                              f'{wrong[0]}.')
     return found, many
 
@@ -704,7 +726,7 @@ def _unique(steps: list[int]) -> tuple[list[int], list[int]]:
 
 def _points(geom: Node, points, sdim: int) -> tuple[Array, bool]:
     """Returns the points as rows of an array, and whether it was one."""
-    names = ('(r, z)' if _axisymmetric(geom)
+    names = ('(r, z)' if axisymmetric(geom)
              else '(x, y)' if sdim == 2 else '(x, y, z)')
     try:
         array = numpy.asarray(points)
@@ -742,7 +764,7 @@ def _outside_message(missing: Array) -> str:
 ##########
 
 @contextmanager
-def _scratch(model) -> Iterator[Callable[[Any, str], Any]]:
+def scratch(model) -> Iterator[Callable[[Any, str], Any]]:
     """
     Yields a function that creates temporary features, removed afterwards
     together with everything else created, with the history switched off.
@@ -773,7 +795,7 @@ def _scratch(model) -> Iterator[Callable[[Any, str], Any]]:
             history.enable()
 
 
-def _axisymmetric(geom: Node) -> bool:
+def axisymmetric(geom: Node) -> bool:
     """Tells whether a 2D geometry is axisymmetric."""
     try:
         return bool(_comsol.java_of(geom).isAxisymmetric())
@@ -793,7 +815,7 @@ def _unit_of(header: str) -> str:
     return header
 
 
-def _failed(expr: str, error: Exception) -> RuntimeError:
+def failed(expr: str, error: Exception) -> RuntimeError:
     """Returns the error for an expression COMSOL could not evaluate."""
     return RuntimeError(f'COMSOL could not evaluate "{expr}": '
                         f'{_comsol.reason(error)}')

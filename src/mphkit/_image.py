@@ -1,19 +1,22 @@
 """
-Pictures of geometries and selections. Public as `mk.image`.
+Pictures of geometries, selections and meshes. Public as `mk.image`.
 
 COMSOL keeps an image export per geometry and per selection, saves it with
 the model and records every change in the model history. So `image()`
 draws a temporary selection instead, removed afterwards, and switches the
-history off meanwhile: the model is left as it was.
+history off meanwhile: the model is left as it was. Mesh pictures, and the
+result plots of `mk.plot`, go through a temporary plot group and image
+export instead (`export()` below), removed the same way.
 """
 from __future__ import annotations
 
 import os
 from pathlib import Path
+from typing import Any
 
 from mph.node import Node
 
-from . import _comsol
+from . import _comsol, _results
 
 # Suffix → COMSOL image type and the property holding its file name.
 FORMATS = {'.png': ('png', 'pngfilename'), '.jpg': ('jpeg', 'jpegfilename'),
@@ -41,15 +44,17 @@ DECORATION = {
 
 
 def image(geom: Node, filename, /, selection: Node | None = None, *,
-          zoom: str = 'all', size=(800, 600), labels: bool = False) -> Path:
+          zoom: str = 'all', size=(800, 600), labels: bool = False,
+          mesh: bool | Node | str = False) -> Path:
     """
-    Saves a picture of a geometry, or of a selection highlighted on it, and
-    returns the file path: a way to look at a model without the COMSOL
-    Desktop, also for an AI assistant that reads images.
+    Saves a picture of a geometry, of a selection highlighted on it, or of
+    its mesh, and returns the file path: a way to look at a model without
+    the COMSOL Desktop, also for an AI assistant that reads images.
 
     ```python
     mk.image(geom, 'geometry.png')
     mk.image(geom, 'wall.png', wall, labels=True)
+    mk.image(geom, 'mesh.png', mesh=True)
     ```
 
     The view is the geometry's current one (isometric for a new 3D model,
@@ -64,27 +69,37 @@ def image(geom: Node, filename, /, selection: Node | None = None, *,
     the file on the machine it runs on (by default this one) and creates
     missing folders. The geometry must be built. The model is left as it
     was.
+
+    `mesh=True` draws the mesh instead, its elements coloured by quality
+    (skewness, 1 is best), in 2D and 3D; it needs a mesh, not a solution.
+    In 3D, the volume elements are drawn (their faces on the outside),
+    or the surface elements of a boundary selection. With a selection
+    (boundaries or domains in 3D, domains in 2D), only that part's mesh
+    is drawn and the picture shows just that part, so `zoom` has no
+    effect. If the geometry's component has several meshes,
+    pass one as `mesh=`, by name as in `model.meshes()`, tag or node. A
+    mesh whose settings changed since it was built raises: run
+    `model.mesh()`.
     """
     _comsol.check_not_workplane(geom, 'image')
     if isinstance(filename, Node):
         raise TypeError('The file name comes second: '
                         'mk.image(geom, filename, selection).')
-    path = Path(os.fspath(filename)).expanduser().absolute()
-    suffix = path.suffix.lower()
-    if suffix not in FORMATS:
-        *others, last = FORMATS
-        raise ValueError(f'Save the picture as {", ".join(others)} or '
-                         f'{last}, not "{path.name}".')
-    path = path.with_suffix(suffix)  # COMSOL writes x.PNG as x.png
-    imagetype, name_key = FORMATS[suffix]
+    path = picture_path(filename)
     if zoom not in ('all', 'selection'):
         raise ValueError(f"zoom must be 'all' or 'selection', not {zoom!r}.")
-    if (not isinstance(size, (list, tuple)) or len(size) != 2
-            or not all(isinstance(v, int) and not isinstance(v, bool)
-                       and v > 0 for v in size)):
-        raise ValueError(f'size must be (width, height) in pixels, not '
-                         f'{size!r}.')
-    width, height = size
+    width, height = picture_size(size)
+    if mesh is not False and not isinstance(mesh, (bool, Node, str)):
+        raise TypeError(f'mesh must be True, False, or a mesh name, tag or '
+                        f'node, not {mesh!r}.')
+    if mesh is not False:
+        if labels:
+            raise ValueError('labels=True shows entity numbers on the '
+                             'geometry; leave it out with mesh=True.')
+        if zoom == 'selection' and selection is None:
+            raise ValueError("zoom='selection' needs a selection.")
+        return _mesh_picture(geom, path, selection, mesh, (width, height))
+    imagetype, name_key = FORMATS[path.suffix]
     _comsol.check_built(geom)
     sdim = _comsol.sdim(geom)
     if selection is None:
@@ -95,8 +110,8 @@ def image(geom: Node, filename, /, selection: Node | None = None, *,
                              'shown are those of its entities.')
         level, source = sdim, None
     else:
-        level, source = _source(geom, selection)
-    view = _view(geom)
+        level, source, _ = drawn_selection(geom, selection)
+    view = geometry_view(geom)
     if view is None and labels:
         raise RuntimeError(f'Geometry "{geom}" has no view to show labels '
                            'in.')
@@ -143,8 +158,60 @@ def image(geom: Node, filename, /, selection: Node | None = None, *,
     return path
 
 
-def _source(geom: Node, selection: Node) -> tuple[int, str]:
-    """Returns the level and the tag of a selection to draw."""
+############################
+# Shared with result plots #
+############################
+
+def picture_path(filename) -> Path:
+    """Returns the absolute path of a picture, checking its file type."""
+    path = Path(os.fspath(filename)).expanduser().absolute()
+    suffix = path.suffix.lower()
+    if suffix not in FORMATS:
+        *others, last = FORMATS
+        raise ValueError(f'Save the picture as {", ".join(others)} or '
+                         f'{last}, not "{path.name}".')
+    return path.with_suffix(suffix)  # COMSOL writes x.PNG as x.png
+
+
+def picture_size(size) -> tuple[int, int]:
+    """Returns `(width, height)` in pixels, checked."""
+    if (not isinstance(size, (list, tuple)) or len(size) != 2
+            or not all(isinstance(v, int) and not isinstance(v, bool)
+                       and v > 0 for v in size)):
+        raise ValueError(f'size must be (width, height) in pixels, not '
+                         f'{size!r}.')
+    return size[0], size[1]
+
+
+def export(create, model, group, path: Path, size: tuple[int, int],
+           sdim: int):
+    """
+    Writes the plot group `group`, already run, to `path` with a temporary
+    image export made with `create` (see `_results.scratch`). Title and
+    colour legend are on. Every setting must exist, so that a renamed
+    property raises instead of changing the picture silently.
+    """
+    imagetype, name_key = FORMATS[path.suffix]
+    width, height = size
+    # `saveprefs` first, then the source; `size` in COMMON loads a preset
+    # that the width and height override.
+    settings = {'saveprefs': 'off', 'sourceobject': str(group.tag()),
+                **COMMON, 'width': str(width), 'height': str(height),
+                **DECORATION[sdim], f'title{sdim}d': 'on',
+                f'legend{sdim}d': 'on', 'zoomextents': 'on',
+                'imagetype': imagetype, name_key: str(path)}
+    picture = create(model.result().export(), 'Image')
+    for key, value in settings.items():
+        _comsol.set_property(picture, key, value)
+    try:
+        picture.run()
+    except Exception as error:
+        raise OSError(f'COMSOL could not write the picture "{path}": '
+                      f'{_comsol.reason(error)}') from error
+
+
+def drawn_selection(geom: Node, selection: Node) -> tuple[int, str, list]:
+    """Returns the level, the tag and the entities of a selection to draw."""
     if (isinstance(selection, Node) and len(selection.path) == 3
             and selection.path[0] == 'geometries'):
         java = _comsol.java_of(selection)
@@ -160,11 +227,31 @@ def _source(geom: Node, selection: Node) -> tuple[int, str]:
     level = [int(d) for d in java.dimension()]
     if len(level) != 1:
         raise ValueError(f'Selection "{selection}" has no single level.')
-    if not len(java.entities()):
+    entities = [int(e) for e in java.entities()]
+    if not entities:
         raise ValueError(f'Selection "{selection}" is empty; nothing to '
-                         'highlight.')
-    return level[0], str(java.tag())
+                         'draw.')
+    return level[0], str(java.tag()), entities
 
+
+def geometry_view(geom: Node):
+    """Returns the view that shows `geom`, or `None`."""
+    views = _comsol.component_of(geom).view()
+    found = []
+    for tag in views.tags():
+        view = views.get(tag)
+        try:
+            shows = str(view.geom().tag()) == geom.tag()
+        except Exception:
+            shows = False
+        if shows:
+            found.append(view)
+    return found[0] if found else None
+
+
+###########
+# Helpers #
+###########
 
 def _temporary(container, tag: str, geom: Node, level: int,
                source: str | None):
@@ -182,16 +269,92 @@ def _temporary(container, tag: str, geom: Node, level: int,
     return java
 
 
-def _view(geom: Node):
-    """Returns the view that shows `geom`, or `None`."""
-    views = _comsol.component_of(geom).view()
-    found = []
-    for tag in views.tags():
-        view = views.get(tag)
+def _mesh_picture(geom: Node, path: Path, selection, mesh,
+                  size: tuple[int, int]) -> Path:
+    """Draws the mesh of `geom`, or of a selection, coloured by quality."""
+    sdim = _comsol.sdim(geom)
+    if sdim < 2:
+        raise ValueError(f'Mesh pictures are for 2D and 3D geometries; '
+                         f'"{geom}" is 1D.')
+    sequence = _mesh(geom, mesh)
+    _comsol.check_built(geom)
+    level, entities = sdim, None
+    if selection is not None:
+        level, _, entities = drawn_selection(geom, selection)
+        if level not in ((3, 2) if sdim == 3 else (2,)):
+            kind = _comsol.entity_level_name(level, sdim) or level
+            raise ValueError('A mesh picture takes a boundary or domain '
+                             'selection in 3D, a domain selection in 2D; '
+                             f'"{selection}" selects {kind} entities.')
+    model = geom.model.java
+    view = geometry_view(geom)
+    with _results.scratch(model) as create:
+        data = create(model.result().dataset(), 'Mesh')
+        _comsol.set_property(data, 'mesh', str(sequence.tag()))
+        if entities is not None:
+            data.selection().geom(geom.tag(), level)
+            data.selection().set(entities)
+        group = create(model.result(), f'PlotGroup{sdim}D')
+        _comsol.set_property(group, 'data', str(data.tag()))
+        _comsol.set_property(group, 'view',
+                             'auto' if view is None else str(view.tag()))
+        feature = group.create('mesh1', 'Mesh')
+        # volume elements of domains in 3D, surface elements of boundaries
+        _comsol.set_property(feature, 'meshdomain',
+                             'volume' if sdim == 3 and level == 3
+                             else 'surface')
         try:
-            shows = str(view.geom().tag()) == geom.tag()
-        except Exception:
-            shows = False
-        if shows:
-            found.append(view)
-    return found[0] if found else None
+            group.run()
+        except Exception as error:
+            raise RuntimeError(f'COMSOL could not draw the mesh: '
+                               f'{_comsol.reason(error)}') from error
+        export(create, model, group, path, size, sdim)
+    return path
+
+
+def _mesh(geom: Node, mesh) -> Any:
+    """
+    Returns the Java mesh sequence to draw: the one given, or the only
+    non-empty one of the geometry's component. Raises for an empty mesh
+    and for one whose settings changed since it was built, where COMSOL
+    would draw nothing or the old mesh. Disabled mesh features are left
+    out: they stay unbuilt for good.
+    """
+    meshes = _comsol.component_of(geom).mesh()
+    own = [str(t) for t in meshes.tags()]
+    if mesh is True:
+        if not own:
+            raise RuntimeError(f'Geometry "{geom}" has no mesh; create one '
+                               "with (model/'meshes').create(geom) and run "
+                               'model.mesh().')
+        full = [meshes.get(t) for t in own if not meshes.get(t).isEmpty()]
+        if not full:
+            raise RuntimeError(f'Geometry "{geom}" has no mesh yet; run '
+                               'model.mesh() first.')
+        if len(full) > 1:
+            names = ', '.join(f'"{_comsol.name_of(m)}" ({m.tag()})'
+                              for m in full)
+            raise ValueError(f'Geometry "{geom}" has several meshes: '
+                             f'{names}; pass mesh= one of these.')
+        sequence = full[0]
+    else:
+        wrong = (f'mesh must be True, False, or a mesh name, tag or node, '
+                 f'not {mesh!r}.')
+        try:
+            # the geometry's own meshes first: labels repeat across
+            # components
+            sequence = _results.find(meshes, mesh, 'mesh', 'meshes', wrong)
+        except LookupError:
+            sequence = _results.find(geom.model.java.mesh(), mesh, 'mesh',
+                                     'meshes', wrong)
+            raise ValueError(f'Mesh "{_comsol.name_of(sequence)}" does not '
+                             f'belong to geometry "{geom}".') from None
+        if sequence.isEmpty():
+            raise RuntimeError(f'Mesh "{_comsol.name_of(sequence)}" is empty; '
+                               'run model.mesh() first.')
+    features = sequence.feature()
+    if any(features.get(t).isActive() and not features.get(t).isBuilt()
+           for t in features.tags()):
+        raise RuntimeError(f'Mesh "{_comsol.name_of(sequence)}" changed since '
+                           'it was built; run model.mesh().')
+    return sequence

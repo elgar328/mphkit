@@ -6,7 +6,8 @@
 [![COMSOL](https://img.shields.io/badge/COMSOL-6.4-blue)](https://www.comsol.com/)
 
 Helpers on top of [MPh](https://github.com/MPh-py/MPh) for building COMSOL
-geometries and geometry-based selections in Python, and for reading results.
+geometries and geometry-based selections in Python, and for reading and
+drawing results.
 Select boundaries by location instead of by entity number, so selections
 keep working when the geometry changes.
 
@@ -144,7 +145,13 @@ Pictures, written to a file:
 ```python
 mk.image(geom, 'geom.png')                              # the geometry
 mk.image(geom, 'selection.png', selection, labels=True) # with numbers
+mk.image(geom, 'mesh.png', mesh=True)                   # element quality
+mk.plot(geom, 'T', 'T.png', unit='degC')                # a solved result
+mk.plot(geom, 'T', 'mid.png', unit='degC', z=2.5, view='top')  # a slice from above
 ```
+
+`mk.plot` also draws a selection only and deformed shapes
+(`deform=True`); like the other helpers it leaves nothing in the model.
 
 And a few helpers outside geometry:
 
@@ -159,8 +166,9 @@ a plate with a row of cooling holes, for one or more holes.
 
 ## Limitations
 
-- mphkit covers geometry, selections and reading results. Physics, mesh,
-  studies and plots are left to MPh.
+- mphkit covers geometry, selections and reading and drawing results.
+  Physics, mesh, studies and plots beyond `mk.plot` (arrows, streamlines,
+  graphs, animations) are left to MPh.
 - Parametric sweeps that COMSOL stores as an outer loop, e.g. around a
   time-dependent study or over a geometry parameter, cannot be read yet;
   other sweeps of a stationary study can.

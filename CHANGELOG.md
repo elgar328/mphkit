@@ -20,6 +20,15 @@ until 1.0, a minor release (0.2, 0.3, ...) may change the API. See
 - Unknown names such as `mk.volume_integral`, `mk.mphint2` or `mk.probe`
   suggest the results helpers; `mk.evaluate` points to MPh's
   `model.evaluate`.
+- `mk.plot` saves a picture of an expression on a solved model: on the
+  surface, on a selection, on slices (`x=`, `y=`, `z=`), seen from a side
+  (`view='top'`, ...) or on the deformed shape (`deform=True`), with the
+  checks of the results helpers, and leaves nothing in the model.
+- `mk.image(geom, filename, mesh=True)` saves a picture of the mesh,
+  coloured by element quality, also of a selection only.
+- Unknown names such as `mk.mphplot`, `mk.slice` or `mk.surface_plot`
+  suggest `mk.plot`, and `mk.mphmesh` or `mk.mesh_plot` suggest
+  `mk.image`.
 
 ## [0.2.0] - 2026-09-29
 

@@ -1,0 +1,396 @@
+"""
+Result plots of a solved model. Public as `mk.plot`.
+
+A plot is drawn with a temporary plot group (and view, for `view=`) and
+written with a temporary image export; everything is removed afterwards,
+with the model history switched off meanwhile. The checks of the results
+helpers apply: the dataset, a geometry changed since the solve, the step
+and the unit. Where COMSOL would silently draw an empty or wrong picture
+(a slice outside the geometry, an unknown colour table, `deform` without a
+displacement), this raises instead.
+"""
+from __future__ import annotations
+
+import math
+import numbers
+import os
+from difflib import get_close_matches
+from pathlib import Path
+from typing import Literal
+
+import numpy
+from mph.node import Node
+
+from . import _comsol, _image, _results
+from ._measure import bounding_box, summary
+
+# Where the camera sits, seen from the centre, and which way is up.
+VIEWS = {
+    'top': ((0, 0, 1), (0, 1, 0)), 'bottom': ((0, 0, -1), (0, 1, 0)),
+    'front': ((0, -1, 0), (0, 0, 1)), 'back': ((0, 1, 0), (0, 0, 1)),
+    'left': ((-1, 0, 0), (0, 0, 1)), 'right': ((1, 0, 0), (0, 0, 1)),
+    'iso': ((-1, -1, 1), (0, 0, 1)),
+}
+View = Literal['top', 'bottom', 'front', 'back', 'left', 'right', 'iso']
+
+# The slice plane across each axis
+PLANES = {'x': 'yz', 'y': 'zx', 'z': 'xy'}
+
+# The displacement a deformed plot uses, by kind of geometry
+DISPLACEMENT = {3: '(u, v, w)', 2: '(u, v)', 'axisymmetric': '(u, w)'}
+
+
+def plot(geom: Node, expr: str, filename, /, selection: Node | None = None,
+         *, unit: str | None = None, dataset=None, step: _results.One = None,
+         x=None, y=None, z=None, view: View | None = None,
+         color_range=None, colortable: str | None = None,
+         deform: bool | float = False, size=(800, 600)) -> Path:
+    """
+    Saves a picture of an expression on a solved model and returns the file
+    path, e.g. to look at a temperature field without the COMSOL Desktop,
+    also for an AI assistant that reads images:
+
+    ```python
+    mk.plot(geom, 'T', 'T.png', unit='degC')
+    mk.plot(geom, 'T', 'walls.png', walls)          # these faces only
+    mk.plot(geom, 'T', 'mid.png', z=2.5)            # a slice at z = 2.5
+    mk.plot(geom, 'T', 'top.png', view='top')
+    mk.plot(geom, 'solid.mises', 's.png', unit='MPa', deform=True)
+    ```
+
+    Draws the expression on the surface of the geometry in 3D, on the
+    domains in 2D (in an axisymmetric geometry, the r-z half section), with
+    a title (expression, unit, time or frequency) and a colour legend.
+    Complex values are drawn by their real part; use `'abs(p)'` for the
+    magnitude. For numbers, use `mk.maximum` and the other results helpers.
+
+    `selection` draws only part of the model, the rest as lines: in 3D a
+    boundary or domain selection (the boundaries of those domains), in 2D a
+    domain selection. `x`, `y` or `z` draw slices across one axis instead:
+    a position or a list of positions in the geometry's length unit, not a
+    range as in `sel.box` (`z=(1, 4)` draws two slices); with a domain
+    selection, only inside those domains. A slice outside the extent of
+    every domain (their bounding boxes) raises, as does an expression
+    that exists on boundaries only (such as `ht.ntflux`), which can be
+    drawn in 3D without slices.
+
+    `view` (3D) looks from `'top'`, `'bottom'`, `'front'`, `'back'`,
+    `'left'`, `'right'` or `'iso'` (isometric), without perspective;
+    left out, the geometry's own view, isometric for a new model (in which
+    entities hidden in that view stay hidden). The whole plot is always in
+    the picture. `color_range=(min, max)` fixes the colours, in `unit` or
+    SI units, e.g. to compare pictures; `colortable` names a COMSOL colour
+    table such as `'HeatCamera'`. `deform=True` draws on the deformed shape
+    (solid mechanics: displacements u, v, w), exaggerated by a scale COMSOL
+    picks and does not show; a number sets the scale, 1 for the true
+    shape. The undeformed outline stays in the picture.
+
+    `unit`, `dataset` and `step` work as in `mk.integral`, but a picture
+    shows one step: `'first'`, `'last'` or a number. A selection set on
+    the solution dataset in the COMSOL Desktop also limits the picture.
+    `size` and the file type work as in `mk.image`. The model is left as
+    it was.
+    """
+    name = 'plot'
+    if (isinstance(expr, os.PathLike) or isinstance(filename, Node)
+            or isinstance(expr, str)
+            and expr.lower().endswith(tuple(_image.FORMATS))):
+        raise TypeError('The file name comes third: '
+                        f'{_results.CALLS[name]}.')
+    _results.check_expr(name, expr)
+    path = _image.picture_path(filename)
+    pixels = _image.picture_size(size)
+    _results.steps(step, None, '', single=name)
+    slices = _slices(x, y, z)
+    if view is not None and (not isinstance(view, str) or view not in VIEWS):
+        choices = ', '.join(repr(v) for v in VIEWS)
+        raise ValueError(f'view must be None or one of {choices}, not '
+                         f'{view!r}.')
+    scale = _scale(deform)
+    limits = _limits(color_range)
+    if colortable is not None and not isinstance(colortable, str):
+        raise TypeError(f'colortable must be a name such as "HeatCamera", '
+                        f'not {colortable!r}.')
+    _results.check_geometry(name, geom)
+    sdim = _comsol.sdim(geom)
+    if sdim == 2 and (slices is not None or view is not None):
+        raise ValueError('Slices and views are for 3D geometries.')
+    if slices is not None and scale is not None:
+        raise ValueError('deform= draws on surfaces; leave out x/y/z.')
+    model = geom.model.java
+    data = _results.solved_dataset(geom, dataset)
+    _results.check_current(geom)
+    count = _results.step_count(model, data)
+    solnums, _ = _results.steps(step, count, _comsol.name_of(data),
+                                single=name)
+    level, entities = None, None
+    if selection is not None:
+        level, _, entities = _image.drawn_selection(geom, selection)
+        _check_level(selection, level, sdim, slices is not None)
+    with _results.scratch(model) as create:
+        # measuring the domains goes into the history otherwise
+        facts = summary(geom)
+        if slices is not None:
+            slices = _check_slices(geom, facts, *slices,
+                                   entities if level == 3 else None)
+        if view is None:
+            shown = _image.geometry_view(geom)
+            view_tag = 'auto' if shown is None else str(shown.tag())
+        else:
+            view_tag = _temporary_view(create, geom, facts, view)
+        # the step only matters, and was only tried, with several steps
+        level_step = solnums[0] if count > 1 else None
+        group, feature = _group(create, model, geom, data, level_step,
+                                view_tag, expr, unit, slices, level,
+                                entities)
+        if scale is not None:
+            _deform(feature, scale, geom)
+        if limits is not None:
+            for key, value in (('rangecoloractive', 'on'),
+                               ('rangecolormin', repr(limits[0])),
+                               ('rangecolormax', repr(limits[1]))):
+                _comsol.set_property(feature, key, value)
+        if colortable is not None:
+            _comsol.set_property(feature, 'colortable',
+                                 _colortable(feature, colortable))
+        _run(group, expr, slices)
+        if unit is not None:
+            applied = str(feature.getString('rangeunit'))
+            if applied != unit:
+                # the unit COMSOL uses without one, in a group of its own so
+                # that the picture keeps a single plot
+                plain, plain_feature = _group(
+                    create, model, geom, data, level_step, view_tag, expr,
+                    None, slices, level, entities)
+                _run(plain, expr, slices)
+                if str(plain_feature.getString('rangeunit')) == applied:
+                    raise _results.unit_error(expr, applied, unit)
+        _image.export(create, model, group, path, pixels, sdim)
+    return path
+
+
+def _group(create, model, geom: Node, data, step: int | None, view: str,
+           expr: str, unit: str | None, slices, level: int | None,
+           entities: list | None):
+    """
+    Creates a plot group with one surface or slice plot and returns both.
+    The dataset is set first: a new plot group uses the first dataset of
+    the model, whatever its geometry, and a Deform added later takes its
+    displacement from the dataset set by then.
+    """
+    sdim = _comsol.sdim(geom)
+    group = create(model.result(), f'PlotGroup{sdim}D')
+    _comsol.set_property(group, 'data', str(data.tag()))
+    if step is not None:
+        _comsol.set_property(group, 'looplevel', [str(step)])
+    for key, value in (('view', view), ('edges', 'on'),
+                       ('titletype', 'auto')):
+        _comsol.set_property(group, key, value)
+    if slices is None:
+        feature = group.create('plot1', 'Surface')
+    else:
+        axis, positions = slices
+        feature = group.create('plot1', 'Slice')
+        for key, value in (('quickplane', PLANES[axis]),
+                           (f'quick{axis}method', 'coord'),
+                           (f'quick{axis}',
+                            ' '.join(repr(p) for p in positions))):
+            _comsol.set_property(feature, key, value)
+    _comsol.set_property(feature, 'expr', expr)
+    if unit is not None:
+        _comsol.set_property(feature, 'unit', unit)
+    if entities is not None and level is not None:
+        chosen = feature.feature().create('sel1', 'Selection')
+        chosen.selection().geom(geom.tag(), level)
+        chosen.selection().set(entities)
+    return group, feature
+
+
+def _run(group, expr: str, slices):
+    """Runs a plot group, explaining COMSOL's errors."""
+    try:
+        group.run()
+    except Exception as error:
+        if slices is not None and 'Undefined variable' in \
+                _comsol.reason(error):
+            raise RuntimeError(
+                f'{_results.failed(expr, error)} If "{expr}" exists on '
+                'boundaries only, as ht.ntflux does, plot it without '
+                'x/y/z.') from error
+        raise _results.failed(expr, error) from error
+
+
+def _deform(feature, scale: float | str, geom: Node):
+    """Draws `feature` on the deformed shape, checking the displacement."""
+    deformed = feature.feature().create('def1', 'Deform')
+    if not any(str(e) for e in deformed.getStringArray('expr')):
+        sdim = _comsol.sdim(geom)
+        kind = ('axisymmetric' if sdim == 2 and _results.axisymmetric(geom)
+                else sdim)
+        raise ValueError(f'deform=True needs a displacement field '
+                         f'{DISPLACEMENT[kind]}, e.g. from solid '
+                         'mechanics.')
+    if scale != 'auto':
+        _comsol.set_property(deformed, 'scaleactive', True)
+        _comsol.set_property(deformed, 'scale', repr(scale))
+
+
+def _temporary_view(create, geom: Node, facts: dict, name: str) -> str:
+    """
+    Creates a view that looks at the geometry from direction `name`,
+    without perspective, and returns its tag. `facts` is the geometry's
+    `summary()`.
+    """
+    box = facts['bounding_box']
+    centre = [(low + high) / 2 for low, high in box.values()]
+    diagonal = math.dist(*zip(*box.values()))
+    direction, up = VIEWS[name]
+    norm = math.hypot(*direction)
+    position = [c + 3 * diagonal * d / norm
+                for c, d in zip(centre, direction)]
+    view = create(_comsol.component_of(geom).view(), geom.tag())
+    camera = view.camera()
+    for key, value in (('position', [repr(p) for p in position]),
+                       ('target', [repr(c) for c in centre]),
+                       ('up', [str(u) for u in up]),
+                       ('projection', 'orthographic')):
+        _comsol.set_property(camera, key, value)
+    return str(view.tag())
+
+
+############
+# Checking #
+############
+
+def _slices(x, y, z) -> tuple[str, list[float]] | None:
+    """Returns the axis and the positions of slices, or `None`."""
+    given = {axis: value for axis, value in (('x', x), ('y', y), ('z', z))
+             if value is not None}
+    if not given:
+        return None
+    if len(given) > 1:
+        raise ValueError('Give slice positions along one axis (x, y or z) '
+                         'per picture.')
+    [(axis, value)] = given.items()
+    wrong = (f"{axis} must be a number or a list of numbers in the "
+             f"geometry's length unit, not {value!r}.")
+    try:
+        dimension = numpy.ndim(value)
+    except ValueError:                        # ragged lists
+        raise TypeError(wrong) from None
+    if isinstance(value, str) or dimension > 1:
+        raise TypeError(wrong)
+    items = list(value) if dimension == 1 else [value]
+    if not items:
+        raise ValueError(wrong)
+    for item in items:
+        if (isinstance(item, (bool, numpy.bool_))
+                or not isinstance(item, numbers.Real)):
+            raise TypeError(wrong)
+        if not math.isfinite(float(item)):
+            raise ValueError(wrong)
+    return axis, [float(item) for item in items]
+
+
+def _check_slices(geom: Node, facts: dict, axis: str, positions: list[float],
+                  domains: list | None) -> tuple[str, list[float]]:
+    """
+    Checks that each slice crosses the extent of a domain (one of `domains`
+    if given): COMSOL draws nothing, without an error, elsewhere. Positions
+    within rounding of the geometry's ends are moved onto them. `facts` is
+    the geometry's `summary()`.
+    """
+    box = facts['bounding_box']
+    low, high = box[axis]
+    diagonal = math.dist(*zip(*box.values()))
+    margin = 1e-9 * diagonal
+    # bounding_box of domains is single precision
+    tolerance = 1e-6 * max(diagonal, abs(low), abs(high))
+    count = facts['domains']
+    ranges = []
+    for number in domains or range(1, count + 1):
+        extent = bounding_box(geom, 'domain', number)
+        if extent is not None:
+            ranges.append(extent[axis])
+    checked = []
+    for position in positions:
+        if not low - margin <= position <= high + margin:
+            raise ValueError(f'{axis}={position:g} is outside the geometry '
+                             f'({axis} from {low:g} to {high:g}).')
+        position = min(max(position, low), high)
+        if not any(start - tolerance <= position <= end + tolerance
+                   for start, end in ranges):
+            where = ' of the selection' if domains else ''
+            raise ValueError(f'{axis}={position:g} passes through no '
+                             f'domain{where}.')
+        checked.append(position)
+    return axis, checked
+
+
+def _check_level(selection: Node, level: int, sdim: int, slices: bool):
+    """Raises for a selection whose level the plot cannot draw."""
+    allowed: tuple[int, ...]
+    if slices:
+        allowed, text = (3,), 'Slices take a domain selection'
+    elif sdim == 3:
+        allowed = (3, 2)
+        text = 'A surface plot in 3D takes a boundary or domain selection'
+    else:
+        allowed, text = (2,), 'A plot in 2D takes a domain selection'
+    if level not in allowed:
+        kind = _comsol.entity_level_name(level, sdim) or level
+        raise ValueError(f'{text}; "{selection}" selects {kind} entities.')
+
+
+def _scale(deform) -> float | str | None:
+    """Returns `'auto'`, a scale factor, or `None` for no deformation."""
+    if deform is False or deform is None:
+        return None
+    if deform is True:
+        return 'auto'
+    wrong = (f'deform must be True, False or a positive scale factor, not '
+             f'{deform!r}.')
+    if (isinstance(deform, (bool, numpy.bool_))
+            or not isinstance(deform, numbers.Real)):
+        raise TypeError(wrong)
+    scale = float(deform)
+    if not math.isfinite(scale) or scale <= 0:
+        raise ValueError(wrong)
+    return scale
+
+
+def _limits(color_range) -> tuple[float, float] | None:
+    """Returns the colour range as two floats, checked."""
+    if color_range is None:
+        return None
+    wrong = (f'color_range must be (min, max), two finite numbers with '
+             f'min < max, not {color_range!r}.')
+    try:
+        dimension = numpy.ndim(color_range)
+    except ValueError:                        # ragged lists
+        raise ValueError(wrong) from None
+    if isinstance(color_range, str) or dimension != 1 \
+            or len(color_range) != 2:
+        raise ValueError(wrong)
+    if any(isinstance(v, (bool, numpy.bool_))
+           or not isinstance(v, numbers.Real) for v in color_range):
+        raise ValueError(wrong)
+    low, high = (float(v) for v in color_range)
+    if not (math.isfinite(low) and math.isfinite(high) and low < high):
+        raise ValueError(wrong)
+    return low, high
+
+
+def _colortable(feature, name: str) -> str:
+    """
+    Returns the colour table `name` as COMSOL spells it. COMSOL accepts
+    any name and silently draws with its default, so unknown names raise.
+    """
+    known = [str(v) for v in feature.getAllowedPropertyValues('colortable')]
+    if name in known:
+        return name
+    lower = {k.lower(): k for k in known}
+    close = get_close_matches(name.lower(), list(lower), n=3, cutoff=0.6)
+    hint = (f'did you mean {" or ".join(repr(lower[c]) for c in close)}?'
+            if close else "e.g. 'Rainbow', 'HeatCamera' or 'GrayScale'.")
+    raise ValueError(f'No colortable {name!r}; {hint}')

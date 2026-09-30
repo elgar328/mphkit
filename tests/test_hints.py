@@ -83,7 +83,17 @@ def message(module, name):
     (mk.sel, 'unite', 'Did you mean mphkit.sel.union?'),
     (mk.sel, 'merge', 'Did you mean mphkit.sel.union?'),
     (mk.sel, 'subtract', 'Did you mean mphkit.sel.difference?'),
-    (mk, 'plot', 'Did you mean mphkit.image? Pictures of the geometry'),
+    (mk, 'picture', 'Did you mean mphkit.image? Pictures of the geometry'),
+    (mk, 'mphplot', 'Did you mean mphkit.plot?'),
+    (mk, 'slice', 'Did you mean mphkit.plot?'),
+    (mk, 'surface_plot', 'Did you mean mphkit.plot?'),
+    (mk, 'plot_temperature', 'Did you mean mphkit.plot?'),
+    (mk, 'result_plot', 'Did you mean mphkit.plot?'),
+    (mk, 'mphmesh', 'Did you mean mphkit.image?'),
+    (mk, 'plot_mesh', 'Did you mean mphkit.image?'),
+    (mk, 'mesh_plot', 'Did you mean mphkit.image?'),
+    (mk, 'plot_mesh_quality', 'Pass mesh=True for a picture of the mesh.'),
+    (mk.sel, 'mesh_image', 'Did you mean mphkit.image?'),
     (mk, 'info', 'Did you mean mphkit.summary?'),
     (mk, 'coords', 'Did you mean mphkit.coordinates?'),
     (mk, 'adjacency', 'mphkit.sel.adjacent makes a selection instead'),
@@ -296,11 +306,18 @@ def test_readme_example(client, monkeypatch, tmp_path):
     assert (tmp_path/'demo.mph').exists()
 
 
-def test_readme_results(client):
+def test_readme_results(client, tmp_path):
     # the results in the README, on the example script it links to
     from test_example import plate_with_holes
     lines = re.search(r'Results of the solved.*?```python\n(.*?)```', readme,
                       re.S).group(1).splitlines()
+    pictures = [re.sub(r"'(\w+\.png)'", lambda m: repr(str(tmp_path/m[1])),
+                       line.split('#')[0])
+                for line in re.search(r'Pictures, written to a file:\n\n'
+                                      r'```python\n(.*?)```', readme,
+                                      re.S).group(1).splitlines()
+                if line.startswith('mk.plot') or 'mesh=True' in line]
+    assert len(pictures) == 3
     assert len(lines) == 4, 'update the checks below with the README'
     model, geom, selections = plate_with_holes.build_model(client, 2)
     try:
@@ -313,6 +330,8 @@ def test_readme_results(client):
         assert low == pytest.approx(83.5, abs=0.05)
         assert where[:2] == pytest.approx([88, 20])   # any z: T is flat in z
         assert points == pytest.approx([89.9, 84.2], abs=0.05)
+        for line in pictures:
+            assert eval(line, namespace).exists()
     finally:
         client.remove(model)
 
