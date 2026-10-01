@@ -182,6 +182,18 @@ mk.plot(geom, 'T', 'mid.png', unit='degC', z=2.5, view='top')  # a slice from ab
 `mk.plot` also draws a selection only and deformed shapes
 (`deform=True`); like the other helpers it leaves nothing in the model.
 
+Mesh quality in numbers, after `model.mesh()` (skewness by default, 1 is
+best):
+
+```python
+mk.mesh_quality(geom)                  # lowest (e.g. 0.065), the 5 worst elements and where, a histogram, COMSOL's messages
+mk.mesh_quality(geom, 'boundary', 3)   # the surface elements of boundary 3
+mk.mesh_quality(geom, measure='volcircum')  # another of COMSOL's quality measures
+```
+
+The `messages` are what COMSOL reported when building the mesh, e.g. an
+edge much shorter than the element size, with the entities concerned.
+
 COMSOL's names, looked up instead of guessed (search first, the full
 lists are long), here on the example script's model with
 `heat = model/'physics'/'heat'`, `mesh = model/'meshes'/'mesh'` and

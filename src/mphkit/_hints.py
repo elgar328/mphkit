@@ -110,6 +110,18 @@ MEANINGS: dict[str, str | tuple[str, ...]] = {
     'precheck': 'mphkit.check', 'check_model': 'mphkit.check',
     'lint': 'mphkit.check', 'verify': 'mphkit.check',
     'sanity_check': 'mphkit.check',
+    # Mesh quality
+    'mesh_stats': 'mphkit.mesh_quality', 'meshstats': 'mphkit.mesh_quality',
+    'mesh_statistics': 'mphkit.mesh_quality',
+    'element_quality': 'mphkit.mesh_quality',
+    'mesh_info': 'mphkit.mesh_quality', 'mphmeshstats': 'mphkit.mesh_quality',
+    'meshstat': 'mphkit.mesh_quality', 'min_quality': 'mphkit.mesh_quality',
+    'quality_histogram': 'mphkit.mesh_quality',
+    'element_count': 'mphkit.mesh_quality',
+    'num_elements': 'mphkit.mesh_quality',
+    'mesh_elements': 'mphkit.mesh_quality',
+    'worst_elements': 'mphkit.mesh_quality',
+    'skewness': 'mphkit.mesh_quality',
     # Long solves
     'estimate': 'mphkit.problem_size', 'dofs': 'mphkit.problem_size',
     'solve_size': 'mphkit.problem_size',
@@ -131,7 +143,9 @@ MEANINGS: dict[str, str | tuple[str, ...]] = {
 }
 
 # Words that, next to `mesh`, ask for a picture of it, as in `plot_mesh`.
-PICTURES = ('plot', 'image', 'picture', 'png', 'quality', 'show', 'view')
+PICTURES = ('plot', 'image', 'picture', 'png', 'show', 'view')
+# Words that, next to `mesh`, ask for its quality in numbers
+QUALITY = ('quality', 'skewness', 'skew', 'stat', 'stats', 'statistics')
 
 # Last words of guessed names that ask for a result whatever comes first,
 # as in `volume_integral`, `point_value` or `surface_plot`, unless the
@@ -259,7 +273,11 @@ def _suggest(module: str, name: str) -> Result:
         return [], EVALUATE_NOTE
     words = rest.split('_')
     if 'mesh' in words and any(word in PICTURES for word in words):
-        return [f'{MAIN}.image'], "Pass mesh=True for a picture of the mesh."
+        return [f'{MAIN}.image'], ('Pass mesh=True for a picture of the '
+                                   'mesh. mphkit.mesh_quality gives the '
+                                   'numbers.')
+    if 'mesh' in words and any(word in QUALITY for word in words):
+        return [f'{MAIN}.mesh_quality'], None
 
     # Selecting or finding entities of a kind, as in `select_faces`
     if intent == 'select':

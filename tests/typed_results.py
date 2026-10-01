@@ -36,6 +36,7 @@ def check(geom: Node, flag: bool, step: int | str) -> None:
     assert_type(mk.materials(search='steel'), list[dict])
     assert_type(mk.check(geom.model), list[dict])
     assert_type(mk.problem_size(geom.model), dict)
+    assert_type(mk.mesh_quality(geom, 'boundary', [1, 2]), dict)
     assert_type(mk.log_progress('solve.log'), Path)
     assert_type(mk.log_progress(Path('solve.log')), Path)
     assert_type(mk.log_progress(None), None)

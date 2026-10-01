@@ -66,6 +66,15 @@ until 1.0, a minor release (0.2, 0.3, ...) may change the API. See
   Unknown names such as `mk.dofs`, `mk.show_progress` or `mk.stop_solve`
   suggest them.
 
+- `mk.mesh_quality(geom)` gives a mesh's quality in numbers (lowest and
+  mean, a histogram, the worst elements with their positions, per entity,
+  in COMSOL's six quality measures) with the element sizes, the entities
+  left without elements and what COMSOL reported when building the mesh;
+  for all or some domains, or boundaries in 3D. It matches COMSOL's mesh
+  statistics for all element types and leaves nothing in the model.
+  Unknown names such as `mk.mesh_stats`, `mk.quality_of_mesh` or
+  `mk.mphmeshstats` suggest it, and mesh picture hints mention it.
+
 ### Fixed
 
 - `mk.measure`, `mk.bounding_box` and `mk.sel.find` no longer leave lines

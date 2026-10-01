@@ -67,6 +67,8 @@ Check the geometry from code:
   highlighted, with entity numbers
 - `mk.image(geom, 'mesh.png', mesh=True)`: the mesh, coloured by element
   quality (after `model.mesh()`)
+- `mk.mesh_quality(geom)`: the mesh's quality in numbers, where its worst
+  elements are, and what COMSOL reported when building it
 
 Curved entities are measured approximately (see `help(mk.measure)`).
 `mk.measure` and `mk.bounding_box` use single precision, about seven
@@ -186,6 +188,7 @@ from ._hints import HintModule as _HintModule
 from ._image import image
 from ._materials import material, materials
 from ._measure import bounding_box, coordinates, measure, summary
+from ._mesh import mesh_quality
 from ._plot import plot
 from ._props import set_ as set  # not in __all__: keeps builtin set
 from ._results import average, integral, maximum, minimum, value
@@ -207,7 +210,7 @@ __all__ = ['LicenseError', 'array', 'average', 'block', 'bounding_box',
            'feature', 'feature_types', 'fillet', 'geometry', 'image',
            'import_', 'integral', 'intersection', 'interval',
            'line_segment', 'log_progress', 'material', 'materials',
-           'maximum', 'measure', 'minimum', 'mirror', 'move',
+           'maximum', 'measure', 'mesh_quality', 'minimum', 'mirror', 'move',
            'partition', 'physics_types', 'plot', 'point', 'polygon',
            'problem_size', 'progress', 'properties', 'rectangle', 'revolve', 'rigid_transform',
            'rotate', 'sel', 'sphere', 'square', 'summary', 'union', 'value',

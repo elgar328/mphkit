@@ -312,12 +312,13 @@ def _mesh_picture(geom: Node, path: Path, selection, mesh,
     return path
 
 
-def _mesh(geom: Node, mesh) -> Any:
+def _mesh(geom: Node, mesh, check: bool = True) -> Any:
     """
     Returns the Java mesh sequence to draw: the one given, or the only
     non-empty one of the geometry's component. Raises for an empty mesh
     and for one whose settings changed since it was built, where COMSOL
-    would draw nothing or the old mesh.
+    would draw nothing or the old mesh; `check=False` leaves that to the
+    caller.
     """
     meshes = _comsol.component_of(geom).mesh()
     own = [str(t) for t in meshes.tags()]
@@ -348,5 +349,6 @@ def _mesh(geom: Node, mesh) -> Any:
                                      'meshes', wrong)
             raise ValueError(f'Mesh "{_comsol.name_of(sequence)}" does not '
                              f'belong to geometry "{geom}".') from None
-    _comsol.check_mesh_built(sequence)
+    if check:
+        _comsol.check_mesh_built(sequence)
     return sequence
