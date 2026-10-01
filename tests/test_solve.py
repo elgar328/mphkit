@@ -22,6 +22,8 @@ from test_example import plate_with_holes
 data = Path(__file__).parent/'data'/'progress'
 posix = pytest.mark.skipif(os.name == 'nt', reason='POSIX processes')
 macos = pytest.mark.skipif(sys.platform != 'darwin', reason='macOS only')
+# progress() tells whether a process lives on POSIX only
+ALIVE = None if os.name == 'nt' else True
 
 
 def parse(name, lines=None):
@@ -417,7 +419,7 @@ def test_two_plate(client, tmp_path, logging):
         assert result['dofs'] == dofs
         assert 0.5*dofs < result['solved_dofs'] < dofs
         assert (result['percent'], result['block_open']) == (100, False)
-        assert result['pid'] == os.getpid() and result['alive'] is True
+        assert result['pid'] == os.getpid() and result['alive'] is ALIVE
         assert result['started'] == info['started']
         assert result['comsol_cores'] == size['machine']['comsol_cores']
         # again in this process: the start time stays
@@ -637,7 +639,7 @@ def test_documented(client, tmp_path, monkeypatch, logging):
         assert before['exists'] and before['pid'] == os.getpid()
         model.solve()
         after = eval(code[2].split('#')[0], namespace)
-        assert after['percent'] == 100 and after['alive'] is True
+        assert after['percent'] == 100 and after['alive'] is ALIVE
         assert after['dofs'] == size['steps'][0]['dofs']
     finally:
         client.remove(model)
