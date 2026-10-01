@@ -177,10 +177,14 @@ def entity_dim(geom: Node, entity: str) -> int:
 
 def entity_count(geom: Node, dim: int) -> int:
     """Returns the number of entities of level `dim` in the built geometry."""
-    java = java_of(geom)
-    if dim == sdim(geom):
+    return count_entities(java_of(geom), dim)
+
+
+def count_entities(java, dim: int) -> int:
+    """Works as `entity_count()` on a Java geometry."""
+    if dim == int(java.getSDim()):
         return int(java.getNDomains())
-    if dim == sdim(geom) - 1:
+    if dim == int(java.getSDim()) - 1:
         return int(java.getNBoundaries())
     return int(java.getNEdges() if dim == 1 else java.getNVertices())
 
@@ -224,14 +228,19 @@ def check_built(geom: Node):
     as not built after edits, parameter changes and disabling, but not when
     a feature is removed, so a removal goes unnoticed.
     """
-    features = java_of(geom).feature()
+    check_geometry_built(java_of(geom), str(geom))
+
+
+def check_geometry_built(java, name: str):
+    """Works as `check_built()` on a Java geometry, named `name`."""
+    features = java.feature()
     stale = [str(tag) for tag in features.tags()
              if not features.get(tag).isBuilt()]
     if stale:
-        raise RuntimeError(f'Geometry "{geom}" is not built or has changed '
+        raise RuntimeError(f'Geometry "{name}" is not built or has changed '
                            f'since the last build (features: '
                            f'{", ".join(stale)}); run model.build(geom) '
-                           'first.')
+                           'first, also after loading a file.')
 
 
 def check_selection(geom: Node, selection: Node):

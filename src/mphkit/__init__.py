@@ -112,6 +112,18 @@ need one, since each domain takes the material added last among those
 that select it. `mk.materials()` lists the basic library, a `search`
 looks in all of them (`library=` in `mk.material` for the others).
 
+Before solving, once the physics, materials, mesh and study exist,
+`mk.check(model)` lists what COMSOL would get wrong silently or vaguely:
+expressions in the wrong unit, domains without material, conditions
+that select nothing or apply nowhere, no mesh, physics no study solves.
+Fix the warnings; info items (e.g. boundaries left at the default
+condition) are things to know:
+
+    warnings = [p for p in mk.check(model) if p['severity'] == 'warning']
+
+Units are checked in expressions of numbers, constants and parameters.
+After solving, MPh's `model.problems()` lists COMSOL's own messages.
+
 Results, once the model is solved (`model.solve()`):
 
     mk.integral(geom, 'boundary', 'ht.ntflux', bottom, unit='W')
@@ -160,6 +172,7 @@ import sys as _sys
 
 from . import sel
 from ._catalog import feature_types, physics_types, properties, variables
+from ._check import check
 from ._hints import HintModule as _HintModule
 from ._image import image
 from ._materials import material, materials
@@ -179,7 +192,7 @@ from .geometry import (array, block, chamfer, circle, component_of,
 __version__ = '0.3.0.dev0'
 
 __all__ = ['LicenseError', 'array', 'average', 'block', 'bounding_box',
-           'chamfer', 'circle', 'component_of', 'coordinate_system',
+           'chamfer', 'check', 'circle', 'component_of', 'coordinate_system',
            'coordinates', 'cylinder', 'delete', 'difference', 'extrude',
            'feature', 'feature_types', 'fillet', 'geometry', 'image',
            'import_', 'integral', 'intersection', 'interval',

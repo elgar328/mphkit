@@ -151,6 +151,14 @@ def message(module, name):
     (mk, 'physics_list', 'Did you mean mphkit.physics_types?'),
     (mk, 'physics_interfaces', 'Did you mean mphkit.physics_types?'),
     (mk, 'physics_feature', 'Did you mean mphkit.feature_types?'),
+    # the check before solving
+    (mk, 'validate', 'Did you mean mphkit.check?'),
+    (mk, 'diagnose', 'Did you mean mphkit.check?'),
+    (mk, 'precheck', 'Did you mean mphkit.check?'),
+    (mk, 'check_model', 'Did you mean mphkit.check?'),
+    (mk, 'lint', 'Did you mean mphkit.check?'),
+    (mk, 'verify', 'Did you mean mphkit.check?'),
+    (mk, 'sanity_check', 'Did you mean mphkit.check?'),
     # materials
     (mk, 'matlib', 'Did you mean mphkit.materials or mphkit.material?'),
     (mk, 'material_library',

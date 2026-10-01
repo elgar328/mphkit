@@ -48,6 +48,13 @@ until 1.0, a minor release (0.2, 0.3, ...) may change the API. See
   Unknown names such as `mk.list_materials` or `mk.matlib` suggest them.
   The example script takes its structural steel from the library.
 
+- `mk.check(model)` lists, before solving, what COMSOL would get wrong
+  silently or vaguely: expressions in the wrong unit, domains without
+  material, conditions that select nothing or apply nowhere, a component
+  without mesh, physics no study step solves, and (as info) boundaries
+  left at the default condition. It leaves nothing in the model. Unknown
+  names such as `mk.validate` or `mk.lint` suggest it.
+
 ### Fixed
 
 - `mk.measure`, `mk.bounding_box` and `mk.sel.find` no longer leave lines

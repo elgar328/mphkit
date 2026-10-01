@@ -126,6 +126,14 @@ mk.sel.neighbors(geom, 'domain', boundary=3)  # [1]: the domain beside it
 mk.coordinates(geom, 'boundary', 3)      # {1: (0.0, 0.0, 0.0), 3: (0.0, 100.0, 0.0), ...}
 ```
 
+Before solving, a check of what COMSOL would get wrong silently or
+vaguely (wrong units, domains without material, conditions that apply
+nowhere, no mesh, physics no study solves):
+
+```python
+warnings = [p for p in mk.check(model) if p['severity'] == 'warning']
+```
+
 Results of the solved
 [example script](https://github.com/elgar328/mphkit/blob/main/examples/plate_with_holes.py),
 over entities or at points, in SI units unless `unit` is given; they

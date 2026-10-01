@@ -370,7 +370,7 @@ def _domains(geom: Node, component, selection) -> list[int] | None:
         _comsol.check_built(geom)
         if not _comsol.entity_count(geom, _comsol.sdim(geom)):
             raise ValueError(f'Geometry "{geom}" has no domains.')
-        held = _held(geom, component)
+        held = _held(component, _comsol.sdim(geom))
         if held:
             taken = {n for _, numbers in held for n in numbers}
             free = [n for n in range(1, _comsol.entity_count(
@@ -393,14 +393,14 @@ def _domains(geom: Node, component, selection) -> list[int] | None:
     return found
 
 
-def _held(geom: Node, component) -> list[tuple[str, list[int]]]:
+def _held(component, dim: int) -> list[tuple[str, list[int]]]:
     """
     Returns the labels and domains of the members of the component's
-    material list that hold domains: active materials, switches and links,
-    not layered materials or materials on boundaries. A disabled material
-    still lists its domains.
+    material list that hold domains (level `dim`): active materials,
+    switches and links, also links to global materials, not layered
+    materials or materials on boundaries. A disabled material still lists
+    its domains.
     """
-    dim = _comsol.sdim(geom)
     members = component.material()
     held = []
     for tag in members.tags():

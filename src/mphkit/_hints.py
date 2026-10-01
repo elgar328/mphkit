@@ -105,6 +105,11 @@ MEANINGS: dict[str, str | tuple[str, ...]] = {
     'list_physics': 'mphkit.physics_types',
     'physics_list': 'mphkit.physics_types',
     'physics_interfaces': 'mphkit.physics_types',
+    # The check before solving
+    'validate': 'mphkit.check', 'diagnose': 'mphkit.check',
+    'precheck': 'mphkit.check', 'check_model': 'mphkit.check',
+    'lint': 'mphkit.check', 'verify': 'mphkit.check',
+    'sanity_check': 'mphkit.check',
     # Materials from COMSOL's libraries
     'matlib': ('mphkit.materials', 'mphkit.material'),
     'material_library': ('mphkit.materials', 'mphkit.material'),
