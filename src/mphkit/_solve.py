@@ -492,7 +492,9 @@ def progress(path, /, pid: int | None = None) -> dict:
     Linux and Windows were not tried.
 
     It does not judge whether the solve goes well, and errors do not
-    show in the log: read the output of the solving script.
+    show in the log: read the output of the solving script. It reads the
+    whole log each time, in about 0.2 s per 10 MB (some 150,000 lines of
+    time steps).
 
     Long solves in the background (each shell command of an agent runs in
     a new process). `solve.py`, next to the input `m.mph`:
