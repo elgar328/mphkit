@@ -64,7 +64,7 @@ so other versions may need adjustments; reports are welcome. Checked on
 macOS and Windows; it should run wherever MPh runs. The name lookups read
 COMSOL's code-completion data in the installation (`data/completion`),
 which COMSOL does not document; they were checked with COMSOL 6.4 on
-macOS only. A missing or changed catalogue raises an error rather than
+macOS and Windows. A missing or changed catalogue raises an error rather than
 giving wrong names.
 
 ## Installation
