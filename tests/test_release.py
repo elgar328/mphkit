@@ -14,13 +14,13 @@ root = Path(__file__).parents[1]
 
 
 def project_version():
-    text = (root/'pyproject.toml').read_text()
+    text = (root/'pyproject.toml').read_text(encoding='utf-8')
     return re.search(r'^version = "(.+)"$', text, re.MULTILINE).group(1)
 
 
 def released():
     """Returns the released versions in the changelog, newest first."""
-    changelog = (root/'CHANGELOG.md').read_text()
+    changelog = (root/'CHANGELOG.md').read_text(encoding='utf-8')
     return re.findall(r'^## \[(\d+\.\d+\.\d+)\] - \d{4}-\d{2}-\d{2}$',
                       changelog, re.MULTILINE)
 
@@ -38,7 +38,7 @@ def test_version_form():
 
 
 def test_changelog():
-    changelog = (root/'CHANGELOG.md').read_text()
+    changelog = (root/'CHANGELOG.md').read_text(encoding='utf-8')
     assert '## [Unreleased]' in changelog
     versions = released()
     assert versions == sorted(versions, key=numbers, reverse=True)

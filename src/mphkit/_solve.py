@@ -713,7 +713,7 @@ def _info_path(log: Path) -> Path:
 def _read_info(log: Path) -> dict | None:
     """Returns the info file of a log, or None if missing or unreadable."""
     try:
-        info = json.loads(_info_path(log).read_text())
+        info = json.loads(_info_path(log).read_text(encoding='utf-8'))
     except (OSError, ValueError):
         return None
     return info if isinstance(info, dict) else None
@@ -723,7 +723,7 @@ def _write_info(log: Path, info: dict):
     """Writes the info file of a log at once, never half."""
     target = _info_path(log)
     temporary = target.with_name(f'{target.name}.{os.getpid()}.tmp')
-    temporary.write_text(json.dumps(info))
+    temporary.write_text(json.dumps(info), encoding='utf-8')
     os.replace(temporary, target)
 
 

@@ -1,4 +1,6 @@
 """Shared fixtures. Tests needing COMSOL are skipped when it is unavailable."""
+from pathlib import Path
+
 import pytest
 
 
@@ -49,5 +51,13 @@ def java_export(model, path):
     export time, which changes every minute.
     """
     model.save(path)
-    return [line for line in path.read_text().splitlines()
+    return [line for line in read(path).splitlines()
             if not line.startswith('/** Model exported on')]
+
+
+def read(path):
+    """
+    Returns a text file as UTF-8 (Windows reads the locale's code page
+    otherwise); undecodable bytes, e.g. in a Java export, are replaced.
+    """
+    return Path(path).read_text(encoding='utf-8', errors='replace')

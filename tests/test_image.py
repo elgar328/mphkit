@@ -4,6 +4,7 @@ import struct
 import pytest
 
 import mphkit as mk
+from conftest import read
 
 
 def png_size(path):
@@ -46,6 +47,7 @@ def test_image_files(plate, wall, tmp_path):
 
 def test_image_path_from_home(plate, tmp_path, monkeypatch):
     monkeypatch.setenv('HOME', str(tmp_path))
+    monkeypatch.setenv('USERPROFILE', str(tmp_path))     # Windows
     assert mk.image(plate, '~/g.png') == tmp_path/'g.png'
     assert (tmp_path/'g.png').exists()
 
@@ -78,7 +80,7 @@ def test_image_leaves_the_model_as_it_was(model, plate, wall, tmp_path):
     assert state() == before
     # nothing in the history: a Java export shows no picture
     model.java.save(str(tmp_path/'model'), 'java')
-    code = (tmp_path/'model.java').read_text()
+    code = read(tmp_path/'model.java')
     assert 'image()' not in code and 'showlabels' not in code
     # labels shown in the view do not leak into a picture without labels
     plain = mk.image(plate, tmp_path/'plain.png', wall).read_bytes()
@@ -96,7 +98,7 @@ def test_image_keeps_a_history_switched_off(model, plate, tmp_path):
         model.java.save(str(tmp_path/'model'), 'java')
     finally:
         history.enable()
-    assert 'switched_off' not in (tmp_path/'model.java').read_text()
+    assert 'switched_off' not in read(tmp_path/'model.java')
 
 
 def test_image_with_two_views(model, plate, wall, tmp_path):
@@ -156,8 +158,10 @@ def test_image_errors(model, plate, wall, tmp_path):
     for size in (800, (1, 2, 3), (100.5, 50), (0, 10)):
         with pytest.raises(ValueError, match='size must be'):
             mk.image(plate, tmp_path/'g.png', size=size)
+    # a folder that cannot be made: its name is taken by a file
+    (tmp_path/'file').write_text('', encoding='utf-8')
     with pytest.raises(OSError, match='could not write the picture'):
-        mk.image(plate, '/dev/null/g.png')
+        mk.image(plate, tmp_path/'file'/'g.png')
     with pytest.raises(TypeError, match='work plane'):
         mk.image(mk.workplane(plate), tmp_path/'g.png')
     mk.block(plate, (1, 1, 1), (50, 0, 0))

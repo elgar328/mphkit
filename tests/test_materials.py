@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 
 import mphkit as mk
-from conftest import java_export
+from conftest import java_export, read
 from mphkit import _materials
 
 
@@ -139,7 +139,7 @@ def test_library_format(offline, tmp_path, monkeypatch):
                               '</Model>'}, 'without tag or name')):
         path.unlink(missing_ok=True)
         if content is None:
-            path.write_text('not a zip')
+            path.write_text('not a zip', encoding='utf-8')
         else:
             with zipfile.ZipFile(path, 'w') as archive:
                 for name, text in content.items():
@@ -410,7 +410,7 @@ def test_solved(model):
 def documented(source):
     """The material lines of the README or of help(mphkit)."""
     if source == 'README.md':
-        readme = (Path(__file__).parents[1]/'README.md').read_text()
+        readme = read(Path(__file__).parents[1]/'README.md')
         return re.search(r"Materials from COMSOL's libraries.*?```python\n"
                          r'(.*?)```', readme, re.S).group(1).splitlines()
     block = re.search(r"Materials from COMSOL's libraries.*?\n\n(.*?)\n\n",

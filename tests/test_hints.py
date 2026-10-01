@@ -13,10 +13,11 @@ from pathlib import Path
 import pytest
 
 import mphkit as mk
+from conftest import read
 from mphkit import _hints
 
 root = Path(__file__).parents[1]
-readme = (root/'README.md').read_text()
+readme = read(root/'README.md')
 
 
 def message(module, name):
@@ -444,8 +445,8 @@ def test_help_java_export(client, model, tmp_path):
         old.save(tmp_path/'before.java')
         old.reset()
         old.save(tmp_path/'old.java')
-        before = (tmp_path/'before.java').read_text()
-        text = (tmp_path/'old.java').read_text()
+        before = read(tmp_path/'before.java')
+        text = read(tmp_path/'old.java')
         assert '"Cylinder"' in before, 'no history to compact'
         assert '"Block"' in text and '"Cylinder"' not in text
         assert f'feature("{temp.tag()}").selection().set({bottom[0]})' in text

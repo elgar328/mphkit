@@ -11,7 +11,7 @@ import numpy
 import pytest
 
 import mphkit as mk
-from conftest import java_export
+from conftest import java_export, read
 from mphkit import _comsol
 from test_example import plate_with_holes
 
@@ -409,7 +409,7 @@ def test_several_meshes(plate):
 
 def test_documented(plate):
     model, geom = plate
-    readme = (Path(__file__).parents[1]/'README.md').read_text()
+    readme = read(Path(__file__).parents[1]/'README.md')
     code = re.search(r'Mesh quality in numbers.*?```python\n(.*?)```',
                      readme, re.S).group(1).splitlines()
     assert len(code) == 3, 'update the checks below with the README'

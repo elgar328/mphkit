@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 
 import mphkit as mk
-from conftest import java_export
+from conftest import java_export, read
 from test_example import plate_with_holes
 
 root = Path(__file__).parents[1]
@@ -440,7 +440,7 @@ def test_rules(client, model, tmp_path):
 ########
 
 def test_documented(client):
-    readme = (root/'README.md').read_text()
+    readme = read(root/'README.md')
     lines = [re.search(r'Before solving, a check.*?```python\n(.*?)```',
                        readme, re.S).group(1)]
     lines.append(re.search(r'\n    (warnings = .*?)\n', mk.__doc__).group(1))

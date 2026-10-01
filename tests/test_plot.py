@@ -13,7 +13,7 @@ from test_example import plate_with_holes
 from test_results import plate as heat_plate
 
 import mphkit as mk
-from conftest import java_export
+from conftest import java_export, read
 
 
 def png_size(path):
@@ -161,7 +161,7 @@ def test_history_switched_off_stays_off(solved, tmp_path):
     finally:
         history.enable()
         model.java.param().remove('unrecorded')
-    assert 'unrecorded' not in (tmp_path/'model.java').read_text()
+    assert 'unrecorded' not in read(tmp_path/'model.java')
 
 
 def test_kinds_of_selections(solved, tmp_path):
@@ -229,15 +229,17 @@ def test_more_plot_errors(solved, tmp_path):
     with pytest.raises(ValueError, match='boundary or domain selection; '
                                          '".*" selects edge entities'):
         mk.plot(geom, 'T', tmp_path/'x.png', edges)
+    # a folder that cannot be made: its name is taken by a file
+    (tmp_path/'file').write_text('', encoding='utf-8')
     with pytest.raises(OSError, match='could not write the picture'):
-        mk.plot(geom, 'T', '/dev/null/x.png')
+        mk.plot(geom, 'T', tmp_path/'file'/'x.png')
     nothing = mk.sel.box(geom, 'boundary', z=50, name='nothing')
     with pytest.raises(ValueError, match='is empty; nothing to draw'):
         mk.plot(geom, 'T', tmp_path/'x.png', nothing)
     with pytest.raises(ValueError, match='is empty; nothing to draw'):
         mk.image(geom, tmp_path/'x.png', nothing, mesh=True)
     with pytest.raises(OSError, match='could not write the picture'):
-        mk.image(geom, '/dev/null/x.png', mesh=True)
+        mk.image(geom, tmp_path/'file'/'x.png', mesh=True)
     plane = mk.workplane(geom)
     try:
         with pytest.raises(TypeError, match='work plane'):

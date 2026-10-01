@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 import mphkit as mk
-from conftest import java_export
+from conftest import java_export, read
 from mphkit import _catalog
 
 example = Path(__file__).parents[1]/'examples'/'plate_with_holes.py'
@@ -201,7 +201,7 @@ def fake_physics(tmp_path, monkeypatch, *, features=True, groups=None,
                 '</model.physics></COMSOLCompletionData>')
     folder = tmp_path/'data'/'completion'
     folder.mkdir(parents=True)
-    (folder/'physics.xml').write_text(text)
+    (folder/'physics.xml').write_text(text, encoding='utf-8')
     monkeypatch.setattr(_catalog, '_root', lambda: str(tmp_path))
 
 
@@ -630,7 +630,7 @@ def test_without_catalogue(plate, monkeypatch, tmp_path):
 def test_readme_names(plate):
     # the lookups in the README, on the example script's model
     import re
-    readme = (Path(__file__).parents[1]/'README.md').read_text()
+    readme = read(Path(__file__).parents[1]/'README.md')
     lines = re.search(r"COMSOL's names, looked up.*?```python\n(.*?)```",
                       readme, re.S).group(1).splitlines()
     assert len(lines) == 7, 'update the checks below with the README'

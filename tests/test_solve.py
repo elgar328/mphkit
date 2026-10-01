@@ -15,7 +15,7 @@ from pathlib import Path
 import pytest
 
 import mphkit as mk
-from conftest import java_export
+from conftest import java_export, read
 from mphkit import _solve
 from test_example import plate_with_holes
 
@@ -47,8 +47,8 @@ def state(pid):
 
 
 def write_info(log, pid, started):
-    Path(str(log) + '.json').write_text(json.dumps({'pid': pid,
-                                                    'started': started}))
+    info = json.dumps({'pid': pid, 'started': started})
+    Path(str(log) + '.json').write_text(info, encoding='utf-8')
 
 
 def now(offset=0.0):
@@ -174,13 +174,13 @@ def test_last_lines_before_solving():
 
 
 def test_line_ends():
-    text = (data/'killed.log').read_text()
+    text = read(data/'killed.log')
     crlf = _solve._parse_log(text.replace('\n', '\r\n'))
     assert crlf == _solve._parse_log(text)
 
 
 def test_line_being_written():
-    text = (data/'batch_cut.log').read_text()
+    text = read(data/'batch_cut.log')
     values = _solve._parse_log(text + '           Current Progress:  99 % - x')
     assert values['percent'] is None
     # a character cut in half at the end
@@ -330,7 +330,7 @@ def test_info_files(tmp_path):
     assert result['started'].endswith(now()[-6:])
     assert 0 <= result['elapsed_s'] < 60
     for broken in ('', '{"pid": ', '[1, 2]', '{"pid": true}'):
-        Path(str(log) + '.json').write_text(broken)
+        Path(str(log) + '.json').write_text(broken, encoding='utf-8')
         result = mk.progress(log)
         assert result['pid'] is None and result['alive'] is None
 
@@ -412,7 +412,7 @@ def test_two_plate(client, tmp_path, logging):
         dofs = size['steps'][0]['dofs']
         log = mk.log_progress(tmp_path/'solve.log')
         assert log == (tmp_path/'solve.log').resolve() and log.is_file()
-        info = json.loads(Path(str(log) + '.json').read_text())
+        info = json.loads(read(str(log) + '.json'))
         assert info['pid'] == os.getpid()
         model.solve()
         result = mk.progress(log)
@@ -424,7 +424,7 @@ def test_two_plate(client, tmp_path, logging):
         assert result['comsol_cores'] == size['machine']['comsol_cores']
         # again in this process: the start time stays
         mk.log_progress(log)
-        assert json.loads(Path(str(log) + '.json').read_text()) == info
+        assert json.loads(read(str(log) + '.json')) == info
         assert log.stat().st_size == 0
         # switched off: the log stays as it is
         mk.log_progress(None)
@@ -624,7 +624,7 @@ def test_eigenfrequency(model):
 def test_documented(client, tmp_path, monkeypatch, logging):
     # the README's lines, on the example's model
     import re
-    readme = (Path(__file__).parents[1]/'README.md').read_text()
+    readme = read(Path(__file__).parents[1]/'README.md')
     code = re.search(r'Before a long solve.*?```python\n(.*?)```', readme,
                      re.S).group(1).splitlines()
     assert len(code) == 3, 'update the checks below with the README'
