@@ -216,7 +216,9 @@ def test_more_plot_errors(solved, tmp_path):
         mk.plot(geom, 'ht.ntflux', tmp_path/'x.png', z=2)
     assert mk.plot(geom, 'ht.ntflux', tmp_path/'flux.png').exists()
     with pytest.raises(ValueError, match=r'in W/\(m\*K\), not \'K\''):
-        mk.plot(geom, '45[W/(m*K)]', tmp_path/'x.png', unit='K')
+        mk.plot(geom, '45[W/(m*K)]', tmp_path/'unit.png', unit='K')
+    # no picture in the wrong unit is left behind
+    assert not (tmp_path/'unit.png').exists()
     with pytest.raises(TypeError, match='file name comes third'):
         mk.plot(geom, 'T.png', 'T')
     with pytest.raises(TypeError, match='file name comes third'):

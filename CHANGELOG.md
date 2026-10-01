@@ -77,6 +77,9 @@ until 1.0, a minor release (0.2, 0.3, ...) may change the API. See
 
 ### Fixed
 
+- `mk.plot` and mesh pictures (`mk.image(..., mesh=True)`) no longer open
+  a window of the COMSOL server for every picture, which piled up on
+  Windows.
 - `mk.measure`, `mk.bounding_box` and `mk.sel.find` no longer leave lines
   in the model's history, which showed up in a Java export of the model.
 

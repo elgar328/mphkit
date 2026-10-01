@@ -14,6 +14,7 @@ from __future__ import annotations
 import math
 import numbers
 import os
+import tempfile
 from difflib import get_close_matches
 from pathlib import Path
 from typing import Literal
@@ -153,7 +154,7 @@ def plot(geom: Node, expr: str, filename, /, selection: Node | None = None,
         if colortable is not None:
             _comsol.set_property(feature, 'colortable',
                                  _colortable(feature, colortable))
-        _run(group, expr, slices)
+        _draw(create, model, group, path, pixels, sdim, expr, slices)
         if unit is not None:
             applied = str(feature.getString('rangeunit'))
             if applied != unit:
@@ -162,10 +163,12 @@ def plot(geom: Node, expr: str, filename, /, selection: Node | None = None,
                 plain, plain_feature = _group(
                     create, model, geom, data, level_step, view_tag, expr,
                     None, slices, level, entities)
-                _run(plain, expr, slices)
+                with tempfile.TemporaryDirectory() as folder:
+                    _draw(create, model, plain, Path(folder)/'unit.png',
+                          (64, 48), sdim, expr, slices)
                 if str(plain_feature.getString('rangeunit')) == applied:
+                    path.unlink(missing_ok=True)
                     raise _results.unit_error(expr, applied, unit)
-        _image.export(create, model, group, path, pixels, sdim)
     return path
 
 
@@ -206,11 +209,20 @@ def _group(create, model, geom: Node, data, step: int | None, view: str,
     return group, feature
 
 
-def _run(group, expr: str, slices):
-    """Runs a plot group, explaining COMSOL's errors."""
+def _draw(create, model, group, path: Path, pixels, sdim: int, expr: str,
+          slices):
+    """
+    Writes a plot group to a file, explaining COMSOL's errors. Exporting
+    draws the group; running it first (`group.run()`) would draw it in a
+    window of the COMSOL server too, which shows on Windows. COMSOL fills
+    in the unit it applied (`rangeunit`) either way.
+    """
     try:
-        group.run()
-    except Exception as error:
+        _image.export(create, model, group, path, pixels, sdim)
+    except OSError as failure:
+        error = failure.__cause__
+        if not isinstance(error, Exception) or not _image.drawing_failed(error):
+            raise
         if slices is not None and 'Undefined variable' in \
                 _comsol.reason(error):
             raise RuntimeError(

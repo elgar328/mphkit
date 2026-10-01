@@ -186,10 +186,12 @@ def picture_size(size) -> tuple[int, int]:
 def export(create, model, group, path: Path, size: tuple[int, int],
            sdim: int):
     """
-    Writes the plot group `group`, already run, to `path` with a temporary
-    image export made with `create` (see `_results.scratch`). Title and
-    colour legend are on. Every setting must exist, so that a renamed
-    property raises instead of changing the picture silently.
+    Writes the plot group `group` to `path` with a temporary image export
+    made with `create` (see `_results.scratch`). The export draws the
+    group: running it before (`group.run()`) would also open a window of
+    the COMSOL server, one per picture on Windows. Title and colour legend
+    are on. Every setting must exist, so that a renamed property raises
+    instead of changing the picture silently.
     """
     imagetype, name_key = FORMATS[path.suffix]
     width, height = size
@@ -208,6 +210,16 @@ def export(create, model, group, path: Path, size: tuple[int, int],
     except Exception as error:
         raise OSError(f'COMSOL could not write the picture "{path}": '
                       f'{_comsol.reason(error)}') from error
+
+
+def drawing_failed(error: Exception) -> bool:
+    """
+    Tells whether an export failed in drawing the plot (e.g. an undefined
+    variable, reported with the expression and the plot) rather than in
+    writing the file.
+    """
+    text = _comsol.reason(error)
+    return 'Plot:' in text or 'Expression:' in text
 
 
 def drawn_selection(geom: Node, selection: Node) -> tuple[int, str, list]:
@@ -304,11 +316,13 @@ def _mesh_picture(geom: Node, path: Path, selection, mesh,
                              'volume' if sdim == 3 and level == 3
                              else 'surface')
         try:
-            group.run()
-        except Exception as error:
+            export(create, model, group, path, size, sdim)
+        except OSError as failure:
+            error = failure.__cause__
+            if not isinstance(error, Exception) or not drawing_failed(error):
+                raise
             raise RuntimeError(f'COMSOL could not draw the mesh: '
                                f'{_comsol.reason(error)}') from error
-        export(create, model, group, path, size, sdim)
     return path
 
 
