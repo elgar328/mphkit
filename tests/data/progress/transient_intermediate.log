@@ -1,0 +1,72 @@
+*******************************************
+***COMSOL 6.4.0.293 progress output file***
+*******************************************
+Thu Oct 01 12:38:07 KST 2026
+<---- Compile Equations: Time Dependent in static/Solution 1 (sol1) ------------
+Started at Oct 1, 2026, 12:38:07 PM.
+Geometry shape function: Quadratic Lagrange
+Running on Apple M4 Max.
+Using 1 socket with 4 cores in total on host.local.
+Available memory: 36.86 GB.
+           Current Progress:   0 % - Compile Equations: Time Dependent
+Memory: 1484/1484 429222/429248
+           Current Progress:   2 % - Compile Equations: Time Dependent
+Memory: 1500/1500 429222/429248
+           Current Progress:   2 % - Creating visualization mesh
+Memory: 1501/1501 429222/429248
+Time: 0 s.
+Physical memory: 1.5 GB
+Virtual memory: 429.22 GB
+Ended at Oct 1, 2026, 12:38:07 PM.
+----- Compile Equations: Time Dependent in static/Solution 1 (sol1) ----------->
+<---- Dependent Variables 1 in static/Solution 1 (sol1) ------------------------
+Started at Oct 1, 2026, 12:38:07 PM.
+           Current Progress:   2 % - Dependent Variables 1
+Solution time: 0 s.
+Physical memory: 1.5 GB
+Virtual memory: 429.22 GB
+Ended at Oct 1, 2026, 12:38:07 PM.
+----- Dependent Variables 1 in static/Solution 1 (sol1) ----------------------->
+<---- Time-Dependent Solver 1 in static/Solution 1 (sol1) ----------------------
+Started at Oct 1, 2026, 12:38:07 PM.
+Information: PARDISO not supported on this system. Switching to MUMPS.
+Time-dependent solver (BDF)
+Number of degrees of freedom solved for: 1792 (plus 1284 internal DOFs).
+Symmetric matrices found.
+Scales for dependent variables:
+Temperature (comp1.T): 2.9e+02
+Step        Time    Stepsize      Res  Jac  Sol Order Tfail NLfail   LinErr   LinRes
+   0           0           - out    2    3    2                  0  8.1e-15  3.3e-16
+   1    0.067505    0.063505        4    4    4     1     0      0  5.8e-15  5.2e-16
+   3     0.25802     0.12701        8    6    8     2     0      0  6.5e-15  4.8e-16
+   5     0.76606     0.25402       12    8   12     1     0      0  4.5e-15  5.2e-16
+   7      1.7821     0.50804       16   10   16     1     0      0  6.1e-15  9.2e-16
+   9      3.8143      1.0161       20   12   20     1     0      0  8.9e-15  1.8e-15
+  11      7.8787      2.0322       24   14   24     1     0      0    9e-15  4.8e-15
+  13      13.975      4.0643       28   16   28     1     0      0  1.4e-14  9.4e-15
+  15      22.104      4.0643       32   18   32     1     0      0    2e-14  1.1e-14
+  17      38.361      8.1287       36   20   36     1     0      0  2.5e-14  1.9e-14
+  19      62.747      16.257       40   22   40     1     0      0  2.6e-14    3e-14
+   -         100           - out
+  21      111.52      32.515       44   24   44     1     0      0  3.2e-14  4.2e-14
+   -         200           - out
+  23      209.06      65.029       48   26   48     1     0      0  6.7e-14  6.7e-14
+   -         300           - out
+  25      339.12      65.029       52   28   52     1     0      0    5e-14    9e-14
+   -         500           - out
+  27      599.24      130.06       56   30   56     2     0      0  4.3e-14  5.7e-14
+  29         800         100 out   60   32   60     2     0      0    5e-14  9.3e-14
+  31        1000         100 out   64   34   64     2     0      0  8.6e-14  8.6e-14
+  33        1200         100 out   67   36   67     2     0      0  5.1e-14  8.8e-14
+  35        1400         100 out   69   38   69     2     0      0  3.3e-14  8.9e-14
+  37        1600         100 out   71   40   71     2     0      0  3.7e-14  9.3e-14
+  39        1800         100 out   73   42   73     2     0      0  4.4e-14  9.4e-14
+  41        2000         100 out   75   44   75     2     0      0    7e-14  9.4e-14
+Time-stepping completed.
+---------- Current Progress: 100 % - 
+Memory: 1504/1504 429222/429248
+Solution time: 0 s.
+Physical memory: 1.5 GB
+Virtual memory: 429.22 GB
+Ended at Oct 1, 2026, 12:38:07 PM.
+----- Time-Dependent Solver 1 in static/Solution 1 (sol1) --------------------->

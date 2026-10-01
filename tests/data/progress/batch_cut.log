@@ -1,0 +1,38 @@
+*******************************************
+***COMSOL 6.4.0.293 progress output file***
+*******************************************
+Thu Oct 01 12:09:59 KST 2026
+COMSOL Multiphysics 6.4 (Build: 293) starting in batch mode
+Opening file: /tmp/agentprobe/batch_big.mph
+Open time: 3 s.
+Running: static
+<---- Compile Equations: stationary in static/Solution 1 (sol1) ----------------
+Started at Oct 1, 2026, 12:10:02 PM.
+Geometry shape function: Quadratic Lagrange
+Running on Apple M4 Max.
+Using 1 socket with 2 cores in total on host.local.
+Available memory: 36.86 GB.
+           Current Progress:   0 % - Generating equations
+Memory: 829/829 429106/429106
+           Current Progress:   4 % - Compile Equations: stationary
+Memory: 1005/1005 429215/429215
+           Current Progress:   5 % - Compile Equations: stationary
+Memory: 1021/1021 429201/429215
+           Current Progress:   5 % - Creating visualization mesh
+Memory: 1026/1026 429205/429215
+Time: 1 s.
+Physical memory: 1.03 GB
+Virtual memory: 429.21 GB
+Ended at Oct 1, 2026, 12:10:03 PM.
+----- Compile Equations: stationary in static/Solution 1 (sol1) --------------->
+<---- Dependent Variables 1 in static/Solution 1 (sol1) ------------------------
+Started at Oct 1, 2026, 12:10:03 PM.
+           Current Progress:   5 % - Dependent Variables 1
+Memory: 1111/1111 429285/429285
+Solution time: 0 s.
+Physical memory: 1.11 GB
+Virtual memory: 429.29 GB
+Ended at Oct 1, 2026, 12:10:03 PM.
+----- Dependent Variables 1 in static/Solution 1 (sol1) ----------------------->
+<---- Stationary Solver 1 in static/Solution 1 (sol1) --------------------------
+Started at Oct 1, 2026, 12:10:03 PM.

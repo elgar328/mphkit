@@ -1,0 +1,64 @@
+*******************************************
+***COMSOL 6.4.0.293 progress output file***
+*******************************************
+Thu Oct 01 13:14:01 KST 2026
+           Current Progress:   0 % - Free tetrahedral
+Memory: 1589/1589 429142/429215
+           Current Progress:   3 % - Generating equations
+<---- Compile Equations: Time Dependent in static/Solution 1 (sol1) ------------
+Started at Oct 1, 2026, 1:14:02 PM.
+Geometry shape function: Quadratic Lagrange
+Running on Apple M4 Max.
+Using 1 socket with 1 core in total on host.local.
+Available memory: 36.86 GB.
+           Current Progress:   3 % - Compile Equations: Time Dependent
+Memory: 1593/1593 429142/429215
+           Current Progress:   5 % - Compile Equations: Time Dependent
+           Current Progress:   5 % - Creating visualization mesh
+Time: 0 s.
+Physical memory: 1.59 GB
+Virtual memory: 429.14 GB
+Ended at Oct 1, 2026, 1:14:02 PM.
+----- Compile Equations: Time Dependent in static/Solution 1 (sol1) ----------->
+<---- Dependent Variables 1 in static/Solution 1 (sol1) ------------------------
+Started at Oct 1, 2026, 1:14:02 PM.
+           Current Progress:   5 % - Dependent Variables 1
+Memory: 1594/1594 429142/429215
+Solution time: 0 s.
+Physical memory: 1.59 GB
+Virtual memory: 429.14 GB
+Ended at Oct 1, 2026, 1:14:02 PM.
+----- Dependent Variables 1 in static/Solution 1 (sol1) ----------------------->
+<---- Time-Dependent Solver 1 in static/Solution 1 (sol1) ----------------------
+Started at Oct 1, 2026, 1:14:02 PM.
+Information: PARDISO not supported on this system. Switching to MUMPS.
+Time-dependent solver (BDF)
+Number of degrees of freedom solved for: 1792 (plus 1284 internal DOFs).
+Symmetric matrices found.
+Scales for dependent variables:
+Temperature (comp1.T): 2.9e+02
+Step        Time    Stepsize      Res  Jac  Sol Order Tfail NLfail   LinErr   LinRes
+   0           0           - out    2    3    2                  0    7e-15  2.7e-16
+   1    0.066716    0.063116        4    4    4     1     0      0    6e-15  4.3e-16
+   4     0.50853     0.25246       10    7   10     1     0      0  5.3e-15  5.4e-16
+   6      1.2659     0.50493       14    9   14     1     0      0  5.3e-15  7.7e-16
+   9      3.7905      1.0099       20   12   20     1     0      0  6.2e-15  1.6e-15
+  12      9.8497      2.0197       26   15   26     1     0      0  6.9e-15  4.4e-15
+  15      21.968      4.0394       32   18   32     1     0      0  1.3e-14  8.8e-15
+  18      46.204      8.0788       38   21   38     1     0      0  1.9e-14  1.5e-14
+  21      110.83      32.315       44   24   44     1     0      0  2.4e-14  3.5e-14
+  24      272.41       64.63       50   27   50     1     0      0  4.7e-14  6.6e-14
+  26       466.3      129.26       54   29   54     2     0      0  5.9e-14  8.3e-14
+  28      775.56         180       58   31   58     2     0      0  6.5e-14  1.2e-13
+  30      1135.6         180       62   33   62     2     0      0  5.5e-14  1.1e-13
+  32      1495.6         180       66   35   66     2     0      0  1.1e-13  1.1e-13
+   -        1800           - out
+  34      1855.6         180       70   37   70     2     0      0  6.4e-14  1.1e-13
+Time-stepping completed.
+---------- Current Progress: 100 % - 
+Memory: 1606/1606 429169/429215
+Solution time: 0 s.
+Physical memory: 1.62 GB
+Virtual memory: 429.17 GB
+Ended at Oct 1, 2026, 1:14:03 PM.
+----- Time-Dependent Solver 1 in static/Solution 1 (sol1) --------------------->

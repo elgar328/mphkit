@@ -1,0 +1,63 @@
+           Current Progress:   0 % - Free tetrahedral
+Memory: 1659/1659 429182/429182
+Number of vertex elements: 16
+Number of edge elements: 98
+Number of boundary elements: 540
+Number of elements: 910
+Minimum element quality: 0.2216
+           Current Progress:   3 % - Finalizing mesh
+Memory: 1659/1659 429178/429182
+           Current Progress:   3 % - Generating equations
+<---- Compile Equations: stationary in static/Solution 1 (sol1) ----------------
+Started at Oct 1, 2026, 11:39:59 AM.
+Geometry shape function: Quadratic Lagrange
+Running on Apple M4 Max.
+Using 1 socket with 1 core in total on host.local.
+Available memory: 36.86 GB.
+           Current Progress:   7 % - Compile Equations: stationary
+Memory: 1675/1675 429178/429182
+           Current Progress:   7 % - Creating visualization mesh
+Time: 3 s.
+Physical memory: 1.67 GB
+Virtual memory: 429.18 GB
+Ended at Oct 1, 2026, 11:40:01 AM.
+----- Compile Equations: stationary in static/Solution 1 (sol1) --------------->
+<---- Dependent Variables 1 in static/Solution 1 (sol1) ------------------------
+Started at Oct 1, 2026, 11:40:01 AM.
+           Current Progress:   7 % - Dependent Variables 1
+Solution time: 0 s.
+Physical memory: 1.67 GB
+Virtual memory: 429.18 GB
+Ended at Oct 1, 2026, 11:40:01 AM.
+----- Dependent Variables 1 in static/Solution 1 (sol1) ----------------------->
+<---- Stationary Solver 1 in static/Solution 1 (sol1) --------------------------
+Started at Oct 1, 2026, 11:40:01 AM.
+Information: PARDISO not supported on this system. Switching to MUMPS.
+Nonlinear solver
+Number of degrees of freedom solved for: 1792 (plus 1284 internal DOFs).
+Symmetric matrices found.
+Scales for dependent variables:
+Temperature (comp1.T): 2.9e+02
+Orthonormal null-space function used.
+Iter      SolEst     Damping    Stepsize #Res #Jac #Sol   LinErr   LinRes
+   1        0.26   0.0100000        0.27    2    1    2  1.9e-13  6.3e-15
+Nonsymmetric matrix found.
+   2        0.23   0.1000000        0.26    3    2    4  2.4e-13    6e-15
+   3     0.00097   1.0000000        0.19    4    3    6  1.4e-13  2.3e-14
+   4     3.9e-07   1.0000000     0.00078    5    4    8    3e-14  1.2e-14
+---------- Current Progress: 100 % - 
+Memory: 1678/1678 429178/429182
+Solution time: 1 s.
+Physical memory: 1.69 GB
+Virtual memory: 429.18 GB
+Ended at Oct 1, 2026, 11:40:02 AM.
+----- Stationary Solver 1 in static/Solution 1 (sol1) ------------------------->
+---------- Current Progress: 100 % - Updating selections
+Memory: 1686/1686 429178/429182
+           Current Progress:   0 % - Block 1
+Memory: 1501/1686 429178/429182
+           Current Progress:   9 % - Form Union
+           Current Progress:   9 % - Performing Boolean operation
+---------- Current Progress: 100 % - Updating selections
+---------- Current Progress: 100 % - Creating visualization mesh
+Memory: 1557/1686 429179/429182

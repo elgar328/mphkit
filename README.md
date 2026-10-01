@@ -134,6 +134,23 @@ nowhere, no mesh, physics no study solves):
 warnings = [p for p in mk.check(model) if p['severity'] == 'warning']
 ```
 
+Before a long solve, its size; while it runs, its progress, read from
+another process (an agent runs it in the background):
+
+```python
+mk.problem_size(model)        # degrees of freedom, solver, mesh elements, memory and cores
+mk.log_progress('solve.log')  # in the solving script, before loading the model
+mk.progress('solve.log')      # elsewhere: percent, task, memory, time steps, alive, CPU
+```
+
+`mk.problem_size` compiles the equations without solving (it needs a
+built mesh) and does not predict memory or time; a direct solver needs
+far more memory than an iterative one. `mk.progress` reads COMSOL's
+progress log and the operating system and judges nothing.
+`help(mk.progress)` has a script that starts a solve in the background
+and how to stop it: end its Python process only, `os.kill(pid,
+signal.SIGTERM)`.
+
 Results of the solved
 [example script](https://github.com/elgar328/mphkit/blob/main/examples/plate_with_holes.py),
 over entities or at points, in SI units unless `unit` is given; they
@@ -215,6 +232,8 @@ a plate with a row of cooling holes, for one or more holes.
 - Parametric sweeps that COMSOL stores as an outer loop, e.g. around a
   time-dependent study or over a geometry parameter, cannot be read yet;
   other sweeps of a stationary study can.
+- `mk.progress` reads memory and CPU from macOS; on Linux and Windows
+  some of them are `None` (not tried there).
 - No named helpers yet for geometry parts (`PartInstance`), sweeps, cones
   and the other remaining primitives, virtual operations or repair. They
   work through `mk.feature(geom, 'Sweep', ...)`, which handles arguments

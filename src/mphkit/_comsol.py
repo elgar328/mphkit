@@ -243,6 +243,22 @@ def check_geometry_built(java, name: str):
                            'first, also after loading a file.')
 
 
+def check_mesh_built(sequence):
+    """
+    Raises for an empty Java mesh sequence and for one whose settings
+    changed since it was built (also through a parameter it uses). Disabled
+    mesh features are left out: they stay unbuilt for good.
+    """
+    if sequence.isEmpty():
+        raise RuntimeError(f'Mesh "{name_of(sequence)}" is empty; '
+                           'run model.mesh() first.')
+    features = sequence.feature()
+    if any(features.get(t).isActive() and not features.get(t).isBuilt()
+           for t in features.tags()):
+        raise RuntimeError(f'Mesh "{name_of(sequence)}" changed since '
+                           'it was built; run model.mesh().')
+
+
 def check_selection(geom: Node, selection: Node):
     """
     Returns the Java selection behind a selection node of `geom`.

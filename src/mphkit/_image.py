@@ -317,8 +317,7 @@ def _mesh(geom: Node, mesh) -> Any:
     Returns the Java mesh sequence to draw: the one given, or the only
     non-empty one of the geometry's component. Raises for an empty mesh
     and for one whose settings changed since it was built, where COMSOL
-    would draw nothing or the old mesh. Disabled mesh features are left
-    out: they stay unbuilt for good.
+    would draw nothing or the old mesh.
     """
     meshes = _comsol.component_of(geom).mesh()
     own = [str(t) for t in meshes.tags()]
@@ -349,12 +348,5 @@ def _mesh(geom: Node, mesh) -> Any:
                                      'meshes', wrong)
             raise ValueError(f'Mesh "{_comsol.name_of(sequence)}" does not '
                              f'belong to geometry "{geom}".') from None
-        if sequence.isEmpty():
-            raise RuntimeError(f'Mesh "{_comsol.name_of(sequence)}" is empty; '
-                               'run model.mesh() first.')
-    features = sequence.feature()
-    if any(features.get(t).isActive() and not features.get(t).isBuilt()
-           for t in features.tags()):
-        raise RuntimeError(f'Mesh "{_comsol.name_of(sequence)}" changed since '
-                           'it was built; run model.mesh().')
+    _comsol.check_mesh_built(sequence)
     return sequence

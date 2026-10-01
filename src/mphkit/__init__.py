@@ -147,6 +147,15 @@ from a side (`view='top'`, ...) and deformed shapes (`deform=True`).
 Global values and values at all mesh nodes:
 `model.evaluate('expression', 'unit')` in MPh.
 
+Long solves: `mk.problem_size(model)` gives, before solving, the degrees
+of freedom and the solver COMSOL would use, with the computer's memory
+and cores. A solve started in the background (`help(mk.progress)` has
+the scripts) writes COMSOL's progress log with `mk.log_progress(path)`,
+and `mk.progress(path)` reads it from another process: percent, task,
+memory, degrees of freedom, time steps, and whether the solving processes
+are alive with their CPU and memory. Stop such a solve by ending its
+Python process only (`os.kill(pid, signal.SIGTERM)`).
+
 Existing models (e.g. built in the COMSOL Desktop): load one with
 `old = client.load('file.mph')`; `old.reset()` compacts its history and
 `old.save('old.java')` writes its current state as Java, with COMSOL's
@@ -180,6 +189,7 @@ from ._measure import bounding_box, coordinates, measure, summary
 from ._plot import plot
 from ._props import set_ as set  # not in __all__: keeps builtin set
 from ._results import average, integral, maximum, minimum, value
+from ._solve import log_progress, problem_size, progress
 from .errors import LicenseError
 from .geometry import (array, block, chamfer, circle, component_of,
                        coordinate_system, cylinder, delete, difference,
@@ -196,10 +206,10 @@ __all__ = ['LicenseError', 'array', 'average', 'block', 'bounding_box',
            'coordinates', 'cylinder', 'delete', 'difference', 'extrude',
            'feature', 'feature_types', 'fillet', 'geometry', 'image',
            'import_', 'integral', 'intersection', 'interval',
-           'line_segment', 'material', 'materials', 'maximum', 'measure',
-           'minimum', 'mirror', 'move',
+           'line_segment', 'log_progress', 'material', 'materials',
+           'maximum', 'measure', 'minimum', 'mirror', 'move',
            'partition', 'physics_types', 'plot', 'point', 'polygon',
-           'properties', 'rectangle', 'revolve', 'rigid_transform',
+           'problem_size', 'progress', 'properties', 'rectangle', 'revolve', 'rigid_transform',
            'rotate', 'sel', 'sphere', 'square', 'summary', 'union', 'value',
            'variables', 'workplane']
 

@@ -110,6 +110,17 @@ MEANINGS: dict[str, str | tuple[str, ...]] = {
     'precheck': 'mphkit.check', 'check_model': 'mphkit.check',
     'lint': 'mphkit.check', 'verify': 'mphkit.check',
     'sanity_check': 'mphkit.check',
+    # Long solves
+    'estimate': 'mphkit.problem_size', 'dofs': 'mphkit.problem_size',
+    'solve_size': 'mphkit.problem_size',
+    'show_progress': 'mphkit.log_progress',
+    'showprogress': 'mphkit.log_progress',
+    'progress_log': 'mphkit.log_progress',
+    'solver_log': 'mphkit.log_progress',
+    'progress_bar': 'mphkit.progress', 'solve_status': 'mphkit.progress',
+    'memory_usage': 'mphkit.progress', 'stop_solve': 'mphkit.progress',
+    'cancel_solve': 'mphkit.progress', 'kill_solve': 'mphkit.progress',
+    'run_background': 'mphkit.progress', 'monitor': 'mphkit.progress',
     # Materials from COMSOL's libraries
     'matlib': ('mphkit.materials', 'mphkit.material'),
     'material_library': ('mphkit.materials', 'mphkit.material'),

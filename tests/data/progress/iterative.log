@@ -1,0 +1,85 @@
+*******************************************
+***COMSOL 6.4.0.293 progress output file***
+*******************************************
+Thu Oct 01 10:29:11 KST 2026
+           Current Progress:   0 % - static
+Memory: 1843/2245 429706/429827
+           Current Progress:   3 % - static
+<---- Compile Equations: stationary in static/Solution 1 (sol1) ----------------
+Started at Oct 1, 2026, 10:29:11 AM.
+Geometry shape function: Quadratic Lagrange
+Running on Apple M4 Max.
+Using 1 socket with 1 core in total on host.local.
+Available memory: 36.86 GB.
+           Current Progress:   3 % - Compile Equations: stationary
+Memory: 1951/2245 429706/429827
+           Current Progress:   6 % - Compile Equations: stationary
+Memory: 1952/2245 429706/429827
+           Current Progress:   7 % - Compile Equations: stationary
+Memory: 1967/2245 429721/429827
+           Current Progress:   7 % - Creating visualization mesh
+Time: 1 s.
+Physical memory: 1.97 GB
+Virtual memory: 429.72 GB
+Ended at Oct 1, 2026, 10:29:12 AM.
+----- Compile Equations: stationary in static/Solution 1 (sol1) --------------->
+<---- Dependent Variables 1 in static/Solution 1 (sol1) ------------------------
+Started at Oct 1, 2026, 10:29:12 AM.
+           Current Progress:   7 % - Dependent Variables 1
+Solution time: 0 s.
+Physical memory: 1.97 GB
+Virtual memory: 429.72 GB
+Ended at Oct 1, 2026, 10:29:13 AM.
+----- Dependent Variables 1 in static/Solution 1 (sol1) ----------------------->
+<---- Stationary Solver 1 in static/Solution 1 (sol1) --------------------------
+Started at Oct 1, 2026, 10:29:13 AM.
+Information: PARDISO not supported on this system. Switching to MUMPS.
+-          Current Progress:  12 % - Stationary Solver 1
+Memory: 1978/2245 429721/429827
+Linear solver
+Number of degrees of freedom solved for: 886254 (plus 74994 internal DOFs).
+--         Current Progress:  21 % - Assembling residual
+Memory: 2000/2245 429742/429827
+--         Current Progress:  21 % - Assembling sparsity pattern
+Memory: 2007/2245 429749/429827
+--         Current Progress:  22 % - Assembling sparsity pattern
+Memory: 2027/2245 429769/429827
+--         Current Progress:  23 % - Assembling sparsity pattern
+Memory: 2058/2245 429801/429827
+--         Current Progress:  24 % - Assembling sparsity pattern
+Memory: 2100/2245 429842/429842
+--         Current Progress:  26 % - Assembling matrices
+Memory: 2433/2433 430175/430175
+--         Current Progress:  29 % - Assembling matrices
+---        Current Progress:  33 % - Assembling matrices
+---        Current Progress:  36 % - Assembling matrices
+---        Current Progress:  38 % - 
+Memory: 2638/2638 430379/430379
+Symmetric matrices found.
+Scales for dependent variables:
+Temperature (comp1.T): 2.9e+02
+Orthonormal null-space function used.
+---        Current Progress:  38 % - Assembling prolongations
+Memory: 2637/2638 430467/430467
+-----      Current Progress:  56 % - Assembling sparsity pattern
+Memory: 2734/2734 430559/430559
+-----      Current Progress:  56 % - Assembling matrices
+-------    Current Progress:  74 % - Creating multigrid hierarchy
+Memory: 2749/2749 430559/430559
+Iter      SolEst     Damping    Stepsize #Res #Jac #Sol LinIt   LinErr   LinRes
+-------    Current Progress:  74 % - Solving linear system
+Memory: 2751/2751 430559/430559
+--------   Current Progress:  89 % - Solving linear system
+Memory: 2757/2757 430566/430566
+---------  Current Progress:  94 % - Solving linear system
+Memory: 2764/2764 430573/430573
+---------  Current Progress:  98 % - Solving linear system
+Memory: 2771/2771 430579/430579
+   1        0.19   1.0000000        0.19    1    1    1     5  0.00023  8.1e-05
+---------- Current Progress: 100 % - 
+Memory: 2778/2778 430586/430586
+Solution time: 10 s.
+Physical memory: 2.78 GB
+Virtual memory: 430.59 GB
+Ended at Oct 1, 2026, 10:29:23 AM.
+----- Stationary Solver 1 in static/Solution 1 (sol1) ------------------------->

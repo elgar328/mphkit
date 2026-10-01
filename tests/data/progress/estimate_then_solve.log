@@ -1,0 +1,185 @@
+*******************************************
+***COMSOL 6.4.0.293 progress output file***
+*******************************************
+Thu Oct 01 11:36:15 KST 2026
+           Current Progress:   0 % - Free tetrahedral
+Memory: 1026/1026 429062/429062
+Number of vertex elements: 24
+Number of edge elements: 136
+Number of boundary elements: 818
+---------  Current Progress:  93 % - Improving element quality
+Memory: 1031/1031 429062/429062
+Number of elements: 1485
+Minimum element quality: 0.0647
+---------- Current Progress: 100 % - Finalizing mesh
+----       Current Progress:  47 % - Generating equations
+Memory: 1032/1032 429066/429066
+------     Current Progress:  60 % - Generating equations
+Memory: 1036/1036 429066/429066
+------     Current Progress:  66 % - Generating equations
+Memory: 1038/1038 429066/429066
+---        Current Progress:  39 % - Generating equations
+Memory: 1040/1040 429066/429066
+-----      Current Progress:  54 % - Generating equations
+Memory: 1041/1041 429066/429066
+------     Current Progress:  60 % - Generating equations
+-------    Current Progress:  72 % - Generating equations
+Memory: 1042/1042 429066/429066
+<---- Compile Equations: stationary in Solution 1 (mkest1) ---------------------
+Started at Oct 1, 2026, 11:36:24 AM.
+Geometry shape function: Quadratic Lagrange
+Running on Apple M4 Max.
+Using 1 socket with 1 core in total on host.local.
+Available memory: 36.86 GB.
+           Current Progress:   0 % - Generating equations
+Memory: 1019/1042 429130/429130
+Running on Apple M4 Max.
+Using 1 socket with 1 core in total on host.local.
+Available memory: 36.86 GB.
+-----      Current Progress:  50 % - Compile Equations: stationary
+Memory: 1041/1042 429130/429130
+-----      Current Progress:  50 % - Creating visualization mesh
+Memory: 1043/1043 429130/429130
+Time: 5 s.
+Physical memory: 1.04 GB
+Virtual memory: 429.13 GB
+Ended at Oct 1, 2026, 11:36:28 AM.
+----- Compile Equations: stationary in Solution 1 (mkest1) -------------------->
+<---- Dependent Variables 1 in Solution 1 (mkest1) -----------------------------
+Started at Oct 1, 2026, 11:36:28 AM.
+-----      Current Progress:  50 % - Dependent Variables 1
+Memory: 1045/1045 429130/429130
+Solution time: 0 s.
+Physical memory: 1.04 GB
+Virtual memory: 429.13 GB
+Ended at Oct 1, 2026, 11:36:28 AM.
+----- Dependent Variables 1 in Solution 1 (mkest1) ---------------------------->
+           Current Progress:   1 % - Generating equations
+Memory: 995/1045 429130/429130
+           Current Progress:   2 % - Generating equations
+Memory: 997/1045 429130/429130
+           Current Progress:   3 % - Generating equations
+<---- Compile Equations: stationary in static/Solution 1 (sol1) ----------------
+Started at Oct 1, 2026, 11:36:35 AM.
+Geometry shape function: Quadratic Lagrange
+Running on Apple M4 Max.
+Using 1 socket with 1 core in total on host.local.
+Available memory: 36.86 GB.
+           Current Progress:   7 % - Compile Equations: stationary
+           Current Progress:   7 % - Creating visualization mesh
+Memory: 1004/1045 429134/429134
+Time: 3 s.
+Physical memory: 1.01 GB
+Virtual memory: 429.14 GB
+Ended at Oct 1, 2026, 11:36:39 AM.
+----- Compile Equations: stationary in static/Solution 1 (sol1) --------------->
+<---- Dependent Variables 1 in static/Solution 1 (sol1) ------------------------
+Started at Oct 1, 2026, 11:36:39 AM.
+           Current Progress:   7 % - Dependent Variables 1
+Memory: 1006/1045 429138/429138
+Solution time: 0 s.
+Physical memory: 1.01 GB
+Virtual memory: 429.14 GB
+Ended at Oct 1, 2026, 11:36:39 AM.
+----- Dependent Variables 1 in static/Solution 1 (sol1) ----------------------->
+<---- Stationary Solver 1 in static/Solution 1 (sol1) --------------------------
+Started at Oct 1, 2026, 11:36:39 AM.
+Information: PARDISO not supported on this system. Switching to MUMPS.
+Linear solver
+Number of degrees of freedom solved for: 2849 (plus 1918 internal DOFs).
+Symmetric matrices found.
+Scales for dependent variables:
+Temperature (comp1.T): 2.9e+02
+Orthonormal null-space function used.
+Iter      SolEst     Damping    Stepsize #Res #Jac #Sol   LinErr   LinRes
+   1        0.19   1.0000000        0.19    1    1    1  2.3e-13  5.1e-15
+---------- Current Progress: 100 % - 
+Memory: 1027/1045 429168/429168
+Solution time: 0 s.
+Physical memory: 1.03 GB
+Virtual memory: 429.17 GB
+Ended at Oct 1, 2026, 11:36:39 AM.
+----- Stationary Solver 1 in static/Solution 1 (sol1) ------------------------->
+------     Current Progress:  60 % - Generating equations
+Memory: 1419/1419 429168/429168
+<---- Compile Equations: stationary in Solution 1a (mkest1) --------------------
+Started at Oct 1, 2026, 11:36:40 AM.
+Geometry shape function: Quadratic Lagrange
+Running on Apple M4 Max.
+Using 1 socket with 1 core in total on host.local.
+Available memory: 36.86 GB.
+           Current Progress:   0 % - Generating equations
+Memory: 1116/1677 429168/429168
+Running on Apple M4 Max.
+Using 1 socket with 1 core in total on host.local.
+Available memory: 36.86 GB.
+-----      Current Progress:  50 % - Compile Equations: stationary
+Memory: 1134/1677 429172/429172
+-----      Current Progress:  50 % - Creating visualization mesh
+Memory: 1137/1677 429172/429172
+Time: 1 s.
+Physical memory: 1.68 GB
+Virtual memory: 429.17 GB
+Ended at Oct 1, 2026, 11:36:40 AM.
+----- Compile Equations: stationary in Solution 1a (mkest1) ------------------->
+<---- Dependent Variables 1 in Solution 1a (mkest1) ----------------------------
+Started at Oct 1, 2026, 11:36:40 AM.
+-----      Current Progress:  50 % - Dependent Variables 1
+Memory: 1138/1677 429172/429172
+Solution time: 0 s.
+Physical memory: 1.14 GB
+Virtual memory: 429.17 GB
+Ended at Oct 1, 2026, 11:36:40 AM.
+----- Dependent Variables 1 in Solution 1a (mkest1) --------------------------->
+---------- Current Progress: 100 % - Updating selections
+Memory: 1175/1677 429180/429180
+           Current Progress:   0 % - plate
+Memory: 1206/1677 429180/429180
+           Current Progress:   3 % - hole
+           Current Progress:   6 % - Array 1
+---        Current Progress:  38 % - Difference 1
+Memory: 1207/1677 429180/429180
+---        Current Progress:  38 % - Performing Boolean operation
+------     Current Progress:  69 % - Form Union
+------     Current Progress:  69 % - Performing Boolean operation
+---------- Current Progress: 100 % - Updating selections
+---------- Current Progress: 100 % - Creating visualization mesh
+           Current Progress:   0 % - Free tetrahedral
+Memory: 1284/1677 429184/429184
+Number of vertex elements: 16
+Number of edge elements: 98
+Number of boundary elements: 540
+Number of elements: 910
+Minimum element quality: 0.2216
+---------- Current Progress: 100 % - Finalizing mesh
+           Current Progress:   0 % - 
+Memory: 1285/1677 429184/429184
+-------    Current Progress:  72 % - Generating equations
+Memory: 1133/1677 429184/429184
+<---- Compile Equations: stationary in Solution 1 (mkest1) ---------------------
+Started at Oct 1, 2026, 11:36:44 AM.
+Geometry shape function: Quadratic Lagrange
+Running on Apple M4 Max.
+Using 1 socket with 1 core in total on host.local.
+Available memory: 36.86 GB.
+           Current Progress:   0 % - Compile Equations: stationary
+Memory: 1134/1677 429184/429184
+Running on Apple M4 Max.
+Using 1 socket with 1 core in total on host.local.
+Available memory: 36.86 GB.
+-----      Current Progress:  50 % - Compile Equations: stationary
+Memory: 1135/1677 429188/429188
+-----      Current Progress:  50 % - Creating visualization mesh
+Time: 0 s.
+Physical memory: 1.13 GB
+Virtual memory: 429.19 GB
+Ended at Oct 1, 2026, 11:36:45 AM.
+----- Compile Equations: stationary in Solution 1 (mkest1) -------------------->
+<---- Dependent Variables 1 in Solution 1 (mkest1) -----------------------------
+Started at Oct 1, 2026, 11:36:45 AM.
+-----      Current Progress:  50 % - Dependent Variables 1
+Solution time: 0 s.
+Physical memory: 1.13 GB
+Virtual memory: 429.19 GB
+Ended at Oct 1, 2026, 11:36:45 AM.
+----- Dependent Variables 1 in Solution 1 (mkest1) ---------------------------->

@@ -1,0 +1,89 @@
+*******************************************
+***COMSOL 6.4.0.293 progress output file***
+*******************************************
+Thu Oct 01 12:39:05 KST 2026
+           Current Progress:   0 % - Free Tetrahedral 1
+Memory: 3384/3384 431627/431627
+Number of vertex elements: 24
+Number of edge elements: 544
+Number of boundary elements: 14280
+           Current Progress:   0 % - Creating initial tetrahedra
+Memory: 3385/3385 431627/431627
+           Current Progress:   0 % - Inserting interior points
+Memory: 3386/3386 431627/431627
+           Current Progress:   0 % - Improving element quality
+Memory: 3386/3386 431623/431627
+Number of elements: 144335
+           Current Progress:   0 % - Finalizing mesh
+Minimum element quality: 0.1798
+           Current Progress:   3 % - static
+Memory: 3406/3406 431627/431627
+<---- Compile Equations: stationary in static/Solution 1 (sol1) ----------------
+Started at Oct 1, 2026, 12:39:07 PM.
+Geometry shape function: Quadratic Lagrange
+Running on Apple M4 Max.
+Using 1 socket with 4 cores in total on host.local.
+Available memory: 36.86 GB.
+           Current Progress:   3 % - Compile Equations: stationary
+Memory: 3679/3679 431627/431627
+           Current Progress:   4 % - Compile Equations: stationary
+Memory: 3698/3698 431627/431627
+           Current Progress:   4 % - Creating visualization mesh
+Time: 1 s.
+Physical memory: 3.7 GB
+Virtual memory: 431.63 GB
+Ended at Oct 1, 2026, 12:39:07 PM.
+----- Compile Equations: stationary in static/Solution 1 (sol1) --------------->
+<---- Dependent Variables 1 in static/Solution 1 (sol1) ------------------------
+Started at Oct 1, 2026, 12:39:07 PM.
+           Current Progress:   4 % - Dependent Variables 1
+Solution time: 0 s.
+Physical memory: 3.7 GB
+Virtual memory: 431.63 GB
+Ended at Oct 1, 2026, 12:39:08 PM.
+----- Dependent Variables 1 in static/Solution 1 (sol1) ----------------------->
+<---- Stationary Solver 1 in static/Solution 1 (sol1) --------------------------
+Started at Oct 1, 2026, 12:39:08 PM.
+Information: PARDISO not supported on this system. Switching to MUMPS.
+Continuation solver
+Linear solver
+Number of degrees of freedom solved for: 206792 (plus 29658 internal DOFs).
+    
+Continuation parameter hh = 100.
+Continuation parameter stepsize CMPpcontstep = 0.
+-          Current Progress:  14 % - Assembling matrices
+Memory: 3724/3724 431627/431627
+Symmetric matrices found.
+Scales for dependent variables:
+Temperature (comp1.T): 2.9e+02
+Orthonormal null-space function used.
+-          Current Progress:  14 % - Assembling prolongations
+Memory: 3736/3736 431627/431627
+Iter      SolEst     Damping    Stepsize #Res #Jac #Sol LinIt   LinErr   LinRes
+---        Current Progress:  36 % - Solving linear system
+Memory: 3754/3754 431627/431627
+   1        0.19   1.0000000        0.19    1    1    1     5   0.0003  9.9e-05
+    
+Continuation parameter hh = 200.
+Continuation parameter stepsize CMPpcontstep = 100.
+----       Current Progress:  46 % - Assembling sparsity pattern
+Memory: 3787/3787 431628/431628
+Iter      SolEst     Damping    Stepsize #Res #Jac #Sol LinIt   LinErr   LinRes
+-----      Current Progress:  59 % - Solving linear system
+Memory: 3846/3846 431677/431677
+   1        0.17   1.0000000        0.17    2    2    2     8  0.00057  1.7e-05
+    
+Continuation parameter hh = 300.
+Continuation parameter stepsize CMPpcontstep = 100.
+-------    Current Progress:  78 % - Assembling matrices
+Memory: 3854/3854 431677/431677
+Iter      SolEst     Damping    Stepsize #Res #Jac #Sol LinIt   LinErr   LinRes
+---------  Current Progress:  98 % - Solving linear system
+Memory: 3855/3855 431677/431677
+   1        0.16   1.0000000        0.16    3    3    3    11  0.00038  1.1e-05
+---------- Current Progress: 100 % - 
+Solution time: 2 s.
+Physical memory: 3.86 GB
+Virtual memory: 431.68 GB
+Ended at Oct 1, 2026, 12:39:09 PM.
+----- Stationary Solver 1 in static/Solution 1 (sol1) ------------------------->

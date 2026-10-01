@@ -1,0 +1,183 @@
+*******************************************
+***COMSOL 6.4.0.293 progress output file***
+*******************************************
+Thu Oct 01 12:38:56 KST 2026
+           Current Progress:   2 % - Generating equations
+Memory: 1021/1021 429246/429246
+           Current Progress:   3 % - static
+<---- Compile Equations: stationary in static/Solution 1 (sol1) ----------------
+Started at Oct 1, 2026, 12:38:57 PM.
+Geometry shape function: Quadratic Lagrange
+Running on Apple M4 Max.
+Using 1 socket with 4 cores in total on host.local.
+Available memory: 36.86 GB.
+Parameter hm = 2.0 .
+           Current Progress:   3 % - Generating equations
+           Current Progress:   4 % - Compile Equations: stationary
+Memory: 1044/1044 429250/429250
+           Current Progress:   4 % - Creating visualization mesh
+Memory: 1046/1046 429250/429250
+Time: 1 s.
+Physical memory: 1.05 GB
+Virtual memory: 429.25 GB
+Ended at Oct 1, 2026, 12:38:58 PM.
+----- Compile Equations: stationary in static/Solution 1 (sol1) --------------->
+<---- Dependent Variables 1 in static/Solution 1 (sol1) ------------------------
+Started at Oct 1, 2026, 12:38:58 PM.
+           Current Progress:   4 % - Dependent Variables 1
+Memory: 1049/1049 429250/429250
+Solution time: 0 s.
+Physical memory: 1.05 GB
+Virtual memory: 429.25 GB
+Ended at Oct 1, 2026, 12:38:58 PM.
+----- Dependent Variables 1 in static/Solution 1 (sol1) ----------------------->
+<---- Stationary Solver 1 in static/Solution 1 (sol1) --------------------------
+Started at Oct 1, 2026, 12:38:58 PM.
+Information: PARDISO not supported on this system. Switching to MUMPS.
+Linear solver
+Number of degrees of freedom solved for: 58278 (plus 13214 internal DOFs).
+Symmetric matrices found.
+Scales for dependent variables:
+Temperature (comp1.T): 2.9e+02
+Orthonormal null-space function used.
+--         Current Progress:  28 % - Matrix factorization
+Memory: 1433/1433 429909/429909
+Iter      SolEst     Damping    Stepsize #Res #Jac #Sol   LinErr   LinRes
+   1        0.19   1.0000000        0.19    1    1    1  7.8e-13  1.3e-14
+---        Current Progress:  35 % - 
+Memory: 1471/1471 429907/429909
+Solution time: 0 s.
+Physical memory: 1.47 GB
+Virtual memory: 429.91 GB
+Ended at Oct 1, 2026, 12:38:58 PM.
+----- Stationary Solver 1 in static/Solution 1 (sol1) ------------------------->
+---        Current Progress:  35 % - Creating visualization mesh
+Memory: 1472/1472 429909/429909
+<---- Compile Equations: stationary in static/Solution 1 (sol1) ----------------
+Started at Oct 1, 2026, 12:38:58 PM.
+Geometry shape function: Quadratic Lagrange
+Parameter hm = 1.6 .
+---        Current Progress:  35 % - Compile Equations: stationary
+Memory: 1473/1473 429909/429909
+---        Current Progress:  35 % - Free Tetrahedral 1
+Number of vertex elements: 24
+Number of edge elements: 436
+Number of boundary elements: 9376
+---        Current Progress:  36 % - Respecting boundaries
+Memory: 1476/1476 429909/429909
+---        Current Progress:  36 % - Improving element quality
+Memory: 1477/1477 429909/429909
+Number of elements: 73081
+Minimum element quality: 0.1943
+---        Current Progress:  36 % - Finalizing mesh
+---        Current Progress:  37 % - Compile Equations: stationary
+Memory: 1493/1493 429853/429909
+---        Current Progress:  37 % - Creating visualization mesh
+Time: 1 s.
+Physical memory: 1.49 GB
+Virtual memory: 429.91 GB
+Ended at Oct 1, 2026, 12:38:59 PM.
+----- Compile Equations: stationary in static/Solution 1 (sol1) --------------->
+<---- Dependent Variables 1 in static/Solution 1 (sol1) ------------------------
+Started at Oct 1, 2026, 12:38:59 PM.
+---        Current Progress:  37 % - Dependent Variables 1
+Memory: 1495/1495 429853/429909
+Solution time: 0 s.
+Physical memory: 1.5 GB
+Virtual memory: 429.85 GB
+Ended at Oct 1, 2026, 12:38:59 PM.
+----- Dependent Variables 1 in static/Solution 1 (sol1) ----------------------->
+<---- Stationary Solver 1 in static/Solution 1 (sol1) --------------------------
+Started at Oct 1, 2026, 12:38:59 PM.
+Information: PARDISO not supported on this system. Switching to MUMPS.
+Linear solver
+Number of degrees of freedom solved for: 106986 (plus 19634 internal DOFs).
+Symmetric matrices found.
+Scales for dependent variables:
+Temperature (comp1.T): 2.9e+02
+Orthonormal null-space function used.
+----       Current Progress:  47 % - Matrix factorization
+Memory: 1579/1579 429892/429909
+-----      Current Progress:  59 % - Matrix factorization
+Memory: 2030/2030 430490/430490
+Iter      SolEst     Damping    Stepsize #Res #Jac #Sol   LinErr   LinRes
+   1        0.19   1.0000000        0.19    1    1    1    1e-13  1.5e-14
+------     Current Progress:  68 % - Assembling residual
+Memory: 2122/2122 430486/430490
+------     Current Progress:  68 % - 
+Memory: 2140/2140 430486/430490
+Solution time: 1 s.
+Physical memory: 2.14 GB
+Virtual memory: 430.49 GB
+Ended at Oct 1, 2026, 12:39:00 PM.
+----- Stationary Solver 1 in static/Solution 1 (sol1) ------------------------->
+<---- Compile Equations: stationary in static/Solution 1 (sol1) ----------------
+Started at Oct 1, 2026, 12:39:00 PM.
+Geometry shape function: Quadratic Lagrange
+Parameter hm = 1.3 .
+------     Current Progress:  68 % - Compile Equations: stationary
+Memory: 1204/2140 429450/430490
+------     Current Progress:  68 % - Free Tetrahedral 1
+Number of vertex elements: 24
+Number of edge elements: 544
+Number of boundary elements: 14280
+------     Current Progress:  68 % - Creating initial tetrahedra
+Memory: 1205/2140 429450/430490
+------     Current Progress:  68 % - Inserting interior points
+Memory: 1208/2140 429452/430490
+------     Current Progress:  69 % - Inserting interior points
+Memory: 1216/2140 429464/430490
+------     Current Progress:  69 % - Finalizing mesh
+Memory: 1231/2140 429466/430490
+Number of elements: 144337
+Minimum element quality: 0.1798
+------     Current Progress:  69 % - Compile Equations: stationary
+Memory: 1238/2140 429469/430490
+------     Current Progress:  69 % - Creating visualization mesh
+Time: 2 s.
+Physical memory: 2.14 GB
+Virtual memory: 430.49 GB
+Ended at Oct 1, 2026, 12:39:02 PM.
+----- Compile Equations: stationary in static/Solution 1 (sol1) --------------->
+<---- Dependent Variables 1 in static/Solution 1 (sol1) ------------------------
+Started at Oct 1, 2026, 12:39:02 PM.
+------     Current Progress:  69 % - Dependent Variables 1
+Solution time: 0 s.
+Physical memory: 1.24 GB
+Virtual memory: 429.47 GB
+Ended at Oct 1, 2026, 12:39:02 PM.
+----- Dependent Variables 1 in static/Solution 1 (sol1) ----------------------->
+<---- Stationary Solver 1 in static/Solution 1 (sol1) --------------------------
+Started at Oct 1, 2026, 12:39:02 PM.
+Information: PARDISO not supported on this system. Switching to MUMPS.
+Linear solver
+Number of degrees of freedom solved for: 206794 (plus 29658 internal DOFs).
+-------    Current Progress:  79 % - 
+Memory: 1470/2140 429664/430490
+Symmetric matrices found.
+Scales for dependent variables:
+Temperature (comp1.T): 2.9e+02
+Orthonormal null-space function used.
+-------    Current Progress:  79 % - Matrix factorization
+Memory: 1575/2140 429759/430490
+--------   Current Progress:  84 % - Matrix factorization
+Memory: 2099/2140 430794/430794
+--------   Current Progress:  88 % - Matrix factorization
+Memory: 2735/2735 431051/431051
+---------  Current Progress:  91 % - Matrix factorization
+Memory: 3030/3030 431623/431623
+---------  Current Progress:  93 % - Matrix factorization
+Memory: 3142/3142 431623/431623
+---------  Current Progress:  96 % - Matrix factorization
+Memory: 3228/3228 431623/431623
+Iter      SolEst     Damping    Stepsize #Res #Jac #Sol   LinErr   LinRes
+   1        0.19   1.0000000        0.19    1    1    1  1.6e-12  1.7e-14
+---------- Current Progress: 100 % - 
+Memory: 3274/3274 431623/431623
+Solution time: 2 s.
+Physical memory: 3.28 GB
+Virtual memory: 431.62 GB
+Ended at Oct 1, 2026, 12:39:04 PM.
+----- Stationary Solver 1 in static/Solution 1 (sol1) ------------------------->
+---------- Current Progress: 100 % - Creating visualization mesh
+Memory: 3281/3281 431627/431627

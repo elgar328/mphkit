@@ -35,6 +35,11 @@ def check(geom: Node, flag: bool, step: int | str) -> None:
     assert_type(mk.variables(geom), list[dict])
     assert_type(mk.materials(search='steel'), list[dict])
     assert_type(mk.check(geom.model), list[dict])
+    assert_type(mk.problem_size(geom.model), dict)
+    assert_type(mk.log_progress('solve.log'), Path)
+    assert_type(mk.log_progress(Path('solve.log')), Path)
+    assert_type(mk.log_progress(None), None)
+    assert_type(mk.progress('solve.log', pid=1), dict)
     assert_type(mk.material(geom, 'Copper', [1], library='basic_material'),
                 Node)
     # values not known before the call

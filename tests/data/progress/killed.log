@@ -1,0 +1,75 @@
+*******************************************
+***COMSOL 6.4.0.293 progress output file***
+*******************************************
+Thu Oct 01 11:46:59 KST 2026
+<---- Compile Equations: stationary in static/Solution 1 (sol1) ----------------
+Started at Oct 1, 2026, 11:46:59 AM.
+Geometry shape function: Quadratic Lagrange
+Running on Apple M4 Max.
+Using 1 socket with 4 cores in total on host.local.
+Available memory: 36.86 GB.
+           Current Progress:   0 % - Generating equations
+Memory: 1791/1791 429390/429390
+           Current Progress:   4 % - Compile Equations: stationary
+Memory: 1838/1838 429412/429412
+           Current Progress:   5 % - Compile Equations: stationary
+Memory: 1907/1907 429464/429464
+           Current Progress:   5 % - Creating visualization mesh
+Memory: 1910/1910 429464/429464
+Time: 1 s.
+Physical memory: 1.91 GB
+Virtual memory: 429.46 GB
+Ended at Oct 1, 2026, 11:47:00 AM.
+----- Compile Equations: stationary in static/Solution 1 (sol1) --------------->
+<---- Dependent Variables 1 in static/Solution 1 (sol1) ------------------------
+Started at Oct 1, 2026, 11:47:00 AM.
+           Current Progress:   5 % - Dependent Variables 1
+Memory: 1979/1979 429511/429511
+Solution time: 0 s.
+Physical memory: 1.98 GB
+Virtual memory: 429.51 GB
+Ended at Oct 1, 2026, 11:47:00 AM.
+----- Dependent Variables 1 in static/Solution 1 (sol1) ----------------------->
+<---- Stationary Solver 1 in static/Solution 1 (sol1) --------------------------
+Started at Oct 1, 2026, 11:47:00 AM.
+Information: PARDISO not supported on this system. Switching to MUMPS.
+Linear solver
+Number of degrees of freedom solved for: 886292 (plus 74994 internal DOFs).
+-          Current Progress:  19 % - Assembling sparsity pattern
+Memory: 2062/2062 429561/429561
+--         Current Progress:  22 % - Assembling sparsity pattern
+Memory: 2242/2242 429709/429709
+--         Current Progress:  27 % - Assembling matrices
+Memory: 2775/2775 430234/430234
+---        Current Progress:  36 % - 
+Memory: 2938/2938 430397/430397
+Symmetric matrices found.
+Scales for dependent variables:
+Temperature (comp1.T): 2.9e+02
+Orthonormal null-space function used.
+---        Current Progress:  37 % - Matrix factorization
+Memory: 3138/3138 430597/430597
+---        Current Progress:  39 % - Matrix factorization
+Memory: 4010/4010 440969/440969
+----       Current Progress:  41 % - Matrix factorization
+Memory: 5093/5093 440969/440969
+----       Current Progress:  42 % - Matrix factorization
+Memory: 5347/5347 440969/440969
+----       Current Progress:  44 % - Matrix factorization
+Memory: 7106/7106 440969/440969
+----       Current Progress:  45 % - Matrix factorization
+Memory: 7116/7116 440969/440969
+----       Current Progress:  46 % - Matrix factorization
+Memory: 7288/7288 440969/440969
+----       Current Progress:  47 % - Matrix factorization
+Memory: 7464/7464 440969/440969
+----       Current Progress:  48 % - Matrix factorization
+Memory: 7612/7612 440969/440969
+-----      Current Progress:  50 % - Matrix factorization
+Memory: 7937/7937 440969/440969
+-----      Current Progress:  52 % - Matrix factorization
+Memory: 8901/8901 440969/440969
+-----      Current Progress:  53 % - Matrix factorization
+Memory: 9004/9004 440969/440969
+-----      Current Progress:  55 % - Matrix factorization
+Memory: 9182/9182 440969/440969

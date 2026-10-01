@@ -1,0 +1,57 @@
+           Current Progress:   0 % - Free tetrahedral
+Memory: 1568/1686 429183/429183
+Number of vertex elements: 8
+Number of edge elements: 48
+Number of boundary elements: 168
+Number of elements: 233
+Minimum element quality: 0.4255
+           Current Progress:   3 % - Finalizing mesh
+Memory: 1569/1686 429183/429183
+           Current Progress:   3 % - Study 1
+<---- Compile Equations: Eigenfrequency in Study 1/Solution 1 (sol1) -----------
+Started at Oct 1, 2026, 11:40:12 AM.
+Geometry shape function: Quadratic serendipity
+Running on Apple M4 Max.
+Using 1 socket with 1 core in total on host.local.
+Available memory: 36.86 GB.
+           Current Progress:   3 % - Compile Equations: Eigenfrequency
+Memory: 1573/1686 429183/429183
+           Current Progress:   5 % - Compile Equations: Eigenfrequency
+Memory: 1593/1686 429191/429191
+           Current Progress:   5 % - Creating visualization mesh
+Time: 0 s.
+Physical memory: 1.59 GB
+Virtual memory: 429.19 GB
+Ended at Oct 1, 2026, 11:40:13 AM.
+----- Compile Equations: Eigenfrequency in Study 1/Solution 1 (sol1) ---------->
+<---- Dependent Variables 1 in Study 1/Solution 1 (sol1) -----------------------
+Started at Oct 1, 2026, 11:40:13 AM.
+           Current Progress:   5 % - Dependent Variables 1
+Memory: 1594/1686 429191/429191
+Solution time: 0 s.
+Physical memory: 1.59 GB
+Virtual memory: 429.19 GB
+Ended at Oct 1, 2026, 11:40:13 AM.
+----- Dependent Variables 1 in Study 1/Solution 1 (sol1) ---------------------->
+<---- Eigenvalue Solver 1 in Study 1/Solution 1 (sol1) -------------------------
+Started at Oct 1, 2026, 11:40:13 AM.
+Eigenvalue solver
+Number of degrees of freedom solved for: 1512.
+Symmetric matrices found.
+Scales for dependent variables:
+Displacement Field (comp1.u): 1
+Orthonormal null-space function used.
+Real symmetric eigenvalue solver
+Iter      ErrEst  Nconv
+   1     1.2e-05      5
+   2     4.3e-10      6
+19 linear system solutions.
+55 matrix multiplications.
+16 re-orthogonalizations.
+---------- Current Progress: 100 % - Matrix multiplication
+Memory: 1596/1686 429191/429191
+Solution time: 0 s.
+Physical memory: 1.6 GB
+Virtual memory: 429.19 GB
+Ended at Oct 1, 2026, 11:40:13 AM.
+----- Eigenvalue Solver 1 in Study 1/Solution 1 (sol1) ------------------------>
