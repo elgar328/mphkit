@@ -45,3 +45,7 @@ build-backend = "uv_build"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+addopts = ["--strict-markers"]
+markers = [
+    "comsol: needs COMSOL (running or installed); set by conftest.py",
+]

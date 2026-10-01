@@ -1,7 +1,21 @@
-"""Shared fixtures. Tests needing COMSOL are skipped when it is unavailable."""
+"""
+Shared fixtures. Tests needing COMSOL are skipped when it is unavailable,
+and marked `comsol`: `pytest -m "not comsol"` runs the others in seconds.
+"""
 from pathlib import Path
 
 import pytest
+
+# Fixtures that need COMSOL: a running client, or the installation's files
+COMSOL_FIXTURES = {'client', 'offline'}
+
+
+@pytest.hookimpl(tryfirst=True)
+def pytest_collection_modifyitems(items):
+    """Marks the tests that use COMSOL, before `-m` selects tests."""
+    for item in items:
+        if COMSOL_FIXTURES & set(getattr(item, 'fixturenames', ())):
+            item.add_marker(pytest.mark.comsol)
 
 
 @pytest.fixture(scope='session')

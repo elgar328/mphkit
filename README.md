@@ -258,7 +258,8 @@ uv run pytest
 ```
 
 The tests start COMSOL and build real models. Without a CAD import
-license, the CAD import test is skipped.
+license, the CAD import test is skipped. `uv run pytest -m "not comsol"`
+runs only the tests that need no COMSOL, in seconds.
 
 ## License
 
