@@ -683,3 +683,242 @@ def test_title(indicator, number, expected, candidates, switches, problem):
     found = mk._sweep.title_problem(
         indicator, title(expected, candidates, number, switches))
     assert found == problem
+
+
+##########################
+# Sweeps of the geometry #
+##########################
+
+@pytest.fixture(scope='module')
+def widths(client):
+    """
+    The heat plate swept over its width W = 0.1 and 0.15 m, stationary:
+    T = 100 degC at x = 0 and 20 degC at x = W, so the heat through it
+    is 18 and 12 W.
+    """
+    model = client.create('widths')
+    model.parameter('W', '0.1[m]')
+    model.parameter('Th', '100[degC]')
+    geom = mk.geometry(model, 3)
+    block = mk.block(geom, ('W', 0.05, 0.01))
+    model.build(geom)
+    faces = {'hot': mk.sel.box(geom, 'boundary', x=0, name='hot'),
+             'cold': mk.sel.box(geom, 'boundary', x='W', name='cold'),
+             # before the solve: its values hold it then
+             'block': mk.sel.result(geom, block, 'domain')}
+    steel = (model/'materials').create('Common', name='steel')
+    for key, value in (('thermalconductivity', '45'), ('density', '7850'),
+                       ('heatcapacity', '475')):
+        (steel/'Basic').property(key, [value])
+    heat = (model/'physics').create('HeatTransfer', geom, name='heat')
+    for face, temperature in (('hot', 'Th'), ('cold', '20[degC]')):
+        boundary = heat.create('TemperatureBoundary', 2, name=face)
+        boundary.select(faces[face])
+        boundary.property('T0', temperature)
+    (model/'meshes').create(geom, name='mesh')
+    study = (model/'studies').create(name='widths')
+    study.create('Stationary')
+    sweep(study, '0.1 0.15', 'W', 'm')
+    model.solve()
+    yield model, geom, block, faces
+    client.remove(model)
+
+
+def test_geometry_sweep(widths):
+    model, geom, block, faces = widths
+    assert outer_values(geom) == pytest.approx([{'W': 0.1}, {'W': 0.15}])
+    assert mk.integral(geom, 'boundary', 'ht.ntflux', faces['hot'],
+                       unit='W', outer='all') == pytest.approx([-18, -12])
+    assert mk.integral(geom, 'boundary', 'ht.ntflux', faces['cold'],
+                       unit='W', outer=2) == pytest.approx(12)
+    assert mk.average(geom, 'domain', 'T', unit='degC', outer='all') == \
+        pytest.approx([60, 60])
+    assert mk.integral(geom, 'domain', '1', outer='all') == \
+        pytest.approx([5e-5, 7.5e-5])
+    assert mk.integral(geom, 'domain', '1', faces['block'], outer='all') == \
+        pytest.approx([5e-5, 7.5e-5])
+    ends = mk.sel.union(geom, 'boundary', [faces['hot'], faces['cold']])
+    assert mk.average(geom, 'boundary', 'T', ends, unit='degC',
+                      outer='all') == pytest.approx([60, 60])
+    values, where = mk.maximum(geom, 'domain', 'T', unit='degC',
+                               outer='all', position=True)
+    assert values == pytest.approx([100, 100])
+    assert where[:, 0] == pytest.approx([0, 0])
+    # a point beyond the narrower plate
+    found = mk.value(geom, 'T', (0.12, 0.025, 0.005), unit='degC',
+                     outer='all', outside='nan')
+    assert numpy.isnan(found[0])
+    assert found[1] == pytest.approx(100 - 80*0.12/0.15, abs=0.5)
+    with pytest.raises(ValueError, match=r'Point 1 of 1 is outside .* at '
+                                         r'outer=1 \(W=0.1 \(0.1 m\)\)'):
+        mk.value(geom, 'T', (0.12, 0.025, 0.005), outer='all')
+
+
+def test_geometry_sweep_refusals(widths, tmp_path):
+    model, geom, block, faces = widths
+    with pytest.raises(ValueError, match=r'changes the geometry, so entity '
+                       r'numbers stand for other entities in some values\. '
+                       r"Pass a selection node or None: e.g. mk.sel.box\("
+                       r"geom, 'boundary', x='W'\).* \(none is now\)"):
+        mk.average(geom, 'boundary', 'T', 1, outer='all')
+    fixed = mk.sel.box(geom, 'boundary', x=0.1, name='fixed')
+    with pytest.raises(ValueError, match=r'"selections/fixed" is empty at '
+                       r'outer=2 \(W=0.15 \(0.15 m\)\): .* fixed '
+                       r"coordinates .* x='W'"):
+        mk.average(geom, 'boundary', 'T', fixed, outer='all')
+    assert mk.average(geom, 'boundary', 'T', fixed, unit='degC',
+                      outer=1) == pytest.approx(20)
+    # made after the solve: the values' geometries do not hold it
+    later = mk.sel.result(geom, block, 'boundary')
+    with pytest.raises(ValueError, match=r'is empty at outer=1 .* are empty '
+                                         r'in values solved before they were '
+                                         r'made: solve again'):
+        mk.integral(geom, 'boundary', '1', later, outer='all')
+    component = mk.component_of(geom).java.selection()
+    explicit = component.create('ex1', 'Explicit')
+    explicit.geom(geom.tag(), 2)
+    explicit.set([1])
+    nodes = {'explicit': model/'selections'/str(explicit.label())}
+    on_explicit = mk.sel.box(geom, 'boundary', x=(-1, 1), name='on explicit')
+    mk.set(on_explicit, inputent='selections', input=[nodes['explicit']])
+    with pytest.raises(ValueError, match=r'may pick other entities for some '
+                       r'values of dataset .*: "Explicit 1" is an explicit '
+                       r'selection, a list of entity numbers\. Pass'):
+        mk.average(geom, 'boundary', 'T', nodes['explicit'], outer='all')
+    with pytest.raises(ValueError, match=r'"on explicit" takes "Explicit 1" '
+                                         r'as input; "Explicit 1" is an '
+                                         r'explicit selection'):
+        mk.average(geom, 'boundary', 'T', on_explicit, outer='all')
+    with pytest.raises(ValueError, match='changes the geometry, and mk.plot'):
+        mk.plot(geom, 'T', tmp_path/'T.png', outer=1)
+
+
+def test_geometry_sweep_rebuilt(widths):
+    model, geom, block, faces = widths
+    model.build(geom)
+    hot = mk.sel.entities(geom, faces['hot'])
+    # the geometry as built is that of W = 0.1, the first value
+    assert mk.average(geom, 'boundary', 'T', hot, unit='degC', outer=1) == \
+        pytest.approx(100)
+    with pytest.raises(ValueError, match=r'Numbers work one value at a '
+                       r'time, for outer=1 \(W=0.1 \(0.1 m\)\), solved on '
+                       r'the geometry as built\.'):
+        mk.average(geom, 'boundary', 'T', hot, outer='all')
+    model.mesh()
+    assert mk.average(geom, 'boundary', 'T', hot, unit='degC', outer=1) == \
+        pytest.approx(100)
+    assert mk.average(geom, 'boundary', 'T', faces['hot'], unit='degC',
+                      outer='all') == pytest.approx([100, 100])
+
+
+def test_part_without_physics(client):
+    model = client.create('part')
+    try:
+        model.parameter('Th', '100[degC]')
+        geom = mk.geometry(model, 3)
+        first = mk.block(geom, (0.1, 0.05, 0.01))
+        mk.block(geom, (0.1, 0.05, 0.01), (0.2, 0, 0))
+        model.build(geom)
+        steel = (model/'materials').create('Common', name='steel')
+        for key, value in (('thermalconductivity', '45'),
+                           ('density', '7850'), ('heatcapacity', '475')):
+            (steel/'Basic').property(key, [value])
+        heat = (model/'physics').create('HeatTransfer', geom)
+        heat.java.selection().set([1])
+        boundary = heat.create('TemperatureBoundary', 2)
+        boundary.select(mk.sel.box(geom, 'boundary', x=0))
+        boundary.property('T0', 'Th')
+        (model/'meshes').create(geom)
+        study = (model/'studies').create(name='part')
+        study.create('Transient').property('tlist', '0 1')
+        sweep(study, '100 200')
+        model.solve()
+        with pytest.raises(ValueError, match='covers part of the geometry '
+                                             'only'):
+            mk.average(geom, 'domain', 'T', 1, outer='all', step='last')
+        solved = mk.sel.result(geom, first, 'domain')
+        assert mk.maximum(geom, 'domain', 'T', solved, unit='degC',
+                          outer='all', step='last') == \
+            pytest.approx([100, 200])
+        with pytest.raises(RuntimeError, match='no solution at outer=1'):
+            mk.average(geom, 'domain', 'T', outer='all', step='last')
+    finally:
+        client.remove(model)
+
+
+def test_axisymmetric_width_sweep(client):
+    model = client.create('axisymmetric widths')
+    try:
+        model.parameter('W', '0.1[m]')
+        geom = mk.geometry(model, 2)
+        geom.java.axisymmetric(True)
+        mk.rectangle(geom, ('W', 0.05), (0.01, 0))
+        model.build(geom)
+        hot = mk.sel.box(geom, 'boundary', x=0.01, name='inner')
+        cold = mk.sel.box(geom, 'boundary', x='W+0.01', name='outer')
+        steel = (model/'materials').create('Common', name='steel')
+        for key, value in (('thermalconductivity', '45'),
+                           ('density', '7850'), ('heatcapacity', '475')):
+            (steel/'Basic').property(key, [value])
+        heat = (model/'physics').create('HeatTransfer', geom)
+        for face, temperature in ((hot, '100[degC]'), (cold, '20[degC]')):
+            boundary = heat.create('TemperatureBoundary', 1)
+            boundary.select(face)
+            boundary.property('T0', temperature)
+        (model/'meshes').create(geom)
+        study = (model/'studies').create(name='widths')
+        study.create('Stationary')
+        sweep(study, '0.1 0.15', 'W', 'm')
+        model.solve()
+        # the revolved volume, pi*((W + 0.01)^2 - 0.01^2)*0.05
+        assert mk.integral(geom, 'domain', '1', outer='all') == \
+            pytest.approx([math.pi*0.012*0.05, math.pi*0.0255*0.05])
+        assert mk.average(geom, 'boundary', 'T', cold, unit='degC',
+                          outer='all') == pytest.approx([20, 20])
+        with pytest.raises(ValueError, match='entity numbers stand for '
+                                             'other entities'):
+            mk.average(geom, 'boundary', 'T', 1, outer='all')
+    finally:
+        client.remove(model)
+
+
+def test_cumulative_and_geometry_selections(client):
+    model = client.create('mm widths')
+    try:
+        model.parameter('W', '100[mm]')
+        geom = mk.geometry(model, 3, length_unit='mm')
+        holes = mk.sel.cumulative(geom, 'holes', 'domain', create=True)
+        mk.block(geom, ('W', 50, 10))
+        mk.cylinder(geom, 5, 10, (20, 25, 0), contributeto=holes)
+        inside = mk.sel.box(geom, 'boundary', x=0, where='geometry',
+                            name='inside')
+        model.build(geom)
+        hot = mk.sel.box(geom, 'boundary', x=0, name='hot')
+        cold = mk.sel.box(geom, 'boundary', x='W', name='cold')
+        steel = (model/'materials').create('Common', name='steel')
+        for key, value in (('thermalconductivity', '45'),
+                           ('density', '7850'), ('heatcapacity', '475')):
+            (steel/'Basic').property(key, [value])
+        heat = (model/'physics').create('HeatTransfer', geom)
+        for face, temperature in ((hot, '100[degC]'), (cold, '20[degC]')):
+            boundary = heat.create('TemperatureBoundary', 2)
+            boundary.select(face)
+            boundary.property('T0', temperature)
+        (model/'meshes').create(geom)
+        study = (model/'studies').create(name='widths')
+        study.create('Stationary')
+        sweep(study, '100 150', 'W', 'mm')
+        model.solve()
+        assert outer_values(geom) == pytest.approx([{'W': 0.1},
+                                                    {'W': 0.15}])
+        assert mk.integral(geom, 'boundary', 'ht.ntflux', cold, unit='W',
+                           outer='all') == pytest.approx([18, 12])
+        assert mk.integral(geom, 'domain', '1', holes, outer='all') == \
+            pytest.approx([math.pi*25e-6*0.01]*2, rel=0.01)
+        with pytest.raises(ValueError, match=r'"inside" is made in the '
+                                             r'geometry sequence; make it in '
+                                             r'the component instead '
+                                             r'\(where=None\)'):
+            mk.integral(geom, 'boundary', '1', inside, outer='all')
+    finally:
+        client.remove(model)

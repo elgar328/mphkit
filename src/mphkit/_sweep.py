@@ -326,16 +326,30 @@ class Target(NamedTuple):
     where: str  # names the outer value in messages, or ''
 
 
+class Restriction(NamedTuple):
+    """
+    Why a sweep is read with selection nodes or all entities only:
+    `'sweep'`, it changes the geometry, or `'unknown'`, its mesh leaves
+    part of the geometry out. `matching()` lists the values solved on the
+    geometry as built, for messages.
+    """
+    kind: str
+    where: str
+    matching: Callable[[], list[str]]
+
+
 class Request(NamedTuple):
     """
     What to evaluate: a target per outer value (each once), the position
-    of each requested value among them, and whether `outer` and `step`
-    ask for several (an axis each).
+    of each requested value among them, whether `outer` and `step` ask
+    for several (an axis each), and the restriction of a sweep whose
+    geometry cannot be the one built, if any.
     """
     targets: list[Target]
     order: list[int]
     many_outer: bool
     many_step: bool
+    restricted: Restriction | None = None
 
 
 def resolve(create, geom: Node, dataset, step, outer) -> Request:
@@ -364,18 +378,31 @@ def resolve(create, geom: Node, dataset, step, outer) -> Request:
     found = _steps(sweep, data, unique, step, dataset, None)
     children = Children(create, geom, sweep, data)
     decision = check(geom, sweep, children, unique, data)
-    where = f'dataset {_datasets.describe(data)}'
-    if decision == 'unknown':
-        raise NotImplementedError(
-            f'The solution of {where} covers part of the geometry only (no '
-            'physics on the rest): reading it is not supported yet.')
-    if decision == 'sweep':
-        raise NotImplementedError(f'The sweep of {where} changes the '
-                                  'geometry: reading it is not supported '
-                                  'yet.')
+    restricted = None
+    if decision in ('sweep', 'unknown'):
+        restricted = Restriction(
+            decision, f'dataset {_datasets.describe(data)}',
+            lambda: _matching(geom, sweep, children, data))
     targets = [Target(str(children.dataset(k).tag()), found[k][0],
                       f'outer={k} ({sweep.labels[k - 1]})') for k in unique]
-    return Request(targets, order, many_outer, found[unique[0]][1])
+    return Request(targets, order, many_outer, found[unique[0]][1],
+                   restricted)
+
+
+def _matching(geom: Node, sweep: Sweep, children: Children, data
+              ) -> list[str]:
+    """Lists the outer values solved on the geometry as built."""
+    try:
+        _comsol.check_built(geom)
+    except RuntimeError:
+        return []
+    current = vertices(geom)
+    found = []
+    for k in range(1, len(sweep.children) + 1):
+        points = children.points(k)
+        if points is not None and same_points(points, current):
+            found.append(f'outer={k} ({sweep.labels[k - 1]})')
+    return found
 
 
 def _steps(sweep: Sweep, data, unique: list[int], step, dataset,
@@ -579,6 +606,195 @@ def no_outer(model, data, outer, caller: str | None, dataset
             f'as outer values: pass step={outer!r} instead of outer= '
             f'({_call("step_values", dataset)} gives the values).')
     return ValueError(f'{where} has no outer sweep; leave out outer=.')
+
+
+##############
+# Selections #
+##############
+
+# Component selections that COMSOL evaluates on each value's geometry,
+# alone or from their inputs
+POSITIONS = ('Box', 'Ball', 'Cylinder', 'Disk')
+COMBINED = ('Union', 'Intersection', 'Difference', 'Complement', 'Adjacent')
+
+
+def restricted_selection(geom: Node, entity: str, level: int, selection,
+                         restriction: Restriction) -> str | None:
+    """
+    Returns the tag of the selection node to evaluate on each value's
+    geometry, or `None` for all entities; raises for entity numbers and
+    selections that may pick other entities per value.
+    """
+    if selection is None:
+        return None
+    if isinstance(selection, Node):
+        java = _comsol.check_selection(geom, selection)
+        if [int(d) for d in java.dimension()] != [level]:
+            raise ValueError(f'Selection "{selection}" is not a {entity} '
+                             'selection.')
+        tag = str(java.tag())
+        why = blocked(geom, tag)
+        if why:
+            raise ValueError(
+                f'Selection "{selection}" may pick other entities for some '
+                f'values of {restriction.where}: {why}. {_instead(entity)}')
+        return tag
+    if restriction.kind == 'unknown':
+        raise ValueError(
+            f'The solution of {restriction.where} covers part of the '
+            'geometry only (no physics on the rest), so whether it was '
+            'solved on the geometry as built cannot be checked, nor what '
+            'entity numbers stand for: pass a selection node, or None for '
+            'all. For numbers and pictures, mesh all domains with a mesh '
+            'of your own (not physics-controlled) and solve again.')
+    matching = restriction.matching()
+    numbered = (f'for {", ".join(matching)}, solved on the geometry as '
+                'built' if matching else
+                'for a value solved on the geometry as built (none is now)')
+    raise ValueError(
+        f'The sweep of {restriction.where} changes the geometry, so entity '
+        f'numbers stand for other entities in some values. '
+        f'{_instead(entity)} Numbers work one value at a time, {numbered}. '
+        'For pictures of one value, set its parameters, run '
+        'model.build(geom) and model.mesh(), and solve a study without the '
+        'sweep.')
+
+
+def _instead(entity: str) -> str:
+    """Says which selections follow each value of a geometry sweep."""
+    return (f'Pass a selection node or None: e.g. mk.sel.box(geom, '
+            f"{entity!r}, x='W') follows each value of W when its range is "
+            'given by parameters; boxes, balls, cylinders and disks, their '
+            'unions, intersections, differences, complements and adjacent '
+            'selections, and sel.result, sel.layer and sel.cumulative of '
+            'features that are no selections do too.')
+
+
+def blocked(geom: Node, tag: str, seen: tuple[str, ...] = ()) -> str | None:
+    """
+    Returns why the selection `tag` may pick other entities for values of
+    a sweep that changes the geometry, or `None` if COMSOL evaluates it on
+    each value's geometry.
+    """
+    if tag in seen:
+        return None
+    seen = (*seen, tag)
+    component = _comsol.component_of(geom)
+    if tag in [str(t) for t in component.selection().tags()]:
+        java = component.selection(tag)
+        kind = str(java.getType())
+        name = f'"{java.label()}"'
+        if kind == 'FromSequence':
+            return _derived(geom, tag)
+        if kind == 'Explicit':
+            return (f'{name} is an explicit selection, a list of entity '
+                    'numbers')
+        if kind in POSITIONS:
+            if _string(java, 'inputent') != 'selections':
+                return None
+            inputs = _strings(java, 'input')
+        elif kind == 'Difference':
+            inputs = _strings(java, 'add') + _strings(java, 'subtract')
+        elif kind in COMBINED:
+            inputs = _strings(java, 'input')
+        else:
+            return f'{name} is a {kind} selection, which mphkit cannot check'
+        for inner in inputs:
+            why = blocked(geom, inner, seen)
+            if why:
+                return (f'{name} takes "{_label(geom, inner)}" as input; '
+                        f'{why}')
+        return None
+    return _derived(geom, tag)
+
+
+def _derived(geom: Node, tag: str) -> str | None:
+    """
+    Works as `blocked()` for a selection that COMSOL derives from the
+    geometry sequence: of a feature's result or layers, or of a
+    cumulative selection, fine unless a selection feature makes them.
+    """
+    gtag = _comsol.tag_of(geom)
+    name = f'"{_label(geom, tag)}"'
+    features = _comsol.java_of(geom).feature()
+    ftags = [str(t) for t in features.tags()]
+    rest = tag[len(gtag) + 1:] if tag.startswith(f'{gtag}_') else ''
+    owner = rest.rsplit('_', 1)[0] if '_' in rest else rest
+    geometry_side = (f'{name} is made in the geometry sequence; make it in '
+                     'the component instead (where=None)')
+    if rest in ftags or (owner in ftags and _comsol.is_selection_feature(
+            features.get(owner))):
+        return geometry_side
+    if owner in ftags:
+        return None
+    cumulative = _comsol.cumulative_tags(geom).values()
+    if owner in cumulative:
+        for ftag in ftags:
+            feature = features.get(ftag)
+            if (_string(feature, 'contributeto') == owner
+                    and _comsol.is_selection_feature(feature)):
+                return (f'{name} collects the selection feature "'
+                        f'{feature.label()}" of the geometry sequence; '
+                        'make that one in the component instead '
+                        '(where=None)')
+        return None
+    return f'{name} is a selection mphkit cannot check'
+
+
+def check_not_empty(create, geom: Node, level: int, tag: str | None,
+                    request: Request, selection):
+    """
+    Raises if the selection `tag` is empty in the geometry of a requested
+    value: COMSOL would give 0 or nan.
+    """
+    if tag is None:
+        return
+    model = geom.model.java
+    for target in request.targets:
+        feature = create(model.result().numerical(),
+                         'Int' + _results.LEVELS[level])
+        table = create(model.result().table(), 'Table')
+        feature.set('data', target.data)
+        feature.selection().geom(geom.tag(), level)
+        feature.selection().named(tag)
+        _comsol.set_properties(feature, {
+            'expr': '1', 'innerinput': 'manual',
+            'solnum': [target.solnums[0]]})
+        feature.set('table', str(table.tag()))
+        try:
+            feature.setResult()
+        except Exception as error:
+            if 'meshed' in _comsol.reason(error):
+                raise RuntimeError(
+                    f'Some entities of "{selection}" have no solution at '
+                    f'{target.where} (no physics or mesh there); pass a '
+                    'selection of the solved ones.') from error
+            raise
+        if not numpy.array(table.getReal(), dtype=float)[0, -1]:
+            raise ValueError(
+                f'Selection "{selection}" is empty at {target.where}: it '
+                "picks nothing in that value's geometry. A box at fixed "
+                'coordinates can miss a face that moves; one whose range '
+                "is given by parameters, e.g. x='W', follows each value. "
+                'Selections the geometry makes (sel.result, sel.layer, '
+                'sel.cumulative) are empty in values solved before they '
+                'were made: solve again.')
+
+
+def _label(geom: Node, tag: str) -> str:
+    """Returns the label of a selection by tag, or the tag."""
+    selections = geom.model.java.selection()
+    if tag in [str(t) for t in selections.tags()]:
+        return str(selections.get(tag).label())
+    return tag
+
+
+def _strings(java, name: str) -> list[str]:
+    """Returns a string array property of a Java object, or []."""
+    try:
+        return [str(value) for value in java.getStringArray(name)]
+    except Exception:
+        return []
 
 
 ############

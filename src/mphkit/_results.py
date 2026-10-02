@@ -133,10 +133,19 @@ def integral(geom: Node, entity: str, expr: str, /, selection=None, *,
     (e.g. `intorder`). The geometry must be built as it was solved:
     changing it after the solve raises, unless it was built and meshed
     again without solving. Changing physics, materials or parameters
-    without solving again goes unnoticed too. Each value of a sweep is
-    read from its own solution and checked against the geometry; sweeps
-    that change the geometry, or whose mesh leaves part of it out, raise
-    for now. An empty selection raises, while `measure()` gives 0.
+    without solving again goes unnoticed too. An empty selection raises,
+    while `measure()` gives 0.
+
+    Each value of a sweep is read from its own solution, and its geometry
+    is compared with the one built. A sweep that changes the geometry
+    (or whose mesh leaves part of it out, as with physics on some
+    domains and the default mesh) is read with a selection node or
+    `None` only, which COMSOL evaluates on each value's geometry: e.g.
+    `mk.sel.box(geom, 'boundary', x='W')`, whose range follows each
+    value of W. Entity numbers, explicit selections and selections made
+    in the geometry sequence raise, as does a selection that is empty
+    for a value. A box at fixed coordinates picks, in each value's
+    geometry, what lies there then.
     """
     return _over('integral', geom, entity, expr, selection, unit, dataset,
                  step, outer, False, properties)
@@ -447,11 +456,28 @@ def _over(name: str, geom: Node, entity: str, expr: str, selection,
     column = -(sdim + 1) if position else -1
     with _datasets.scratch(model) as create:
         request = _sweep.resolve(create, geom, dataset, step, outer)
-        found = numbers_of(geom, entity, selection)
-        if not found:
-            raise ValueError(f'Selection "{selection}" is empty.'
-                             if isinstance(selection, Node)
-                             else 'The selection is empty.')
+        if request.restricted is None:
+            found = numbers_of(geom, entity, selection)
+            if not found:
+                raise ValueError(f'Selection "{selection}" is empty.'
+                                 if isinstance(selection, Node)
+                                 else 'The selection is empty.')
+        else:
+            # each value in its own geometry: by name, not by numbers
+            named = _sweep.restricted_selection(geom, entity, level,
+                                                selection, request.restricted)
+            _sweep.check_not_empty(create, geom, level, named, request,
+                                   selection)
+
+        def choose(feature):
+            """Sets the entities to evaluate on a numerical feature."""
+            feature.selection().geom(geom.tag(), level)
+            if request.restricted is None:
+                feature.selection().set(found)
+            elif named is None:
+                feature.selection().all()
+            else:
+                feature.selection().named(named)
 
         def evaluate(target, settings: dict
                      ) -> tuple[str, Array, Array | None]:
@@ -459,8 +485,7 @@ def _over(name: str, geom: Node, entity: str, expr: str, selection,
             feature = create(model.result().numerical(), ftype)
             table = create(model.result().table(), 'Table')
             feature.set('data', target.data)
-            feature.selection().geom(geom.tag(), level)
-            feature.selection().set(found)
+            choose(feature)
             # defaults first, so that `properties` can override them
             _comsol.set_properties(feature, {**settings, 'solnum': unique,
                                              **properties})
