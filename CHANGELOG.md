@@ -104,6 +104,12 @@ until 1.0, a minor release (0.2, 0.3, ...) may change the API. See
   details in each helper's `help()`. Errors for unknown names end with
   "print(mphkit.__doc__) lists all helpers." instead of pointing to
   `help(mphkit)`, which appends every helper's documentation.
+- `sel.union`, `sel.intersection`, `sel.difference`, `sel.complement` and
+  `sel.adjacent` raise a `TypeError` that says to select by location when
+  given entity numbers, instead of "'int' object is not iterable", a
+  `ValueError` about the property `input` or COMSOL's "Unknown
+  selection". `sel.entities`, `mk.image` and `mk.coordinate_system` say
+  that a number given as a selection is an entity number.
 
 ### Fixed
 

@@ -84,10 +84,29 @@ def _create(geom: Node, type: str, where: str | None, name: str | None,
     return node
 
 
-def _inputs(geom: Node, where: str | None, values) -> list[str]:
-    """Returns selection tags for the inputs of a set operation."""
+def _inputs(geom: Node, where: str | None, values, call: str,
+            entity: str) -> list[str]:
+    """
+    Returns selection tags for the inputs of a set operation; `call` (e.g.
+    `'union'`) and `entity`, the kind of the inputs, are for messages.
+    """
     where = _where(geom, where)
+    if _comsol.is_integer(values):
+        values = [values]
     values = [values] if isinstance(values, (Node, str)) else list(values)
+    found = [int(v) for v in values if _comsol.is_integer(v)]
+    if found:
+        parent = 'plane' if _comsol.is_workplane(geom.java) else 'geom'
+        extra = (", where='geometry'" if where == 'geometry'
+                 and parent == 'geom' else '')
+        example = f'mk.sel.box({parent}, {entity!r}, ...{extra})'
+        if call == 'adjacent':
+            kind = '' if entity == 'domain' else f', input_entity={entity!r}'
+            example = f'mk.sel.adjacent({parent}, {example}{kind}{extra})'
+        raise TypeError(f'sel.{call} takes selection nodes, not entity '
+                        f'numbers ({", ".join(map(str, found))}): numbers '
+                        'change with the geometry, so select by location, '
+                        f'e.g. {example}.')
     if where == 'component':
         for value in values:
             if isinstance(value, Node) and value.path[0] == 'geometries':
@@ -351,7 +370,7 @@ def union(geom: Node, entity: str, /, input, *, where: str | None = None,
           name: str | None = None) -> Node:
     """Selects the union of the `input` selections."""
     properties = {'entitydim': _level(geom, entity, where),
-                  'input': _inputs(geom, where, input)}
+                  'input': _inputs(geom, where, input, 'union', entity)}
     return _create(geom, 'Union', where, name, properties)
 
 
@@ -359,7 +378,8 @@ def intersection(geom: Node, entity: str, /, input, *,
                  where: str | None = None, name: str | None = None) -> Node:
     """Selects the entities that all `input` selections have in common."""
     properties = {'entitydim': _level(geom, entity, where),
-                  'input': _inputs(geom, where, input)}
+                  'input': _inputs(geom, where, input, 'intersection',
+                                   entity)}
     return _create(geom, 'Intersection', where, name, properties)
 
 
@@ -367,8 +387,9 @@ def difference(geom: Node, entity: str, /, add, subtract, *,
                where: str | None = None, name: str | None = None) -> Node:
     """Selects the entities in `add` that are not in `subtract`."""
     properties = {'entitydim': _level(geom, entity, where),
-                  'add': _inputs(geom, where, add),
-                  'subtract': _inputs(geom, where, subtract)}
+                  'add': _inputs(geom, where, add, 'difference', entity),
+                  'subtract': _inputs(geom, where, subtract, 'difference',
+                                      entity)}
     return _create(geom, 'Difference', where, name, properties)
 
 
@@ -376,7 +397,7 @@ def complement(geom: Node, entity: str, /, input, *,
                where: str | None = None, name: str | None = None) -> Node:
     """Selects all entities that are not in the `input` selections."""
     properties = {'entitydim': _level(geom, entity, where),
-                  'input': _inputs(geom, where, input)}
+                  'input': _inputs(geom, where, input, 'complement', entity)}
     return _create(geom, 'Complement', where, name, properties)
 
 
@@ -395,7 +416,8 @@ def adjacent(geom: Node, /, input, entity: str = 'boundary', *,
     """
     properties = {'entitydim': _comsol.entity_dim(geom, input_entity),
                   'outputdim': _comsol.entity_dim(geom, entity),
-                  'input': _inputs(geom, where, input),
+                  'input': _inputs(geom, where, input, 'adjacent',
+                                   input_entity),
                   'exterior': exterior, 'interior': interior}
     return _create(geom, 'Adjacent', where, name, properties)
 

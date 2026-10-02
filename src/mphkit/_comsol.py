@@ -259,6 +259,36 @@ def check_mesh_built(sequence):
                            'it was built; run model.mesh().')
 
 
+def is_integer(value) -> bool:
+    """Tells whether `value` is an entity number: an int, not a bool."""
+    if isinstance(value, (bool, numpy.bool_)):
+        return False
+    if isinstance(value, numbers.Integral):
+        return True
+    return (isinstance(value, numpy.ndarray) and value.ndim == 0
+            and numpy.issubdtype(value.dtype, numpy.integer))
+
+
+def entity_numbers(value) -> list[int]:
+    """
+    Returns the entity numbers in `value`, a number or a list, tuple or
+    array of items, where a selection node was expected; `[]` if none.
+    """
+    if is_integer(value):
+        return [int(value)]
+    if isinstance(value, numpy.ndarray):
+        return ([int(v) for v in value.ravel()]
+                if numpy.issubdtype(value.dtype, numpy.integer) else [])
+    if isinstance(value, (list, tuple)):
+        return [int(v) for v in value if is_integer(v)]
+    return []
+
+
+def listed_numbers(found: list[int]) -> str:
+    """Writes entity numbers for a message: `1` or `[1, 2]`."""
+    return str(found[0]) if len(found) == 1 else str(found)
+
+
 def check_selection(geom: Node, selection: Node):
     """
     Returns the Java selection behind a selection node of `geom`.
@@ -270,6 +300,14 @@ def check_selection(geom: Node, selection: Node):
     """
     if (not isinstance(selection, Node) or len(selection.path) != 2
             or selection.path[0] != 'selections'):
+        found = entity_numbers(selection)
+        if found:
+            what = ('is an entity number' if len(found) == 1
+                    else 'are entity numbers')
+            raise TypeError(f'{listed_numbers(found)} {what}, not a selection '
+                            'node; numbers change with the geometry, so '
+                            'select by location with mk.sel.box and the '
+                            'like.')
         raise TypeError(f'{selection!r} is not a selection node.')
     java = java_of(selection)
     tag = str(java.tag())

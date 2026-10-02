@@ -251,6 +251,8 @@ def test_coordinate_system_errors(model, geom):
                              selection=mk.sel.box(geom, 'boundary', z=0))
     with pytest.raises(ValueError, match='stretchingType'):
         mk.coordinate_system(geom, 'PML', stretchingtype='rational')
+    with pytest.raises(TypeError, match='^1 is an entity number'):
+        mk.coordinate_system(geom, 'PML', selection=1)
     with pytest.raises(Exception):
         mk.coordinate_system(geom, 'NoSuchType')
     assert systems() == before

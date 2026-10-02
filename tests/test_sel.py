@@ -94,6 +94,66 @@ def test_adjacent(model, geom):
     assert len(entities(inner, 2)) == 1
 
 
+def test_set_operations_reject_numbers(model, cube):
+    # entity numbers fail before anything is created, with a way out
+    import numpy
+    left = mk.sel.box(cube, 'boundary', x=0)
+    selections = [str(t) for t in model.java.selection().tags()]
+    features = [str(t) for t in cube.java.feature().tags()]
+    calls = [
+        (lambda: mk.sel.union(cube, 'boundary', [1, 2]), 'union', '(1, 2)'),
+        (lambda: mk.sel.union(cube, 'boundary', 1), 'union', '(1)'),
+        (lambda: mk.sel.union(cube, 'boundary', [left, 3]), 'union', '(3)'),
+        (lambda: mk.sel.union(cube, 'boundary', numpy.array([1, 2])),
+         'union', '(1, 2)'),
+        (lambda: mk.sel.union(cube, 'boundary', numpy.int64(2)), 'union',
+         '(2)'),
+        (lambda: mk.sel.union(cube, 'boundary', numpy.array(2)), 'union',
+         '(2)'),
+        (lambda: mk.sel.intersection(cube, 'boundary', [1]), 'intersection',
+         '(1)'),
+        (lambda: mk.sel.difference(cube, 'boundary', [1], left),
+         'difference', '(1)'),
+        (lambda: mk.sel.difference(cube, 'boundary', left, 2),
+         'difference', '(2)'),
+        (lambda: mk.sel.complement(cube, 'boundary', 3), 'complement', '(3)'),
+        (lambda: mk.sel.union(cube, 'boundary', [1, 2], where='geometry'),
+         'union', '(1, 2)'),
+    ]
+    for call, name, numbers in calls:
+        with pytest.raises(TypeError) as error:
+            call()
+        text = str(error.value)
+        assert text.startswith(f'sel.{name} takes selection nodes, not '
+                               f'entity numbers {numbers}: ')
+        assert "mk.sel.box(geom, 'boundary', ..." in text
+    with pytest.raises(TypeError, match=r"e\.g\. mk\.sel\.box\(geom, "
+                                        r"'boundary', \.\.\., "
+                                        r"where='geometry'\)\.$"):
+        mk.sel.union(cube, 'boundary', 1, where='geometry')
+    with pytest.raises(TypeError, match=r"e\.g\. mk\.sel\.adjacent\(geom, "
+                                        r"mk\.sel\.box\(geom, 'domain', "
+                                        r"\.\.\.\)\)\.$"):
+        mk.sel.adjacent(cube, 1)
+    with pytest.raises(TypeError, match=r"input_entity='edge'\)\.$"):
+        mk.sel.adjacent(cube, [1], 'point', input_entity='edge')
+    assert [str(t) for t in model.java.selection().tags()] == selections
+    assert [str(t) for t in cube.java.feature().tags()] == features
+    # inputs that are no numbers work as before
+    sides = {'left': left, 'right': mk.sel.box(cube, 'boundary', x=10)}
+    assert entities(mk.sel.union(cube, 'boundary', sides.values()), 2) == \
+        [1, 6]
+    assert entities(mk.sel.union(cube, 'boundary', (s for s in [left])),
+                    2) == [1]
+
+
+def test_set_operations_reject_numbers_in_plane(model):
+    geom, plane = plane_square(model)
+    with pytest.raises(TypeError, match=r"mk\.sel\.box\(plane, 'point', "
+                                        r"\.\.\.\)\.$"):
+        mk.sel.union(plane, 'point', [1, 2])
+
+
 def test_result_selection(model, geom):
     blk = mk.block(geom, (10, 10, 10), name='blk')
     pt = mk.point(geom, (5, 5, 20), name='src')
@@ -259,6 +319,13 @@ def test_entities_errors(model, cube):
         mk.sel.entities(cube, model/'selections'/'missing')
     with pytest.raises(TypeError):
         mk.sel.entities(cube, cube/'cube')
+    with pytest.raises(TypeError, match=r'^1 is an entity number, not a '
+                                        r'selection node; .*mk\.sel\.box'):
+        mk.sel.entities(cube, 1)
+    with pytest.raises(TypeError, match=r'^\[1, 2\] are entity numbers'):
+        mk.sel.entities(cube, [1, 2])
+    with pytest.raises(TypeError, match=r"^'x' is not a selection node\.$"):
+        mk.sel.entities(cube, 'x')
     # the selections COMSOL derives from one feature share its label
     block = cube/'cube'
     block.property('selresult', True)

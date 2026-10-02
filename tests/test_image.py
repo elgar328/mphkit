@@ -155,6 +155,9 @@ def test_image_errors(model, plate, wall, tmp_path):
         mk.image(plate, tmp_path/'g.png', plate/'top')
     with pytest.raises(TypeError, match='not a selection node'):
         mk.image(plate, tmp_path/'g.png', plate/'Difference 1')
+    with pytest.raises(TypeError, match='^1 is an entity number, not a '
+                                        'selection node; '):
+        mk.image(plate, tmp_path/'g.png', 1)
     for size in (800, (1, 2, 3), (100.5, 50), (0, 10)):
         with pytest.raises(ValueError, match='size must be'):
             mk.image(plate, tmp_path/'g.png', size=size)
