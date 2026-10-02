@@ -409,14 +409,14 @@ def test_solved(model):
 ##############
 
 def documented(source):
-    """The material lines of the README or of help(mphkit)."""
+    """The material lines of the README or of help(mk.material)."""
     if source == 'README.md':
         readme = read(Path(__file__).parents[1]/'README.md')
         return re.search(r"Materials from COMSOL's libraries.*?```python\n"
                          r'(.*?)```', readme, re.S).group(1).splitlines()
-    block = re.search(r"Materials from COMSOL's libraries.*?\n\n(.*?)\n\n",
-                      mk.__doc__, re.S).group(1)
-    return [line[4:] for line in block.splitlines()]
+    # the first example, from the libraries
+    return re.search(r'```python\n(.*?)```', inspect.getdoc(mk.material),
+                     re.S).group(1).splitlines()
 
 
 def test_values_of_ones_own(model):
@@ -433,16 +433,18 @@ def test_values_of_ones_own(model):
     assert group.property('thermalconductivity') == ['45']
 
 
-@pytest.mark.parametrize('source', ['README.md', 'mphkit'])
+@pytest.mark.parametrize('source', ['README.md', 'material'])
 def test_documented(model, source):
     lines = documented(source)
-    assert len(lines) == 3, 'update the checks below with the docs'
     geom = blocks(model)
     namespace = {'mk': mk, 'geom': geom,
                  'channel': mk.sel.box(geom, 'domain', x=(0.9, 2.1))}
-    found = eval(lines[0].split('#')[0], namespace)
-    assert [item['name'] for item in found] == ['Structural steel']
-    for line in lines[1:]:
+    if source == 'README.md':
+        assert len(lines) == 3, 'update the checks below with the docs'
+        found = eval(lines.pop(0).split('#')[0], namespace)
+        assert [item['name'] for item in found] == ['Structural steel']
+    assert len(lines) == 2, 'update the checks below with the docs'
+    for line in lines:
         exec(line.split('#')[0], namespace)
     assert domains(namespace['steel']) == [1]
     assert domains(namespace['water']) == [2]

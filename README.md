@@ -45,10 +45,10 @@ objects), and those that create something return one, so mphkit and MPh
 mix freely. Physics, mesh and study stay plain MPh (or the COMSOL Java
 API through `node.java`); mphkit looks up the COMSOL names they need.
 
-`print(mphkit.__doc__)` sums up the workflow, the rules and the common
-pitfalls, and each helper has its own `help()`; `help(mphkit)` shows
-both, at length. Point an AI assistant to `print(mphkit.__doc__)`
-first.
+`print(mphkit.__doc__)` shows the workflow as one script, the rules and
+an index of every helper; each helper has its own `help()` with the
+details. `help(mphkit)` shows both, at length. Point an AI assistant to
+`print(mphkit.__doc__)` first.
 
 ## Requirements
 

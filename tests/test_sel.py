@@ -435,7 +435,7 @@ def test_cylinder_axis(model, geom):
 
 
 def test_cylinder_side_tip(model):
-    # the recipe in help(mphkit), at small sizes in meters
+    # the recipe in help(mk.sel.cylinder), at small sizes in meters
     geom = mk.geometry(model, 3)
     r, h, pos = 0.003, 0.007, (0.0011, 0.0013, 0.0003)
     mk.cylinder(geom, r, h, pos)

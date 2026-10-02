@@ -5,6 +5,7 @@ Runs without COMSOL, except the tests that execute the documented examples.
 """
 import inspect
 import math
+import pydoc
 import re
 import subprocess
 import sys
@@ -336,7 +337,7 @@ def test_suggested_calls_match_signatures():
 
 
 def test_help_physics_levels(model):
-    # the levels named in the Rules of help(mphkit)
+    # the levels named in the rules of mphkit.__doc__
     def level(feature):
         return [int(d) for d in feature.java.selection().dimension()]
 
@@ -466,45 +467,69 @@ def test_readme_results(client, tmp_path):
         client.remove(model)
 
 
-def test_help_example(client, monkeypatch, tmp_path):
+def overview_script():
+    """The example script of the overview, mphkit.__doc__."""
     lines = [line[4:] for line in mk.__doc__.splitlines()
              if line.startswith('    ') or not line.strip()]
-    joined = '\n'.join(lines)
-    code = re.search(r'import mph\n.*?\.select\(bottom\)[^\n]*\n',
-                     joined, re.S).group(0)
-    # the name lookups, on the example's model
-    lookups = re.search(r'(mk\.physics_types\(geom.*?)\n\n', joined,
-                        re.S).group(1).splitlines()
-    assert len(lookups) == 6, 'update the checks below with the help'
+    return re.search(r'import mph\n.*?mk\.step_values\n', '\n'.join(lines),
+                     re.S).group(0)
+
+
+def test_help_example(client, monkeypatch, tmp_path):
+    code = overview_script().replace("'T_{outer}.png'",
+                                     repr(str(tmp_path/'T_{outer}.png')))
+    # the name lookups: their results, which the script drops
+    lookups = [line for line in code.splitlines()
+               if re.match(r'mk\.(physics_types|feature_types|properties|'
+                           r'variables)\(', line)]
+    assert len(lookups) == 4, 'update the checks below with the help'
 
     def check(namespace):
         found = [eval(line.split('#')[0], namespace) for line in lookups]
-        assert 'T0' in found[4]
-        assert any(v['name'] == 'ht.ntflux' for v in found[5])
-
-    run_example(code, client, monkeypatch, tmp_path, check)
-
-
-def test_help_sweep_example(client, monkeypatch, tmp_path):
-    # the plain MPh lines up to the solve, then the sweep lines
-    lines = [line[4:] for line in mk.__doc__.splitlines()
-             if line.startswith('    ') or not line.strip()]
-    joined = '\n'.join(lines)
-    code = re.search(r"import mph\n.*?model\.solve\('heating'\)\n", joined,
-                     re.S).group(0)
-    reading = re.search(r"(mk\.average\(geom, 'domain', 'T', unit='degC', "
-                        r"outer='all'.*?\n)\n", joined, re.S).group(1)
-    reading = reading.replace("'T_{outer}.png'",
-                              repr(str(tmp_path/'T_{outer}.png')))
-
-    def check(namespace):
-        exec(reading, namespace)
+        assert any(e['type'] == 'HeatTransfer' for e in found[0])
+        assert any(e['type'] == 'TemperatureBoundary'
+                   and e['levels'] == {'boundary': 2} for e in found[1])
+        assert 'T0' in found[2]
+        assert any(v['name'] == 'ht.ntflux' for v in found[3])
         table = namespace['table']
         assert [row['Th'] for row in table] == \
             pytest.approx([373.15, 473.15, 573.15])
-        assert all('Tmax' in row for row in table)
+        assert [row['Tmax'] for row in table] == \
+            pytest.approx([100, 200, 300])
+        assert namespace['heat'].shape == (3,)
     run_example(code, client, monkeypatch, tmp_path, check)
     assert len(list(tmp_path.glob('T_*.png'))) == 3
+
+
+def test_overview_length():
+    # details go to the helpers' docs: help(mk.<name>)
+    assert len(mk.__doc__) <= 7500
+
+
+def test_overview_first_line():
+    # pydoc shows it on the NAME line of help(mphkit)
+    first = pydoc.splitdoc(inspect.getdoc(mk))[0]
+    assert first.startswith('Helpers on top of MPh for COMSOL; overview: '
+                            'print(mphkit.__doc__)')
+    text = pydoc.render_doc(mk, renderer=pydoc.plaintext)
+    assert f'mphkit - {first}' in text
+
+
+def test_overview_index():
+    # every public name once, at the end of the overview
+    index = mk.__doc__[mk.__doc__.rindex('\nIndex:\n'):]
+    found = re.findall(r'mk\.sel\.(\w+)|mk\.(\w+)', index)
+    selections = [s for s, _ in found if s and s != '__doc__']
+    names = [n for s, n in found if n and n != 'sel']
+    assert sorted(names) == sorted(set(mk.__all__) - {'sel'} | {'set'})
+    assert sorted(selections) == sorted(mk.sel.__all__)
+
+
+def test_overview_levels():
+    # the numbers physics features take, as the rules give them
+    text = ' '.join(mk.__doc__.split())
+    assert ('3 for domains and 2 for boundaries in 3D, 2 and 1 in 2D'
+            in text)
 
 
 def test_help_java_export(client, model, tmp_path):
