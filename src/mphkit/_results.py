@@ -120,9 +120,9 @@ def integral(geom: Node, entity: str, expr: str, /, selection=None, *,
     counted from 1: `'first'`, `'last'`, a number, a list of numbers or
     `'all'`; `mk.step_values(geom)` gives their times or parameter values.
     A number is a position: `step=10` is the tenth step, not t = 10 s;
-    where another step has t = 10 s, a warning says so (in code that
-    means positions, `warnings.filterwarnings('ignore', '(step|outer)=')`
-    turns it off).
+    where another step has t = 10 s, an `mk.StepWarning` says so (code
+    that means positions turns it off with
+    `warnings.filterwarnings('ignore', category=mk.StepWarning)`).
     By value, `step={'t': 10}` (SI units: s, Hz, K) or `{'t': '2[min]'}`
     picks the step with exactly that value, not interpolated, and a list
     of them several. Unlike MPh's `model.evaluate`, `None` means the only
@@ -133,7 +133,9 @@ def integral(geom: Node, entity: str, expr: str, /, selection=None, *,
     study or a list of frequencies, or over the geometry, the mesh,
     materials or functions; `mk.outer_values(geom)` gives them.
     `outer=1` raises for a dataset without such a sweep, unlike `step=1`
-    for one with a single step.
+    for one with a single step. A number warns as for `step`, compared
+    with the values as swept: `outer=1` over Th = 0, 1, 2 degC is
+    Th = 0 degC.
 
     `outer` also takes values by name, e.g. `{'Th': '200[degC]'}` (COMSOL
     converts the unit; expressions use the parameters' current values)

@@ -204,7 +204,7 @@ SOLVE_NOTE = ("Studies, meshes and solving are plain MPh: (model/'studies')"
               'mphkit.feature_types(study) lists the step types.')
 LOAD_NOTE = ("An existing model: old = client.load('file.mph') in MPh; "
              'mphkit.import_ imports CAD geometry. help(mphkit.sel.find) '
-             'moves its numbered selections.')
+             'moves its numbered selections and tells how to inspect it.')
 JAVA_NOTE = ("node.java is the COMSOL Java object of an MPh node (mk.set "
              "takes it too); model.save('model.java') writes a model as "
              'Java.')

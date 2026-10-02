@@ -46,6 +46,8 @@ build-backend = "uv_build"
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = ["--strict-markers"]
+# a test that gives a step or outer value by number on purpose says so
+filterwarnings = ["error::mphkit.StepWarning"]
 markers = [
     "comsol: needs COMSOL (running or installed); set by conftest.py",
 ]

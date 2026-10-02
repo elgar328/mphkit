@@ -288,7 +288,7 @@ def test_slice_between_bodies(model, tmp_path):
 
 
 # positions on purpose: the warning about numbers that are also values
-@pytest.mark.filterwarnings('ignore:(step|outer)=:UserWarning')
+@pytest.mark.filterwarnings('ignore::mphkit.StepWarning')
 def test_time_steps(client, tmp_path):
     model, geom, faces = heat_plate(client, 'transient', study=False)
     try:
@@ -541,7 +541,7 @@ def swept(client):
 
 
 # positions on purpose: the warning about numbers that are also values
-@pytest.mark.filterwarnings('ignore:(step|outer)=:UserWarning')
+@pytest.mark.filterwarnings('ignore::mphkit.StepWarning')
 def test_sweep_pictures(swept, tmp_path):
     model, geom = swept
     one = mk.plot(geom, 'T', tmp_path/'two.png', outer=2, step='last')

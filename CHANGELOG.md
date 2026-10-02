@@ -29,8 +29,10 @@ until 1.0, a minor release (0.2, 0.3, ...) may change the API. See
   picks a step by value, e.g. `{'t': 10}`, in each outer value. A number
   given as `step=` or `outer=` is a position; one that is also the value
   of another position, such as `step=10` on times 0, 1, ..., 10 (the
-  tenth step is t = 9), gives a warning; pick by value to mean the time,
-  `step={'t': 10}`. A sweep that changes the geometry is read over
+  tenth step is t = 9), gives an `mk.StepWarning`, a `UserWarning`; pick
+  by value to mean the time, `step={'t': 10}`, or turn it off with
+  `warnings.filterwarnings('ignore', category=mk.StepWarning)`. Numbers
+  for `outer=` are compared with the values as swept, e.g. Th in degC. A sweep that changes the geometry is read over
   selection nodes or all entities, evaluated on each value's geometry;
   entity numbers, explicit selections and selections that are empty for
   a value raise. Unknown names such as

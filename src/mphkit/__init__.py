@@ -113,7 +113,8 @@ Index:
   loop and of the steps).
 - Other: mk.set (properties of any node or Java object), mk.component_of
   (a geometry's component), mk.coordinate_system (e.g. for perfectly
-  matched layers), mk.LicenseError (no CAD license), node.java.
+  matched layers), mk.LicenseError (no CAD license), mk.StepWarning
+  (step=/outer= numbers that are also values), node.java.
 """
 import sys as _sys
 
@@ -130,7 +131,7 @@ from ._props import set_ as set  # not in __all__: keeps builtin set
 from ._results import average, integral, maximum, minimum, value
 from ._solve import log_progress, problem_size, progress
 from ._sweep import outer_values, step_values
-from .errors import LicenseError
+from .errors import LicenseError, StepWarning
 from .geometry import (array, block, chamfer, circle, component_of,
                        coordinate_system, cylinder, delete, difference,
                        extrude, feature, fillet, geometry, import_,
@@ -141,7 +142,7 @@ from .geometry import (array, block, chamfer, circle, component_of,
 
 __version__ = '0.3.0.dev0'
 
-__all__ = ['LicenseError', 'array', 'average', 'block', 'bounding_box',
+__all__ = ['LicenseError', 'StepWarning', 'array', 'average', 'block', 'bounding_box',
            'chamfer', 'check', 'circle', 'component_of', 'coordinate_system',
            'coordinates', 'cylinder', 'delete', 'difference', 'extrude',
            'feature', 'feature_types', 'fillet', 'geometry', 'image',

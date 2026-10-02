@@ -624,7 +624,8 @@ def find(geom: Node, entity: str, /, x=None, y=None, z=None, *,
     before or after, to compare with the rebuilt model; these leave no
     lines in the Java file, MPh's `old.evaluate` does. On a loaded physics
     feature, `node.selection()` gives its entity numbers or its selection
-    node and `node.properties()` its settings. A node the Java file
+    node and `node.properties()` its settings (`mk.properties(node)` with
+    descriptions and choices). A node the Java file
     creates without a selection line keeps COMSOL's default: a material
     or physics interface takes all domains, also after the geometry
     changes. Default features such as `Solid 1` or `Thermal Insulation 1`

@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import math
 import numbers
-import os
 import re
 import sys
 import warnings
@@ -27,6 +26,7 @@ from mph.node import Node
 from numpy.typing import NDArray
 
 from . import _comsol, _datasets, _results
+from .errors import StepWarning
 
 # Inner step names that are no model parameters: stationary, time,
 # frequency and eigenvalue steps
@@ -1077,56 +1077,65 @@ def _close(value: float, target: float, every: list[float]) -> bool:
 # Numbers and values #
 ######################
 
-def warn_numbers(what: str, given,
-                 columns: Callable[[], dict[str, list[float]]]):
+Columns = dict[str, tuple[list[float], 'str | None']]
+
+
+def warn_numbers(what: str, given, columns: Callable[[], Columns]):
     """
     Warns when numbers given as `what` (`'step'` or `'outer'`), which are
     positions, are also the values of other positions, as `step=10` on
     times 0, 1, ..., 10 (the tenth step is t = 9). `columns` gives the
-    values by name, in SI units. Checking never fails a call.
+    values by name with their unit: steps in SI units (unit `None`),
+    outer values as swept, e.g. Th in degC. Checking never fails a call.
     """
     try:
         message = _ambiguity(what, given, columns)
     except Exception:
         message = None
+    # outside the try: a warning turned into an error must get out
     if message:
-        warnings.warn(message, UserWarning, stacklevel=_outside())
+        warnings.warn(message, StepWarning, stacklevel=_outside())
 
 
-def _ambiguity(what: str, given,
-               columns: Callable[[], dict[str, list[float]]]) -> str | None:
+def _ambiguity(what: str, given, columns: Callable[[], Columns]
+               ) -> str | None:
     """Returns the warning of `warn_numbers()`, or `None`."""
     numbers = _given_numbers(given)
     if not numbers:
         return None
     noun = 'step' if what == 'step' else 'value'
-    table = {name: numpy.asarray(values, dtype=float)
-             for name, values in columns().items()}
+    table = {name: (numpy.asarray(values, dtype=float), unit)
+             for name, (values, unit) in columns().items()}
     # the tolerance of _close(), for a whole column at once
-    scales = {name: _scale(values) for name, values in table.items()}
+    scales = {name: _scale(values) for name, (values, _) in table.items()}
     found = []
     for k in dict.fromkeys(numbers):
-        for name, values in table.items():
+        for name, (values, unit) in table.items():
             if k > len(values) or math.isnan(values[k - 1]):
                 continue
             at = numpy.flatnonzero(
                 numpy.abs(values - k) <= TOLERANCE*scales[name]) + 1
             if len(at) == 1 and at[0] != k:
-                found.append((k, name, float(values[k - 1])))
+                found.append((k, name, float(values[k - 1]), unit))
                 break
     if not found:
         return None
-    parts = [f'{k} is {noun} number {k} ({name}={value:g}), not {name}={k}'
-             for k, name, value in found[:3]]
+
+    def value(v, unit):
+        return f'{v:g} {unit}' if unit else f'{v:g}'
+    parts = [f'{k} is {noun} number {k} ({name}={value(v, unit)}), not '
+             f'{name}={value(k, unit)}' for k, name, v, unit in found[:3]]
     if len(found) > 3:
         parts.append(f'and {len(found) - 3} more')
-    k, name, _ = found[0]
+    k, name, _, unit = found[0]
+    # a unit as by_value() takes it: numbers alone are SI
+    pick = f"{{{name!r}: '{k}[{unit}]'}}" if unit else f'{{{name!r}: {k}}}'
     if _comsol.is_integer(given):
         first = f", {what}='first' the first {noun}" if k == 1 else ''
-        return (f'{what}={parts[0]}; {what}={{{name!r}: {k}}} picks '
-                f'{name}={k}{first}.')
+        return (f'{what}={parts[0]}; {what}={pick} picks '
+                f'{name}={value(k, unit)}{first}.')
     return (f'{what}={numbers}: {"; ".join(parts)}; pick by value, e.g. '
-            f'{what}={{{name!r}: {k}}}.')
+            f'{what}={pick}.')
 
 
 def _scale(values: Array) -> float:
@@ -1139,42 +1148,68 @@ def _given_numbers(given) -> list[int]:
     """Returns the numbers `step` or `outer` gives, `[]` for other forms."""
     if _comsol.is_integer(given):
         return [int(given)]
-    if (isinstance(given, (list, tuple, numpy.ndarray)) and len(given)
-            and all(_comsol.is_integer(v) for v in given)):
-        return [int(v) for v in given]
+    if isinstance(given, (str, Mapping)) or numpy.ndim(given) == 0:
+        return []
+    items = list(given)
+    if items and all(_comsol.is_integer(v) for v in items):
+        return [int(v) for v in items]
     return []
 
 
-def step_columns(model, solution) -> dict[str, list[float]]:
+def step_columns(model, solution) -> Columns:
     """
-    Returns the real step values of a solution by name, for
+    Returns the real step values of a solution by name, in SI units, for
     `warn_numbers()`; none for eigenvalues, which are picked by number.
     """
     table = named_steps(model, solution)
     if 'lambda' in table:
         return {}
-    return {name: [float(v) for v in values]
+    return {name: ([float(v) for v in values], None)
             for name, values in table.items()
             if not numpy.iscomplexobj(values)}
 
 
-def _outer_columns(sweep: Sweep) -> dict[str, list[float]]:
-    """Returns the outer values by name, for `warn_numbers()`."""
+def _outer_columns(sweep: Sweep) -> Columns:
+    """
+    Returns the outer values by name, for `warn_numbers()`: as swept
+    where that differs from SI, e.g. Th in degC, else in SI units.
+    """
     rows = sweep.rows
-    return {name: [row[name] for row in rows] for name in sweep.names
-            if not name.startswith(SWITCHES)}
+    try:
+        swept = sweep.swept
+    except Exception:
+        swept = []
+    found: Columns = {}
+    for name in sweep.names:
+        if name.startswith(SWITCHES):
+            continue
+        si = [row[name] for row in rows]
+        unit = sweep.units.get(name)
+        given = ([row[name] for row in swept if name in row]
+                 if len(swept) == len(rows) else [])
+        if (unit and len(given) == len(si)
+                and not all(math.isclose(g, v, rel_tol=1e-12)
+                            for g, v in zip(given, si))):
+            found[name] = (given, unit)
+        else:
+            found[name] = (si, None)
+    return found
 
 
 def _outside() -> int:
     """
     Returns the `stacklevel` of a warning raised in the function that
-    calls this one: the first caller outside the package.
+    calls this one: the first caller outside the package, told by the
+    module name (code run with exec() may have none: outside).
     """
-    package = os.path.dirname(os.path.abspath(__file__)) + os.sep
+    package = __name__.partition('.')[0]
     frame: FrameType | None = sys._getframe(1)
     level = 1
-    while frame is not None and os.path.abspath(
-            frame.f_code.co_filename).startswith(package):
+    while frame is not None:
+        module = frame.f_globals.get('__name__')
+        if not (isinstance(module, str) and (
+                module == package or module.startswith(f'{package}.'))):
+            break
         frame, level = frame.f_back, level + 1
     return level
 
