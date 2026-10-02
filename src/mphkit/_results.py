@@ -19,7 +19,7 @@ import numpy
 from mph.node import Node
 from numpy.typing import NDArray
 
-from . import _comsol, _datasets
+from . import _comsol, _datasets, _sweep
 from ._measure import numbers_of
 
 # COMSOL feature types: the kind of result, then the level of the entities
@@ -38,8 +38,7 @@ RESERVED = {'expr': 'the expression argument', 'data': 'dataset=',
             't': 'step='}
 RESERVED_PREFIXES = {
     ('innerinput', 'solnum', 'looplevel', 'interp'): 'step=',
-    ('outer',): 'a dataset without an outer loop (parametric sweeps with '
-                'an outer loop are not supported yet)',
+    ('outer',): 'outer=',
     ('dataseries',): "step='all' and combine the values in Python",
 }
 
@@ -50,6 +49,10 @@ One = int | numpy.integer | Literal['first', 'last'] | None
 Many = Literal['all'] | Sequence[int] | NDArray[numpy.integer]
 Step = (int | numpy.integer | str | Sequence[int] | NDArray[numpy.integer]
         | None)
+# outer values of a sweep: the same forms
+OuterOne = One
+OuterMany = Many
+Outer = Step
 
 
 ###########
@@ -59,17 +62,26 @@ Step = (int | numpy.integer | str | Sequence[int] | NDArray[numpy.integer]
 @overload
 def integral(geom: Node, entity: str, expr: str, /, selection=None, *,
              unit: str | None = None, dataset=None, step: One = None,
+             outer: OuterOne = None,
              **properties: Any) -> float: ...
 @overload
 def integral(geom: Node, entity: str, expr: str, /, selection=None, *,
              unit: str | None = None, dataset=None, step: Many,
+             outer: Outer = None,
              **properties: Any) -> Array: ...
 @overload
 def integral(geom: Node, entity: str, expr: str, /, selection=None, *,
              unit: str | None = None, dataset=None, step: Step = None,
+             outer: OuterMany,
+             **properties: Any) -> Array: ...
+@overload
+def integral(geom: Node, entity: str, expr: str, /, selection=None, *,
+             unit: str | None = None, dataset=None, step: Step = None,
+             outer: Outer = None,
              **properties: Any) -> float | Array: ...
 def integral(geom: Node, entity: str, expr: str, /, selection=None, *,
              unit: str | None = None, dataset=None, step: Step = None,
+             outer: Outer = None,
              **properties: Any) -> Any:
     """
     Returns the integral of an expression over entities of a solved model,
@@ -96,42 +108,63 @@ def integral(geom: Node, entity: str, expr: str, /, selection=None, *,
     `dataset` is the solution to evaluate, by name as in
     `model.datasets()`, by tag or node, or the study that made it; it is
     needed when the geometry has several solutions. A study whose last
-    solve failed raises, until it is solved again. `step` picks steps of a time-dependent study,
-    sweep or frequency list, counted from 1: `'first'`, `'last'`, a number,
-    a list of numbers or `'all'`; `model.inner(dataset name)` gives their
-    times or parameter values. Unlike MPh's `model.evaluate`, `None`
-    means the only step and raises when there are several. One step gives
-    a float, a list or `'all'` an array. Complex results (e.g. frequency
-    domain) come back as complex numbers.
+    solve failed raises, until it is solved again.
+
+    `step` picks steps of a time-dependent study, sweep or frequency list,
+    counted from 1: `'first'`, `'last'`, a number, a list of numbers or
+    `'all'`; `mk.step_values(geom)` gives their times or parameter values.
+    Unlike MPh's `model.evaluate`, `None` means the only step and raises
+    when there are several. `outer` picks, in the same forms, values of a
+    parametric sweep that COMSOL stores as an outer loop: around a
+    time-dependent, frequency-domain or eigenvalue study, or over a
+    geometry, mesh, material or function; `mk.outer_values(geom)` gives
+    them. `step` then counts the steps of each value; several values at
+    once need the same steps (when a solver picks the time steps, each
+    value has its own: take `'first'`, `'last'` or one value at a time).
+    `outer=1` raises for a dataset without such a sweep, unlike `step=1`
+    for one with a single step.
+
+    One step (and value) gives a float; a list or `'all'` gives an array,
+    with an axis for the outer values before the one for the steps, e.g.
+    shape `(3, 4)` for `outer='all', step='all'` over 3 values of 4 steps.
+    Complex results (e.g. frequency domain) come back as complex numbers.
 
     Other keyword arguments are COMSOL properties of the numerical feature
     (e.g. `intorder`). The geometry must be built as it was solved:
     changing it after the solve raises, unless it was built and meshed
     again without solving. Changing physics, materials or parameters
-    without solving again goes unnoticed too. Parametric sweeps that
-    COMSOL stores as an outer loop (around a time-dependent study, or over
-    a geometry parameter) raise; so does a model that still holds such a
-    sweep's solution. An empty selection raises, while `measure()` gives
-    0.
+    without solving again goes unnoticed too. Each value of a sweep is
+    read from its own solution and checked against the geometry; sweeps
+    that change the geometry, or whose mesh leaves part of it out, raise
+    for now. An empty selection raises, while `measure()` gives 0.
     """
     return _over('integral', geom, entity, expr, selection, unit, dataset,
-                 step, False, properties)
+                 step, outer, False, properties)
 
 
 @overload
 def average(geom: Node, entity: str, expr: str, /, selection=None, *,
             unit: str | None = None, dataset=None, step: One = None,
+            outer: OuterOne = None,
             **properties: Any) -> float: ...
 @overload
 def average(geom: Node, entity: str, expr: str, /, selection=None, *,
             unit: str | None = None, dataset=None, step: Many,
+            outer: Outer = None,
             **properties: Any) -> Array: ...
 @overload
 def average(geom: Node, entity: str, expr: str, /, selection=None, *,
             unit: str | None = None, dataset=None, step: Step = None,
+            outer: OuterMany,
+            **properties: Any) -> Array: ...
+@overload
+def average(geom: Node, entity: str, expr: str, /, selection=None, *,
+            unit: str | None = None, dataset=None, step: Step = None,
+            outer: Outer = None,
             **properties: Any) -> float | Array: ...
 def average(geom: Node, entity: str, expr: str, /, selection=None, *,
             unit: str | None = None, dataset=None, step: Step = None,
+            outer: Outer = None,
             **properties: Any) -> Any:
     """
     Returns the average of an expression over entities of a solved model,
@@ -146,36 +179,56 @@ def average(geom: Node, entity: str, expr: str, /, selection=None, *,
     `integral()`; `unit` is the unit of the expression.
     """
     return _over('average', geom, entity, expr, selection, unit, dataset,
-                 step, False, properties)
+                 step, outer, False, properties)
 
 
 @overload
 def maximum(geom: Node, entity: str, expr: str, /, selection=None, *,
             unit: str | None = None, dataset=None, step: One = None,
+            outer: OuterOne = None,
             position: Literal[False] = False,
             **properties: Any) -> float: ...
 @overload
 def maximum(geom: Node, entity: str, expr: str, /, selection=None, *,
             unit: str | None = None, dataset=None, step: Many,
+            outer: Outer = None,
+            position: Literal[False] = False,
+            **properties: Any) -> Array: ...
+@overload
+def maximum(geom: Node, entity: str, expr: str, /, selection=None, *,
+            unit: str | None = None, dataset=None, step: Step = None,
+            outer: OuterMany,
             position: Literal[False] = False,
             **properties: Any) -> Array: ...
 @overload
 def maximum(geom: Node, entity: str, expr: str, /, selection=None, *,
             unit: str | None = None, dataset=None, step: One = None,
+            outer: OuterOne = None,
             position: Literal[True],
             **properties: Any) -> tuple[float, Array]: ...
 @overload
 def maximum(geom: Node, entity: str, expr: str, /, selection=None, *,
             unit: str | None = None, dataset=None, step: Many,
+            outer: Outer = None,
             position: Literal[True],
             **properties: Any) -> tuple[Array, Array]: ...
 @overload
 def maximum(geom: Node, entity: str, expr: str, /, selection=None, *,
             unit: str | None = None, dataset=None, step: Step = None,
-            position: bool = False, **properties: Any) -> Any: ...
+            outer: OuterMany,
+            position: Literal[True],
+            **properties: Any) -> tuple[Array, Array]: ...
+@overload
 def maximum(geom: Node, entity: str, expr: str, /, selection=None, *,
             unit: str | None = None, dataset=None, step: Step = None,
-            position: bool = False, **properties: Any) -> Any:
+            outer: Outer = None,
+            position: bool = False,
+            **properties: Any) -> Any: ...
+def maximum(geom: Node, entity: str, expr: str, /, selection=None, *,
+            unit: str | None = None, dataset=None, step: Step = None,
+            outer: Outer = None,
+            position: bool = False,
+            **properties: Any) -> Any:
     """
     Returns the maximum of an expression over entities of a solved model,
     e.g. the hottest temperature in all domains:
@@ -188,53 +241,74 @@ def maximum(geom: Node, entity: str, expr: str, /, selection=None, *,
     COMSOL takes it at the mesh's evaluation points, so it is close to,
     not exactly, the true maximum. `position=True` also returns where it
     is, in the geometry's length unit; with several steps, an array of
-    values and one row of coordinates per step. For a complex expression
+    values and one row of coordinates per step (with several outer values
+    too, shape `(values, steps, 3)` in 3D). For a complex expression
     the maximum of the real part; use `'abs(p)'` for the largest
     magnitude. Other arguments work as in `integral()`; `unit` is the unit
     of the expression.
     """
     return _over('maximum', geom, entity, expr, selection, unit, dataset,
-                 step, position, properties)
+                 step, outer, position, properties)
 
 
 @overload
 def minimum(geom: Node, entity: str, expr: str, /, selection=None, *,
             unit: str | None = None, dataset=None, step: One = None,
+            outer: OuterOne = None,
             position: Literal[False] = False,
             **properties: Any) -> float: ...
 @overload
 def minimum(geom: Node, entity: str, expr: str, /, selection=None, *,
             unit: str | None = None, dataset=None, step: Many,
+            outer: Outer = None,
+            position: Literal[False] = False,
+            **properties: Any) -> Array: ...
+@overload
+def minimum(geom: Node, entity: str, expr: str, /, selection=None, *,
+            unit: str | None = None, dataset=None, step: Step = None,
+            outer: OuterMany,
             position: Literal[False] = False,
             **properties: Any) -> Array: ...
 @overload
 def minimum(geom: Node, entity: str, expr: str, /, selection=None, *,
             unit: str | None = None, dataset=None, step: One = None,
+            outer: OuterOne = None,
             position: Literal[True],
             **properties: Any) -> tuple[float, Array]: ...
 @overload
 def minimum(geom: Node, entity: str, expr: str, /, selection=None, *,
             unit: str | None = None, dataset=None, step: Many,
+            outer: Outer = None,
             position: Literal[True],
             **properties: Any) -> tuple[Array, Array]: ...
 @overload
 def minimum(geom: Node, entity: str, expr: str, /, selection=None, *,
             unit: str | None = None, dataset=None, step: Step = None,
-            position: bool = False, **properties: Any) -> Any: ...
+            outer: OuterMany,
+            position: Literal[True],
+            **properties: Any) -> tuple[Array, Array]: ...
+@overload
 def minimum(geom: Node, entity: str, expr: str, /, selection=None, *,
             unit: str | None = None, dataset=None, step: Step = None,
-            position: bool = False, **properties: Any) -> Any:
+            outer: Outer = None,
+            position: bool = False,
+            **properties: Any) -> Any: ...
+def minimum(geom: Node, entity: str, expr: str, /, selection=None, *,
+            unit: str | None = None, dataset=None, step: Step = None,
+            outer: Outer = None,
+            position: bool = False,
+            **properties: Any) -> Any:
     """
     Returns the minimum of an expression over entities of a solved model,
     e.g. `mk.minimum(geom, 'domain', 'T', unit='degC')`. Works as
     `maximum()`.
     """
     return _over('minimum', geom, entity, expr, selection, unit, dataset,
-                 step, position, properties)
+                 step, outer, position, properties)
 
 
 def value(geom: Node, expr: str, points, /, *, unit: str | None = None,
-          dataset=None, step: Step = None,
+          dataset=None, step: Step = None, outer: Outer = None,
           outside: Literal['error', 'nan'] = 'error') -> float | Array:
     """
     Returns the values of an expression at points of a solved model:
@@ -257,7 +331,8 @@ def value(geom: Node, expr: str, points, /, *, unit: str | None = None,
     those with `average()` or `maximum()` over a boundary selection. A
     point outside the geometry, or where nothing was solved (no physics
     there), raises; `outside='nan'` gives nan there instead. `unit`,
-    `dataset` and `step` work as in `integral()`.
+    `dataset`, `step` and `outer` work as in `integral()`; the axes are
+    points, outer values, steps.
     """
     name = 'value'
     check_expr(name, expr)
@@ -268,58 +343,78 @@ def value(geom: Node, expr: str, points, /, *, unit: str | None = None,
     sdim = _comsol.sdim(geom)
     coordinates, single = _points(geom, points, sdim)
     steps(step, None, '')
+    steps(outer, None, '', what='outer')
     model = geom.model.java
-    data = _datasets.solved_dataset(geom, dataset)
-    check_current(geom)
-    solnums, many = steps(step, _datasets.step_count(model, data),
-                          _comsol.name_of(data))
-    unique, order = _unique(solnums)
     with _datasets.scratch(model) as create:
-        feature = create(model.result().numerical(), 'Interp')
-        _comsol.set_properties(feature, {
-            'data': str(data.tag()), 'expr': [expr, '1'],
-            'unit': None if unit is None else [unit, '1'],
-            'coorderr': 'off', 'solnum': unique})
-        feature.setInterpolationCoordinates(coordinates.T.tolist())
-        try:
-            real = numpy.array(feature.getReal(), dtype=float)
-        except Exception as error:
-            if 'Undefined variable' in _comsol.reason(error):
-                raise RuntimeError(
-                    f'{failed(expr, error)} value() evaluates domain '
-                    f'variables; if "{expr}" exists on boundaries only, as '
-                    'ht.ntflux does, use mk.average or mk.maximum over a '
-                    'boundary selection.') from error
-            raise failed(expr, error) from error
-        count = len(coordinates)
-        shape = (count, 2 * len(unique))
-        if real.shape != shape:
-            raise RuntimeError(f'COMSOL returned values of shape '
-                               f'{real.shape}, expected {shape}.')
-        # a row per point: for each step, the expression and '1'
-        real = real.reshape(count, len(unique), 2)[:, order]
-        found: Array = real[:, :, 0]
-        if feature.isComplex():
-            imag = numpy.array(feature.getImag(), dtype=float)
-            found = found + 1j*imag.reshape(count, len(unique), 2)[:, order, 0]
-        # '1' is nan only outside the geometry and where nothing was solved
-        missing = numpy.isnan(real[:, :, 1]).any(axis=1)
-        if missing.any():
-            if outside == 'error':
-                raise ValueError(_outside_message(missing))
-            found[missing] = numpy.nan
+        request = _sweep.resolve(create, geom, dataset, step, outer)
+        results: list[tuple[Array, Array]] = []
+        for target in request.targets:
+            found, missing = _interpolate(create, model, target, expr, unit,
+                                          coordinates)
+            if missing.any():
+                if outside == 'error':
+                    raise ValueError(_outside_message(missing, target.where))
+                found[missing] = numpy.nan
+            results.append((found, missing))
         if unit is not None:
-            inside = numpy.flatnonzero(~missing)
-            if not len(inside):
+            checked = next(((target, numpy.flatnonzero(~missing)[0])
+                            for target, (_, missing)
+                            in zip(request.targets, results)
+                            if not missing.all()), None)
+            if checked is None:
                 raise ValueError(f'No point has a value to check the unit '
                                  f'{unit!r} at.')
-            _check_point_unit(create, model, data, expr, unit,
-                              coordinates[inside[0]])
+            target, inside = checked
+            _check_point_unit(create, model, target.data, expr, unit,
+                              coordinates[inside])
+    # points, outer values, steps
+    every: Array = numpy.stack([found for found, _ in results],
+                               axis=1)[:, request.order]
+    if not request.many_step:
+        every = every[:, :, 0]
+    if not request.many_outer:
+        every = every[:, 0]
     if single:
-        found = found[0]
-    if not many:
-        found = found[..., 0]
-    return _scalar(found)
+        every = every[0]
+    return _scalar(every)
+
+
+def _interpolate(create, model, target, expr: str, unit: str | None,
+                 coordinates: Array) -> tuple[Array, Array]:
+    """
+    Returns the values of `expr` at the points on one target, a row per
+    point and a column per step, and which points have no value.
+    """
+    unique, order = _unique(target.solnums)
+    feature = create(model.result().numerical(), 'Interp')
+    _comsol.set_properties(feature, {
+        'data': target.data, 'expr': [expr, '1'],
+        'unit': None if unit is None else [unit, '1'],
+        'coorderr': 'off', 'solnum': unique})
+    feature.setInterpolationCoordinates(coordinates.T.tolist())
+    try:
+        real = numpy.array(feature.getReal(), dtype=float)
+    except Exception as error:
+        if 'Undefined variable' in _comsol.reason(error):
+            raise RuntimeError(
+                f'{failed(expr, error)} value() evaluates domain '
+                f'variables; if "{expr}" exists on boundaries only, as '
+                'ht.ntflux does, use mk.average or mk.maximum over a '
+                'boundary selection.') from error
+        raise failed(expr, error) from error
+    count = len(coordinates)
+    shape = (count, 2 * len(unique))
+    if real.shape != shape:
+        raise RuntimeError(f'COMSOL returned values of shape '
+                           f'{real.shape}, expected {shape}.')
+    # a row per point: for each step, the expression and '1'
+    real = real.reshape(count, len(unique), 2)[:, order]
+    found: Array = real[:, :, 0]
+    if feature.isComplex():
+        imag = numpy.array(feature.getImag(), dtype=float)
+        found = found + 1j*imag.reshape(count, len(unique), 2)[:, order, 0]
+    # '1' is nan only outside the geometry and where nothing was solved
+    return found, numpy.isnan(real[:, :, 1]).any(axis=1)
 
 
 #################
@@ -327,7 +422,7 @@ def value(geom: Node, expr: str, points, /, *, unit: str | None = None,
 #################
 
 def _over(name: str, geom: Node, entity: str, expr: str, selection,
-          unit: str | None, dataset, step, position: bool,
+          unit: str | None, dataset, step, outer, position: bool,
           properties: dict) -> Any:
     """Evaluates integrals, averages, maxima and minima."""
     check_expr(name, expr)
@@ -339,20 +434,11 @@ def _over(name: str, geom: Node, entity: str, expr: str, selection,
                          'use mk.value(geom, expr, points) for values at '
                          'points.')
     steps(step, None, '')
+    steps(outer, None, '', what='outer')
     model = geom.model.java
-    data = _datasets.solved_dataset(geom, dataset)
-    check_current(geom)
-    solnums, many = steps(step, _datasets.step_count(model, data),
-                          _comsol.name_of(data))
-    unique, order = _unique(solnums)
-    found = numbers_of(geom, entity, selection)
-    if not found:
-        raise ValueError(f'Selection "{selection}" is empty.'
-                         if isinstance(selection, Node)
-                         else 'The selection is empty.')
     sdim = _comsol.sdim(geom)
     settings: dict[str, Any] = {'expr': expr, 'unit': unit,
-                                'innerinput': 'manual', 'solnum': unique}
+                                'innerinput': 'manual'}
     if position:
         settings['includepos'] = True
     if name in ('integral', 'average') and axisymmetric(geom):
@@ -360,21 +446,32 @@ def _over(name: str, geom: Node, entity: str, expr: str, selection,
     ftype = KINDS[name] + LEVELS[level]
     column = -(sdim + 1) if position else -1
     with _datasets.scratch(model) as create:
-        def evaluate(settings: dict) -> tuple[str, Array, Array | None]:
+        request = _sweep.resolve(create, geom, dataset, step, outer)
+        found = numbers_of(geom, entity, selection)
+        if not found:
+            raise ValueError(f'Selection "{selection}" is empty.'
+                             if isinstance(selection, Node)
+                             else 'The selection is empty.')
+
+        def evaluate(target, settings: dict
+                     ) -> tuple[str, Array, Array | None]:
+            unique, order = _unique(target.solnums)
             feature = create(model.result().numerical(), ftype)
             table = create(model.result().table(), 'Table')
-            feature.set('data', str(data.tag()))
+            feature.set('data', target.data)
             feature.selection().geom(geom.tag(), level)
             feature.selection().set(found)
             # defaults first, so that `properties` can override them
-            _comsol.set_properties(feature, {**settings, **properties})
+            _comsol.set_properties(feature, {**settings, 'solnum': unique,
+                                             **properties})
             feature.set('table', str(table.tag()))
             try:
                 feature.setResult()
             except Exception as error:
                 if 'not meshed' in _comsol.reason(error):
+                    at = f' at {target.where}' if target.where else ''
                     raise RuntimeError(
-                        'Some of these entities have no solution (no '
+                        f'Some of these entities have no solution{at} (no '
                         'physics or mesh there); pass a selection of the '
                         'solved ones.') from error
                 raise failed(expr, error) from error
@@ -388,19 +485,28 @@ def _over(name: str, geom: Node, entity: str, expr: str, selection,
             return headers[column], real[order], \
                 None if imag is None else imag[order]
 
-        header, real, imag = evaluate(settings)
-        if unit is not None and not header.endswith(f'({unit})'):
-            plain, *_ = evaluate({**settings, 'unit': None})
-            _check_unit(expr, unit, header, plain)
-    values: Array = real[:, column]
-    if imag is not None:
-        values = values + 1j*imag[:, column]
-    if not many:
-        values = values[0]
+        results: list[tuple[Array, Array | None]] = []
+        for target in request.targets:
+            header, real, imag = evaluate(target, settings)
+            if (not results and unit is not None
+                    and not header.endswith(f'({unit})')):
+                plain, *_ = evaluate(target, {**settings, 'unit': None})
+                _check_unit(expr, unit, header, plain)
+            results.append((real, imag))
+    # outer values, steps
+    values: Array = numpy.stack([
+        real[:, column] if imag is None
+        else real[:, column] + 1j*imag[:, column]
+        for real, imag in results])[request.order]
+    where: Array = numpy.stack([real[:, -sdim:]
+                                for real, _ in results])[request.order]
+    if not request.many_step:
+        values, where = values[:, 0], where[:, 0]
+    if not request.many_outer:
+        values, where = values[0], where[0]
     if not position:
         return _scalar(values)
-    where = real[:, -sdim:]
-    return _scalar(values), (where if many else where[0])
+    return _scalar(values), where
 
 
 ############
@@ -489,14 +595,15 @@ def unit_error(expr: str, applied: str, unit: str) -> ValueError:
                       'SI units.')
 
 
-def _check_point_unit(create, model, data, expr: str, unit: str,
+def _check_point_unit(create, model, data: str, expr: str, unit: str,
                       point: Array):
     """
-    Checks `unit` on a cut point at `point`: unlike Interp, EvalPoint
-    writes a table, whose header shows the unit applied.
+    Checks `unit` on a cut point at `point` of dataset `data` (a tag):
+    unlike Interp, EvalPoint writes a table, whose header shows the unit
+    applied.
     """
     cut = create(model.result().dataset(), f'CutPoint{len(point)}D')
-    cut.set('data', str(data.tag()))
+    cut.set('data', data)
     for axis, coordinate in zip('xyz', point):
         cut.set(f'point{axis}', repr(float(coordinate)))
 
@@ -524,14 +631,16 @@ def _check_point_unit(create, model, data, expr: str, unit: str,
 # Steps #
 #########
 
-def steps(step, count: int | None, name: str, *,
-          single: str | None = None, what: str = 'step'
+def steps(step, count: int | None, where: str, *,
+          single: str | None = None, what: str = 'step', hint: str = ''
           ) -> tuple[list[int], bool]:
     """
     Returns the step numbers `step` stands for and whether it asks for
     several (an array). With `count=None`, only checks its form.
-    `single` names a caller that takes one step only, such as `'plot'`.
-    `what` is the argument's name in messages, `'step'` or `'outer'`.
+    `where` names what has the steps in messages, e.g. `Dataset "s//Solution
+    1"`, and `hint` follows the error for several steps, e.g. where to look
+    them up. `single` names a caller that takes one step only, such as
+    `'plot'`. `what` is the argument's name, `'step'` or `'outer'`.
     """
     nouns = 'steps' if what == 'step' else 'outer values'
     noun = 'step' if what == 'step' else 'outer value'
@@ -553,13 +662,8 @@ def steps(step, count: int | None, name: str, *,
             return [1], False
         choices = (f' or a number from 1 to {count}' if single else
                    f", a number from 1 to {count}, a list of them or 'all'")
-        if what != 'step':
-            raise ValueError(f"Dataset \"{name}\" has {count} {nouns}; pass "
-                             f"{what}='last'{choices}.")
-        raise ValueError(
-            f"Dataset \"{name}\" has {count} steps; pass step='last'"
-            f'{choices} (model.inner("{name}") gives their times or '
-            'parameter values).')
+        raise ValueError(f"{where} has {count} {nouns}; pass {what}='last'"
+                         f'{choices}{hint}.')
     many = numpy.ndim(step) > 0
     items = list(step) if many else [step]
     if many and not items:
@@ -575,9 +679,9 @@ def steps(step, count: int | None, name: str, *,
     if count is not None:
         wrong = [n for n in found if n > count]
         if wrong:
-            raise ValueError(f'Dataset "{name}" has {count} '
+            raise ValueError(f'{where} has {count} '
                              f'{noun if count == 1 else nouns}, not '
-                             f'{wrong[0]}.')
+                             f'{wrong[0]}{hint}.')
     return found, many
 
 
@@ -618,16 +722,20 @@ def _points(geom: Node, points, sdim: int) -> tuple[Array, bool]:
     raise ValueError(message + '.')
 
 
-def _outside_message(missing: Array) -> str:
-    """Names the points (counted from 1) that have no value."""
+def _outside_message(missing: Array, where: str = '') -> str:
+    """
+    Names the points (counted from 1) that have no value, at `where` (an
+    outer value) if given.
+    """
     points = [str(n + 1) for n in numpy.flatnonzero(missing)]
     shown = (' and '.join(points) if len(points) <= 2
              else f'{", ".join(points[:-1])} and {points[-1]}')
     noun = 'Point' if len(points) == 1 else 'Points'
     verb = 'is' if len(points) == 1 else 'are'
+    at = f' at {where}' if where else ''
     return (f'{noun} {shown} of {len(missing)} {verb} outside the geometry '
-            "or where nothing was solved; pass outside='nan' to get nan "
-            'there.')
+            f"or where nothing was solved{at}; pass outside='nan' to get "
+            'nan there.')
 
 
 ##########

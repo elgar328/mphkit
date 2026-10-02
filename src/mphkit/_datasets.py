@@ -306,7 +306,7 @@ class Solutions:
     solutions, until it is solved again.
     """
 
-    def __init__(self, model):
+    def __init__(self, model) -> None:
         self.model = model
         tags = [str(tag) for tag in model.sol().tags()]
         self.sweeps: dict[str, list[int]] = {}

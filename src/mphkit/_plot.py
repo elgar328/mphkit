@@ -22,7 +22,7 @@ from typing import Literal
 import numpy
 from mph.node import Node
 
-from . import _comsol, _datasets, _image, _results
+from . import _comsol, _datasets, _image, _results, _sweep
 from ._measure import bounding_box, summary
 
 # Where the camera sits, seen from the centre, and which way is up.
@@ -122,8 +122,10 @@ def plot(geom: Node, expr: str, filename, /, selection: Node | None = None,
     data = _datasets.solved_dataset(geom, dataset)
     _results.check_current(geom)
     count = _datasets.step_count(model, data)
-    solnums, _ = _results.steps(step, count, _comsol.name_of(data),
-                                single=name)
+    solnums, _ = _results.steps(
+        step, count, f'Dataset {_datasets.describe(data)}', single=name,
+        hint=f' ({_sweep._call("step_values", dataset)} gives their times '
+             'or parameter values)')
     level, entities = None, None
     if selection is not None:
         level, _, entities = _image.drawn_selection(geom, selection)

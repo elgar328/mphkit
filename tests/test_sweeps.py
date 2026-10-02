@@ -1,14 +1,18 @@
 """
 Tests of parametric sweeps that COMSOL stores as an outer loop: which
-datasets the helpers take or refuse, and `mk.outer_values`.
+datasets the helpers take or refuse, reading them with `outer=`, and
+`mk.outer_values` and `mk.step_values`.
 
 The plate of test_results, 0.1 x 0.05 x 0.01 m, held at Th at x = 0 and
 20 degC at x = 0.1, swept over Th around a short time-dependent study.
 """
+import math
+
+import numpy
 import pytest
 
 import mphkit as mk
-from test_results import leftovers, plate
+from test_results import leftovers, leaves_nothing, plate  # noqa: F401
 
 KELVIN = 273.15
 
@@ -40,12 +44,21 @@ def outer_values(geom, **options):
         assert leftovers(geom.model) == before
 
 
+def step_values(geom, **options):
+    """mk.step_values, checked to leave nothing in the model."""
+    before = leftovers(geom.model)
+    try:
+        return mk.step_values(geom, **options)
+    finally:
+        assert leftovers(geom.model) == before
+
+
 @pytest.fixture(scope='module')
 def swept(client):
     """The plate swept over Th = 100, 200, 300 degC, time-dependent."""
     model, geom, faces = plate(client, 'swept plate', study=False)
     study = transient(model)
-    yield model, geom, study
+    yield model, geom, study, faces
     client.remove(model)
 
 
@@ -77,7 +90,7 @@ def dataset_named(model, part):
 ################
 
 def test_outer_values(swept):
-    model, geom, study = swept
+    model, geom, study, faces = swept
     expected = [{'Th': 100 + KELVIN}, {'Th': 200 + KELVIN},
                 {'Th': 300 + KELVIN}]
     for dataset in (None, 'dset2', study, 'sweep'):
@@ -91,11 +104,25 @@ def test_plain_and_inner_sweep(fresh):
     study.create('Stationary')
     model.solve()
     assert outer_values(geom) == []
+    assert step_values(geom) == {}
+    with pytest.raises(ValueError, match=r'"static//Solution 1" \(dset1\) '
+                                         r'has no outer sweep; leave out '
+                                         r'outer=\.'):
+        mk.average(geom, 'domain', 'T', outer=1)
     sweep(study, '100 200')
     model.solve()
     with pytest.raises(ValueError, match=r'holds its sweep over Th as steps, '
                                          r'not as outer values: pass step='):
         outer_values(geom)
+    with pytest.raises(ValueError, match=r'sweep over Th as steps, not as '
+                       r'outer values: pass step=2 instead of outer= '
+                       r'\(mk.step_values\(geom\) gives the values\)'):
+        mk.average(geom, 'domain', 'T', outer=2)
+    assert step_values(geom)['Th'] == pytest.approx([100 + KELVIN,
+                                                    200 + KELVIN])
+    with pytest.raises(ValueError, match='as steps, not as outer values; '
+                                         'leave out outer= to get them'):
+        step_values(geom, outer=1)
 
 
 ############
@@ -103,7 +130,7 @@ def test_plain_and_inner_sweep(fresh):
 ############
 
 def test_copy(swept):
-    model, geom, study = swept
+    model, geom, study, faces = swept
     with pytest.raises(ValueError, match=r'Dataset "sweep//Solution 1" '
                        r"\(dset1\) holds only the last value of a parametric "
                        r"sweep; pass dataset='dset2', .* with outer='last' "
@@ -114,7 +141,7 @@ def test_copy(swept):
 
 
 def test_child(swept):
-    model, geom, study = swept
+    model, geom, study, faces = swept
     java = model.java
     sweep = [str(tag) for tag in java.sol().tags()
              if len(java.sol(tag).getSolutioninfo().getOuterSolnum())][0]
@@ -197,6 +224,9 @@ def test_by_study(fresh):
                            r'Some come from the same study, .* '
                            r"model.java.sol\(\).remove\('sol\d'\)"):
             outer_values(geom, dataset=dataset)
+        with pytest.raises(ValueError, match='several solved datasets'):
+            mk.average(geom, 'domain', 'T', dataset=dataset, outer=1,
+                       step='last')
     assert outer_values(geom, dataset='dset1') == []
 
 
@@ -248,3 +278,349 @@ def test_failed_then_fixed(fresh):
     model.solve('s')
     assert outer_values(geom, dataset='s') == \
         pytest.approx([{'kk': 45}, {'kk': 50}, {'kk': 60}])
+
+
+###########
+# Numbers #
+###########
+
+def test_numbers(swept):
+    model, geom, study, faces = swept
+    hot = faces['hot']
+    found = mk.average(geom, 'boundary', 'T', hot, unit='degC',
+                       outer='all', step='last')
+    assert found == pytest.approx([100, 200, 300])
+    one = mk.average(geom, 'boundary', 'T', hot, unit='degC', outer=2,
+                     step='last')
+    assert isinstance(one, float)
+    assert one == pytest.approx(200)
+    assert mk.average(geom, 'boundary', 'T', hot, outer=[1],
+                      step='last').shape == (1,)
+    every = mk.average(geom, 'domain', 'T', outer='all', step='all')
+    assert every.shape == (3, 3)
+    assert numpy.all(numpy.diff(every[:, -1]) > 0)
+    assert mk.average(geom, 'domain', 'T', outer=[3, 1, 3], step='last') \
+        == pytest.approx(every[[2, 0, 2], -1])
+    assert mk.average(geom, 'domain', 'T', outer='last', step=[3, 2]) == \
+        pytest.approx(every[2, [2, 1]])
+    values, where = mk.maximum(geom, 'domain', 'T', unit='degC',
+                               outer='all', step='last', position=True)
+    assert values == pytest.approx([100, 200, 300])
+    assert where.shape == (3, 3)
+    assert where[:, 0] == pytest.approx([0, 0, 0])
+    values, where = mk.minimum(geom, 'domain', 'T', outer='all',
+                               step='all', position=True)
+    assert values.shape == (3, 3)
+    assert where.shape == (3, 3, 3)
+    # COMSOL's outer-loop interpolation reads the first value only
+    inside = mk.value(geom, 'T', (0.002, 0.025, 0.005), unit='degC',
+                      outer='all', step='last')
+    assert inside.shape == (3,)
+    assert numpy.all(numpy.diff(inside) > 10)
+    assert mk.value(geom, 'T', (0.002, 0.025, 0.005), unit='degC', outer=2,
+                    step='last') == pytest.approx(inside[1])
+    both = mk.value(geom, 'T', [(0, 0, 0), (0.002, 0.025, 0.005)],
+                    unit='degC', outer='all', step='all')
+    assert both.shape == (2, 3, 3)
+    assert both[0, :, -1] == pytest.approx([100, 200, 300])
+    assert both[1, :, -1] == pytest.approx(inside)
+
+
+def test_number_errors(swept):
+    model, geom, study, faces = swept
+    with pytest.raises(ValueError, match=r'holds a parametric sweep over 3 '
+                       r'values \(1: Th=373.15 \(100 degC\); 2: Th=473.15 '
+                       r'\(200 degC\); 3: Th=573.15 \(300 degC\)\); pass '
+                       r"outer= .*mk.outer_values\(geom\)"):
+        mk.average(geom, 'domain', 'T', step='last')
+    with pytest.raises(ValueError, match='has 3 outer values, not 4'):
+        mk.average(geom, 'domain', 'T', outer=4, step='last')
+    with pytest.raises(ValueError, match=r'at outer=2 \(Th=473.15 \(200 '
+                       r"degC\)\) has 3 steps; pass step='last'.* "
+                       r'\(mk.step_values\(geom, outer=2\) gives them: '
+                       r't = 0, 1, 2\)'):
+        mk.average(geom, 'domain', 'T', outer=2)
+    with pytest.raises(ValueError, match='has 3 steps, not 5'):
+        mk.value(geom, 'T', (0, 0, 0), outer=2, step=5)
+    with pytest.raises(ValueError, match='outer counts from 1'):
+        mk.average(geom, 'domain', 'T', outer=0, step='last')
+    with pytest.raises(TypeError, match='outer must be'):
+        mk.average(geom, 'domain', 'T', outer=1.5, step='last')
+    with pytest.raises(ValueError, match=r'COMSOL evaluated "T" in .*K, '
+                                         r"not 'kg'"):
+        mk.average(geom, 'domain', 'T', unit='kg', outer='all',
+                   step='last')
+    with pytest.raises(ValueError, match=r'Point 1 of 1 is outside .* at '
+                                         r'outer=1 \(Th=373.15'):
+        mk.value(geom, 'T', (1, 1, 1), outer='all', step='last')
+    assert numpy.isnan(mk.value(geom, 'T', (1, 1, 1), outer='all',
+                                step='last', outside='nan')).all()
+
+
+def test_step_values(swept):
+    model, geom, study, faces = swept
+    found = step_values(geom)
+    assert list(found) == ['t']
+    assert found['t'] == pytest.approx([0, 1, 2])
+    assert step_values(geom, outer=2)['t'] == pytest.approx([0, 1, 2])
+    assert step_values(geom, outer='all')['t'].shape == (3, 3)
+    assert step_values(geom, outer=[3, 1])['t'].shape == (2, 3)
+    with pytest.raises(ValueError, match='holds only the last value'):
+        step_values(geom, dataset='dset1')
+
+
+def test_free_time_steps(fresh):
+    model, geom = fresh()
+    study = (model/'studies').create(name='free')
+    study.create('Transient').property('tlist', 'range(0,10,100)')
+    sweep(study, '100 1000')
+    model.solve('free')
+    java = model.java
+    for tag in java.sol('sol1').feature().tags():
+        solver = java.sol('sol1').feature(tag)
+        if str(solver.getType()) == 'Time':
+            solver.set('tout', 'tsteps')
+            solver.set('tstepsbdf', 'free')
+    model.solve('free')
+    first = step_values(geom, outer=1)['t']
+    second = step_values(geom, outer=2)['t']
+    assert len(first) != len(second)
+    assert first[-1] == second[-1] == pytest.approx(100)
+    assert mk.average(geom, 'domain', 'T', outer='all',
+                      step='last').shape == (2,)
+    assert mk.average(geom, 'domain', 'T', outer=2,
+                      step=len(second)) == pytest.approx(
+        mk.average(geom, 'domain', 'T', outer=2, step='last'))
+    for step in ('all', 2, [1, 2]):
+        with pytest.raises(ValueError, match=r'outer values 1 and 2 of .* '
+                           r'have different steps \(outer=1: \d+ steps, '
+                           r"outer=2: \d+ steps\); pass step='first'"):
+            mk.average(geom, 'domain', 'T', outer='all', step=step)
+    with pytest.raises(ValueError, match=r"different steps .*; pass outer=k "
+                                         r'for one value at a time\.'):
+        step_values(geom)
+    with pytest.raises(ValueError, match='outer=k for one value at a time'):
+        step_values(geom, outer='all')
+
+
+def test_eigenfrequencies(client):
+    model = client.create('beam')
+    try:
+        model.parameter('E0', '200[GPa]')
+        geom = mk.geometry(model, 3)
+        mk.block(geom, (0.1, 0.01, 0.01))
+        model.build(geom)
+        steel = (model/'materials').create('Common')
+        for key, value in (('youngsmodulus', 'E0'), ('poissonsratio', '0.3'),
+                           ('density', '7850')):
+            (steel/'Basic').property(key, [value])
+        solid = (model/'physics').create('SolidMechanics', geom)
+        solid.create('Fixed', 2).select(mk.sel.box(geom, 'boundary', x=0))
+        (model/'meshes').create(geom)
+        study = (model/'studies').create(name='eigen')
+        steps = study.create('Eigenfrequency')
+        steps.property('neigs', 2)
+        steps.property('shift', '100')
+        sweep(study, '100[GPa] 200[GPa]', 'E0', 'Pa')
+        model.solve()
+        found = step_values(geom, outer=1)
+        assert list(found) == ['lambda', 'freq']
+        assert found['freq'].dtype == float
+        assert found['lambda'] == pytest.approx(-2j*math.pi*found['freq'])
+        assert mk.average(geom, 'domain', 'solid.freq', outer=1,
+                          step='all') == pytest.approx(found['freq'])
+        # eigenvalues differ between values by nature: their number counts
+        every = mk.average(geom, 'domain', 'solid.freq', outer='all',
+                           step='all')
+        assert every.shape == (2, 2)
+        assert every[1] == pytest.approx(every[0]*math.sqrt(2))
+        assert step_values(geom, outer='all')['freq'] == \
+            pytest.approx(every)
+        with pytest.raises(ValueError, match='different steps'):
+            step_values(geom)
+    finally:
+        client.remove(model)
+
+
+def test_material_sweep(fresh):
+    model, geom = fresh()
+    materials = mk.component_of(geom).java.material()
+    for tag in list(materials.tags()):
+        materials.remove(tag)
+    switch = materials.create('sw1', 'Switch')
+    switch.selection().all()
+    for tag, conductivity in (('ma', '10'), ('mb', '90')):
+        material = switch.feature().create(tag, 'Common')
+        group = material.propertyGroup('def')
+        for key, value in (('thermalconductivity', conductivity),
+                           ('density', '7850'), ('heatcapacity', '475')):
+            group.set(key, value)
+    study = (model/'studies').create(name='materials')
+    study.create('Stationary')
+    swept = study.java.create('matsw', 'MaterialSweep')
+    swept.set('pname', ['matsw.comp1.sw1'])
+    swept.set('plistarr', ['1 2'])
+    model.solve()
+    assert outer_values(geom) == [{'matsw.comp1.sw1': 1.0},
+                                  {'matsw.comp1.sw1': 2.0}]
+    with pytest.raises(ValueError, match=r'1: matsw.comp1.sw1=1.0 \[.*\]; '
+                                         r'2: matsw.comp1.sw1=2.0 \['):
+        mk.integral(geom, 'domain', '1')
+    hot = mk.sel.box(geom, 'boundary', x=0)
+    flux = mk.integral(geom, 'boundary', 'ht.ntflux', hot, outer='all')
+    assert flux == pytest.approx([-10/45*18, -90/45*18])
+
+
+############
+# Geometry #
+############
+
+def test_remeshed(fresh):
+    model, geom = fresh()
+    transient(model, values='100 200')
+    (model/'meshes'/'mesh').java.autoMeshSize(3)
+    model.mesh()
+    hot = mk.sel.box(geom, 'boundary', x=0)
+    assert mk.average(geom, 'boundary', 'T', hot, unit='degC',
+                      outer='all', step='last') == pytest.approx([100, 200])
+
+
+def test_mesh_sweep(fresh):
+    model, geom = fresh()
+    model.parameter('hm', '0.02')
+    size = (model/'meshes'/'mesh').create('Size')
+    size.property('custom', 'on')
+    size.property('hmaxactive', True)
+    size.property('hmax', 'hm')
+    (model/'meshes'/'mesh').create('FreeTet')
+    study = (model/'studies').create(name='mesh sweep')
+    study.create('Stationary')
+    sweep(study, '0.02 0.01', 'hm', 'm')
+    model.solve()
+    assert outer_values(geom) == pytest.approx([{'hm': 0.02}, {'hm': 0.01}])
+    hot = mk.sel.box(geom, 'boundary', x=0)
+    assert mk.average(geom, 'boundary', 'T', hot, unit='degC',
+                      outer='all') == pytest.approx([100, 100])
+
+
+def test_stale(fresh):
+    model, geom = fresh()
+    transient(model, values='100 200')
+    block = geom/'Block 1'
+    block.property('size', ['0.2', '0.05', '0.01'])
+    with pytest.raises(RuntimeError, match=r'Geometry ".*" is not built; '
+                       r'run model.build\(geom\), and if it changed'):
+        mk.average(geom, 'domain', 'T', outer=1, step='last')
+    model.build(geom)
+    model.mesh()
+    with pytest.raises(RuntimeError, match=r'changed since the solve; run '
+                       r'model.build\(geom\), model.mesh\(\) and '
+                       r'model.solve\(\)'):
+        mk.average(geom, 'domain', 'T', outer=1, step='last')
+
+
+##################
+# Without COMSOL #
+##################
+
+@pytest.mark.parametrize('built, requested, others, expected', [
+    (True, ['same', 'same'], 'differ', 'full'),
+    (True, ['same', 'unknown'], 'same', 'unknown'),
+    (False, ['unknown'], 'same', 'unknown'),
+    (True, ['same', 'different'], 'differ', 'sweep'),
+    (True, ['different'], 'same', 'stale'),
+    (True, ['different'], 'single', 'stale-single'),
+    (False, ['different'], 'differ', 'sweep'),
+    (False, ['different'], 'same', 'unbuilt'),
+    (False, ['different'], 'single', 'unbuilt-single')])
+def test_decide(built, requested, others, expected):
+    asked = []
+
+    def compare():
+        asked.append(True)
+        return others
+    assert mk._sweep.decide(built, requested, compare) == expected
+    # the other values are only read when needed
+    assert bool(asked) == (expected not in ('full', 'unknown'))
+
+
+def test_same_points():
+    same = mk._sweep.same_points
+    points = numpy.array([[0, 0, 0], [0.1, 0, 0], [0, 0.05, 0.01]])
+    assert same(points, points[[2, 0, 1]])
+    assert same(points, points + 1e-15)
+    assert not same(points, points + [1e-6, 0, 0])
+    assert not same(points, points[:2])
+    # rows that sort apart within the tolerance
+    near = numpy.array([[1, 2], [1 + 1e-14, 1]])
+    assert same(near, numpy.array([[1 + 1e-14, 2], [1, 1]]))
+
+
+class Solution:
+    """Stands in for a Java solution with steps."""
+
+    def __init__(self, names, real, imag=None):
+        self.names, self.real, self.imag = names, real, imag
+
+    def getPNames(self):
+        return self.names
+
+    def getPVals(self):
+        return self.real
+
+    def getPValsImag(self):
+        return self.imag
+
+    def getSolutioninfo(self):
+        count = max(1, len(self.real)//max(1, len(self.names)))
+        info = type('Info', (), {})()
+        info.getSolnum = lambda *args: list(range(1, count + 1))
+        return info
+
+
+class Model:
+    """Stands in for a Java model with solutions by tag."""
+
+    def __init__(self, **solutions):
+        self.solutions = solutions
+
+    def sol(self, tag):
+        return self.solutions[tag]
+
+
+def test_same_steps():
+    same = mk._sweep.same_steps
+    model = Model(a=Solution(['t'], [0, 1, 2]), b=Solution(['t'], [0, 1, 2]),
+                  c=Solution(['t'], [0, 1, 2.5]), d=Solution(['t'], [0, 1]),
+                  e=Solution(['t'], [0, 1, 2 + 1e-12]),
+                  f=Solution(['lambda'], [0, 0], [-1, -2]),
+                  g=Solution(['lambda'], [0, 0], [-3, -4]),
+                  h=Solution([''], [0]), i=Solution([''], [0]),
+                  j=Solution(['Th', 'k'], [1, 10, 1, 90]),
+                  k=Solution(['k', 'Th'], [10, 1, 90, 1]))
+    assert same(model, ['a', 'b', 'e'])
+    assert not same(model, ['a', 'c'])
+    assert not same(model, ['a', 'd'])
+    assert same(model, ['f', 'g'])
+    assert not same(model, ['f', 'g'], strict=True)
+    assert same(model, ['f'], strict=True)
+    assert same(model, ['h', 'i'], strict=True)
+    assert same(model, ['j', 'j'])
+    assert not same(model, ['j', 'k'])
+
+
+def test_named_steps():
+    named = mk._sweep._step_table
+    table = named(Solution(['Th', 'k'], [1, 10, 2, 90, 3, 10]))
+    assert table['Th'] == pytest.approx([1, 2, 3])
+    assert table['k'] == pytest.approx([10, 90, 10])
+    assert named(Solution([''], [0])) == {}
+    with pytest.raises(RuntimeError, match='3 step values for 2 names'):
+        named(Solution(['Th', 'k'], [1, 10, 2]))
+
+
+def test_listed():
+    labels = [f'Th={n}' for n in range(1, 11)]
+    assert mk._sweep.listed(labels[:3]) == '1: Th=1; 2: Th=2; 3: Th=3'
+    assert mk._sweep.listed(labels) == ('1: Th=1; 2: Th=2; 3: Th=3; 4: Th=4; '
+                                        '5: Th=5; ...; 9: Th=9; 10: Th=10')

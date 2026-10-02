@@ -27,6 +27,20 @@ def check(geom: Node, flag: bool, step: int | str) -> None:
     assert_type(mk.minimum(geom, 'domain', 'T', step='all', position=True),
                 tuple[NDArray[Any], NDArray[Any]])
     assert_type(mk.value(geom, 'T', (0, 0, 0)), float | NDArray[Any])
+    assert_type(mk.average(geom, 'domain', 'T', outer=2, step='last'), float)
+    assert_type(mk.average(geom, 'domain', 'T', outer='all', step='last'),
+                NDArray[Any])
+    assert_type(mk.integral(geom, 'domain', 'T', outer=[1]), NDArray[Any])
+    assert_type(mk.average(geom, 'domain', 'T', outer=numpy.arange(1, 3)),
+                NDArray[Any])
+    assert_type(mk.average(geom, 'domain', 'T', outer=2, step='all'),
+                NDArray[Any])
+    assert_type(mk.maximum(geom, 'domain', 'T', outer='all', position=True),
+                tuple[NDArray[Any], NDArray[Any]])
+    assert_type(mk.minimum(geom, 'domain', 'T', outer='first',
+                           position=True), tuple[float, NDArray[Any]])
+    assert_type(mk.outer_values(geom), list[dict[str, float]])
+    assert_type(mk.step_values(geom, outer=2), dict[str, NDArray[Any]])
     assert_type(mk.plot(geom, 'T', 'T.png', view='top', step='last'), Path)
     assert_type(mk.image(geom, 'mesh.png', mesh=True), Path)
     assert_type(mk.physics_types(geom, search='heat'), list[dict])
@@ -45,6 +59,7 @@ def check(geom: Node, flag: bool, step: int | str) -> None:
                 Node)
     # values not known before the call
     mk.average(geom, 'domain', 'T', step=step)
+    mk.average(geom, 'domain', 'T', outer=step, step='last')
     mk.maximum(geom, 'domain', 'T', position=flag)
     if mk.integral(geom, 'domain', 'T') > 0:
         pass

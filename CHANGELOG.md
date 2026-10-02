@@ -19,8 +19,12 @@ until 1.0, a minor release (0.2, 0.3, ...) may change the API. See
   model. `dataset=` also takes the study that made it. They refuse the
   results of a study whose last solve failed, and the copy of a
   parametric sweep's last value, pointing to the sweep's dataset.
-  `mk.outer_values` gives the parameter values of a sweep stored as an
-  outer loop, in SI units.
+  Parametric sweeps that COMSOL stores as an outer loop (around a
+  time-dependent, frequency-domain or eigenvalue study, or over a mesh
+  or material) are read with `outer=`, in the forms of `step=`, each
+  value from its own solution; `mk.outer_values` gives their parameter
+  values and `mk.step_values` the times, frequencies or parameter values
+  of the steps by name, both in SI units.
 - Unknown names such as `mk.volume_integral`, `mk.mphint2` or `mk.probe`
   suggest the results helpers; `mk.evaluate` points to MPh's
   `model.evaluate`.

@@ -197,7 +197,7 @@ def test_errors(solved):
 @pytest.mark.parametrize('key, hint', [
     ('expr', 'expression'), ('data', 'dataset='),
     ('solnum', 'step='), ('innerinput', 'step='), ('t', 'step='),
-    ('outersolnum', 'outer loop'), ('dataseries', "step='all'"),
+    ('outersolnum', 'outer='), ('dataseries', "step='all'"),
     ('includepos', 'position='), ('table', 'temporary')])
 def test_reserved(solved, key, hint):
     geom, faces = solved
@@ -375,8 +375,9 @@ def test_time_dependent(fresh):
     study = (model/'studies').create(name='transient')
     study.create('Transient').property('tlist', 'range(0,1,4)')
     model.solve()
-    with pytest.raises(ValueError, match=r'"transient//Solution 1" has 5 '
-                       r"steps; pass step='last'.*model.inner\("):
+    with pytest.raises(ValueError, match=r'"transient//Solution 1" '
+                       r"\(dset1\) has 5 steps; pass step='last'.*"
+                       r'mk.step_values\(geom\) gives'):
         mk.average(geom, 'domain', 'T')
     every = mk.average(geom, 'domain', 'T', step='all')
     assert every.shape == (5,)
@@ -441,9 +442,11 @@ def test_sweep_with_outer_loop(fresh):
     sweep.property('punit', ['degC'])
     model.solve()
     for dataset in (None, 'dset2'):
-        with pytest.raises(NotImplementedError, match='outer loop are not '
-                                                      'supported yet'):
+        with pytest.raises(ValueError, match='sweep over 2 values'):
             mk.average(geom, 'domain', 'T', step='last', dataset=dataset)
+        assert mk.average(geom, 'boundary', 'T', faces['hot'], unit='degC',
+                          step='last', outer='last', dataset=dataset) == \
+            pytest.approx(200)
     with pytest.raises(ValueError, match='holds only the last value'):
         mk.average(geom, 'domain', 'T', step='last', dataset='dset1')
 
