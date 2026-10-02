@@ -624,3 +624,62 @@ def test_listed():
     assert mk._sweep.listed(labels[:3]) == '1: Th=1; 2: Th=2; 3: Th=3'
     assert mk._sweep.listed(labels) == ('1: Th=1; 2: Th=2; 3: Th=3; 4: Th=4; '
                                         '5: Th=5; ...; 9: Th=9; 10: Th=10')
+
+
+def title(expected, candidates, number=2, switches=()):
+    """A title to check, as `Sweep.title` makes it."""
+    return mk._sweep.Title(number, expected, candidates, list(switches),
+                           'outer=k')
+
+
+@pytest.mark.parametrize('indicator, number, expected, candidates, '
+                         'switches, problem', [
+    ('Th(2)=1000 degC Time=21.6 s', 2, {'Th': 1000}, {'Th': [100, 1000]},
+     (), None),
+    ('Th(2)=1000 degC Time=21.6 s', 1, {'Th': 100}, {'Th': [100, 1000]},
+     (), 'wrong'),
+    ('Th=100 degC, k=90 W/m/K Time=10 s', 3, {'Th': 100, 'k': 90},
+     {'Th': [100, 100, 200, 200], 'k': [10, 90, 10, 90]}, (), None),
+    ('Th=100 degC, k=90 W/m/K Time=10 s', 1, {'Th': 100, 'k': 10},
+     {'Th': [100, 100, 200, 200], 'k': [10, 90, 10, 90]}, (), 'wrong'),
+    ('k=10 W/m/K, Th=200 degC Time=10 s', 2, {'k': 10, 'Th': 200},
+     {'k': [10, 10], 'Th': [100, 200]}, (), None),
+    ('a(2)=2 lambda(3)=32.083 rad/s', 2, {'a': 2}, {'a': [1, 2]}, (), None),
+    ('Th(2)=200 degC k(1)=10 W/m/K', 2, {'Th': 200}, {'Th': [100, 200]},
+     (), None),
+    ('k(2)=90 W/m/K Th(1)=100 degC', 2, {'k': 90}, {'k': [10, 90]}, (),
+     None),
+    ('hm(2)=0.005 m', 2, {'hm': 0.005}, {'hm': [0.01, 0.005]}, (), None),
+    ('dT(4)=5.5511E-17 K Time=10 s', 4, {'dT': 5.551115123125783e-17},
+     {'dT': [-0.2, -0.1, 0.1, 5.551115123125783e-17]}, (), None),
+    ('W(2)=133.33 mm', 2, {'W': 133.33333333}, {'W': [100, 133.33333333]},
+     (), None),
+    ('Th(2)=100.12 degC', 2, {'Th': 100.124},
+     {'Th': [100.123456789, 100.124]}, (), None),
+    ('p0(2)=2 kPa freq(1)=100 Hz', 2, {'p0': 2}, {'p0': [1, 2]}, (), None),
+    ('Th(1)=300 degC Time=10 s', 1, {'Th': 300}, {'Th': [300]}, (), None),
+    ('Th(1)=300 degC Time=10 s', 1, {'Th': 200}, {'Th': [200]}, (),
+     'wrong'),
+    ('Th(2)=200 degC Time=1 s', 2, {'Th': 200}, {'Th': [100, 200, 300]},
+     (), None),
+    ('Material Switch 1(2)=Material 2 Time=10 s', 2, {}, {},
+     [('Material Switch 1', 'Material 2')], None),
+    ('Material Switch 1(2)=Material 2 Time=10 s', 2, {}, {},
+     [('Material Switch 1', 'Material')], 'wrong'),
+    ('Th=200 degC, Material Switch 1=Material Time=10 s', 3, {'Th': 200},
+     {'Th': [100, 100, 200, 200]}, [('Material Switch 1', 'Material')],
+     None),
+    ('Th=200 degC, Material Switch 1=Material Time=10 s', 4, {'Th': 200},
+     {'Th': [100, 100, 200, 200]}, [('Material Switch 1', 'Material 2')],
+     'wrong'),
+    ('Th=200 degC, Material Switch 1=Material 2', 4, {'Th': 200},
+     {'Th': [100, 100, 200, 200]}, [('Material Switch 1', 'Material 2')],
+     None),
+    ('Function Switch 1(2)=Analytic 2 Time=10 s', 2, {}, {},
+     [('Function Switch 1', 'Analytic 2')], None),
+    ('Time=10 s', 2, {'Th': 200}, {'Th': [100, 200]}, (), 'missing'),
+    ('', 2, {}, {}, [('Material Switch 1', 'Material 2')], 'missing')])
+def test_title(indicator, number, expected, candidates, switches, problem):
+    found = mk._sweep.title_problem(
+        indicator, title(expected, candidates, number, switches))
+    assert found == problem

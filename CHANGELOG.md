@@ -31,7 +31,10 @@ until 1.0, a minor release (0.2, 0.3, ...) may change the API. See
 - `mk.plot` saves a picture of an expression on a solved model: on the
   surface, on a selection, on slices (`x=`, `y=`, `z=`), seen from a side
   (`view='top'`, ...) or on the deformed shape (`deform=True`), with the
-  checks of the results helpers, and leaves nothing in the model.
+  checks of the results helpers, and leaves nothing in the model. With
+  `outer=` it draws values of a parametric sweep stored as an outer
+  loop, one picture each (`'T_{outer}.png'`), and checks that the title
+  shows the value asked for. An error leaves existing files as they were.
 - `mk.image(geom, filename, mesh=True)` saves a picture of the mesh,
   coloured by element quality, also of a selection only.
 - Unknown names such as `mk.mphplot`, `mk.slice` or `mk.surface_plot`

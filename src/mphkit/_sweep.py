@@ -12,6 +12,7 @@ swept over other parameters keeps them as steps instead.
 from __future__ import annotations
 
 import math
+import re
 from collections.abc import Callable
 from typing import Any, NamedTuple
 
@@ -32,6 +33,9 @@ SHOWN = (5, 2)
 # vertex coordinates
 TOLERANCE = 1e-9
 COORDINATES = 1e-12
+
+# a number as COMSOL prints it in plot titles, e.g. 133.33 or 5.5511E-17
+NUMBER = r'([-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?)'
 
 Array = NDArray[Any]
 
@@ -287,6 +291,33 @@ class Sweep:
         """Tells whether it sweeps materials only (no geometry change)."""
         return all(name.startswith('matsw.') for name in self.names)
 
+    def swept(self, k: int) -> dict[str, float]:
+        """
+        Returns the outer values of `k` (from 1) as swept, e.g. in degC,
+        by name; COMSOL gives them in the order of the child's names.
+        """
+        info = self.model.sol(self.tag).getSolutioninfo()
+        row = [float(v) for v in info.getPvals([[self.numbers[k - 1], 1]])[0]]
+        names = _datasets.param_names(self.model.sol(self.children[k - 1]))
+        return {name: number for name, number in zip(names, row)
+                if name in self.names}
+
+    def title(self, k: int, data) -> Title:
+        """What the title of a picture of outer value `k` must show."""
+        every = [self.swept(n) for n in range(1, len(self.children) + 1)]
+        plain = [name for name in every[k - 1]
+                 if not name.startswith(SWITCHES)]
+        label = str(self.model.sol(self.children[k - 1]).label())
+        switches = []
+        for part in label.split(', '):
+            left, _, right = part.partition('=')
+            if left not in plain and right:
+                switches.append((left, right))
+        return Title(self.numbers[k - 1],
+                     {name: every[k - 1][name] for name in plain},
+                     {name: [row[name] for row in every] for name in plain},
+                     switches, self.where(data, k))
+
 
 class Target(NamedTuple):
     """A dataset to evaluate and its steps, in the order asked."""
@@ -330,6 +361,31 @@ def resolve(create, geom: Node, dataset, step, outer) -> Request:
     sweep = Sweep(model, str(data.getString('solution')))
     positions, many_outer = pick(outer, sweep, data, step)
     unique, order = _results._unique(positions)
+    found = _steps(sweep, data, unique, step, dataset, None)
+    children = Children(create, geom, sweep, data)
+    decision = check(geom, sweep, children, unique, data)
+    where = f'dataset {_datasets.describe(data)}'
+    if decision == 'unknown':
+        raise NotImplementedError(
+            f'The solution of {where} covers part of the geometry only (no '
+            'physics on the rest): reading it is not supported yet.')
+    if decision == 'sweep':
+        raise NotImplementedError(f'The sweep of {where} changes the '
+                                  'geometry: reading it is not supported '
+                                  'yet.')
+    targets = [Target(str(children.dataset(k).tag()), found[k][0],
+                      f'outer={k} ({sweep.labels[k - 1]})') for k in unique]
+    return Request(targets, order, many_outer, found[unique[0]][1])
+
+
+def _steps(sweep: Sweep, data, unique: list[int], step, dataset,
+           single: str | None) -> dict[int, tuple[list[int], bool]]:
+    """
+    Returns, for each requested outer value, the steps `step` stands for
+    and whether it asks for several. Several values need the same steps,
+    unless `step` is `'first'` or `'last'`.
+    """
+    model = sweep.model
     several = len(unique) > 1 and not (isinstance(step, str)
                                        and step in ('first', 'last'))
     if several and not same_steps(model, [sweep.children[k - 1]
@@ -341,17 +397,145 @@ def resolve(create, geom: Node, dataset, step, outer) -> Request:
             "'first' or 'last', or one outer value at a time, e.g. "
             f'outer={unique[0]} ({_call("step_values", dataset)[:-1]}, '
             f'outer={unique[0]}) gives its steps).')
-    found: dict[int, tuple[list[int], bool]] = {}
-    for k in unique:
-        found[k] = _results.steps(
-            step, sweep.count(k), sweep.where(data, k),
-            hint=f' ({_call("step_values", dataset)[:-1]}, outer={k}) '
-                 f'gives them: {_preview(model, sweep.children[k - 1])})')
+    return {k: _results.steps(
+        step, sweep.count(k), sweep.where(data, k), single=single,
+        hint=f' ({_call("step_values", dataset)[:-1]}, outer={k}) gives '
+             f'them: {_preview(model, sweep.children[k - 1])})')
+            for k in unique}
+
+
+class Picture(NamedTuple):
+    """One picture to draw of a dataset."""
+    data: Any
+    outer: int | None   # COMSOL's outer solution number (`outersolnum`)
+    step: int | None    # the step (`looplevel`), None if there is one
+    number: int | None  # the outer value, counted from 1 as in `outer=`
+    title: Title | None  # what its title must show
+
+
+class Title(NamedTuple):
+    """What the title of a picture of one outer value must show."""
+    number: int  # COMSOL's outer solution number
+    expected: dict[str, float]  # values as swept, by name
+    candidates: dict[str, list[float]]  # those of all values, by name
+    switches: list[tuple[str, str]]  # e.g. ('Material Switch 1', 'Steel')
+    where: str
+
+
+def pictures(create, geom: Node, dataset, step, outer
+             ) -> tuple[list[Picture], bool]:
+    """
+    Returns what to draw for `dataset`, `step` and `outer`, a picture per
+    outer value, and whether `outer` asks for several. A sweep's pictures
+    are drawn from its dataset, so every value must have been solved on
+    the geometry as built.
+    """
+    model = geom.model.java
+    chosen = _datasets.select(geom, dataset)
+    data = chosen.java
+    if chosen.kind == 'plain':
+        if outer is not None:
+            raise no_outer(model, data, outer, None, dataset)
+        _results.check_current(geom)
+        count = _datasets.step_count(model, data)
+        solnums, _ = _results.steps(
+            step, count, f'Dataset {_datasets.describe(data)}',
+            single='plot',
+            hint=f' ({_call("step_values", dataset)} gives their times or '
+                 'parameter values)')
+        return [Picture(data, None, solnums[0] if count > 1 else None,
+                        None, None)], False
+    sweep = Sweep(model, str(data.getString('solution')))
+    positions, many = pick(outer, sweep, data, step)
+    twice = sorted({k for k in positions if positions.count(k) > 1})
+    if twice:
+        raise ValueError(f'outer asks for value {twice[0]} more than once; '
+                         'mk.plot draws one picture per value.')
+    found = _steps(sweep, data, positions, step, dataset, 'plot')
     children = Children(create, geom, sweep, data)
-    check(geom, sweep, children, unique, data)
-    targets = [Target(str(children.dataset(k).tag()), found[k][0],
-                      f'outer={k} ({sweep.labels[k - 1]})') for k in unique]
-    return Request(targets, order, many_outer, found[unique[0]][1])
+    decision = check(geom, sweep, children, positions, data)
+    if decision == 'full' and not sweep.materials():
+        current = vertices(geom)
+        for k in range(1, len(sweep.children) + 1):
+            points = children.points(k)
+            if points is None:
+                decision = 'unknown'
+                break
+            if not same_points(points, current):
+                decision = 'sweep'
+                break
+    where = f'dataset {_datasets.describe(data)}'
+    if decision == 'unknown':
+        raise RuntimeError(
+            f'The solution of {where} covers part of the geometry only (no '
+            'physics on the rest), so it cannot be checked against the '
+            'geometry as built; for pictures, mesh all domains with a mesh '
+            'of your own (not physics-controlled) and solve again.')
+    if decision == 'sweep':
+        raise ValueError(
+            f'The sweep of {where} changes the geometry, and mk.plot draws '
+            'on the geometry as built. To draw one value, set its '
+            'parameters (mk.outer_values(geom)), run model.build(geom) and '
+            'model.mesh(), and solve a study without the sweep.')
+    return [Picture(data, sweep.numbers[k - 1],
+                    found[k][0][0] if sweep.count(k) > 1 else None, k,
+                    sweep.title(k, data)) for k in positions], many
+
+
+def title_problem(indicator: str, title: Title) -> str | None:
+    """
+    Returns `'missing'` if a picture's title (COMSOL's
+    `evaluatedparamindicator`) does not show the outer values, `'wrong'`
+    if it shows others than `title` expects, else `None`. COMSOL prints
+    the values as swept, rounded, e.g. "Th(2)=200 degC Time=10 s"; the
+    number in parentheses is its outer solution number.
+    """
+    for name, value in title.expected.items():
+        found = list(re.finditer(rf'(?<![\w.]){re.escape(name)}'
+                                 rf'(?:\((\d+)\))?=\s*{NUMBER}', indicator))
+        if not found:
+            return 'missing'
+        for match in found:
+            if (match.group(1) is not None
+                    and int(match.group(1)) != title.number):
+                return 'wrong'
+            if not _printed_as(match.group(2), value,
+                               title.candidates[name]):
+                return 'wrong'
+    for left, right in title.switches:
+        found = list(re.finditer(rf'(?<![\w.]){re.escape(left)}'
+                                 r'(?:\((\d+)\))?=', indicator))
+        if not found:
+            return 'missing'
+        for match in found:
+            if (match.group(1) is not None
+                    and int(match.group(1)) != title.number):
+                return 'wrong'
+            # the name ends the title, an item, or comes before the next
+            if not re.match(rf'{re.escape(right)}(?=$|,|\s+[^\s=,]+=)',
+                            indicator[match.end():]):
+                return 'wrong'
+    return None
+
+
+def _printed_as(text: str, value: float, candidates: list[float]) -> bool:
+    """
+    Tells whether `value` printed with the digits of `text` gives it, or
+    is the closest to it among the values of all outer values.
+    """
+    printed = float(text)
+    mantissa, _, exponent = text.lower().partition('e')
+    decimals = len(mantissa.partition('.')[2])
+    half = 0.5 * 10.0**(int(exponent or 0) - decimals)
+    if abs(printed - value) <= half*(1 + 1e-9):
+        return True
+    if len(candidates) < 2:
+        return abs(printed - value) <= max(1e-3*abs(value), 1e-12)
+    distances = [abs(c - printed) for c in candidates]
+    best = min(distances)
+    return any(abs(c - value) <= 1e-12*abs(value)
+               for c, d in zip(candidates, distances)
+               if d <= best*(1 + 1e-9))
 
 
 def pick(outer, sweep: Sweep, data, step) -> tuple[list[int], bool]:
@@ -559,8 +743,8 @@ def check(geom: Node, sweep: Sweep, children: Children, unique: list[int],
           data) -> str:
     """
     Checks that the requested outer values were solved on the geometry
-    as built, and returns the decision (see `decide()`); raises for the
-    rest.
+    as built, and returns the decision (see `decide()`): `'full'`,
+    `'sweep'` or `'unknown'`; raises for the rest.
     """
     if sweep.materials():
         _results.check_current(geom)
@@ -610,12 +794,7 @@ def check(geom: Node, sweep: Sweep, children: Children, unique: list[int],
             f'Geometry "{geom}" is not built; set the parameters to the '
             f"sweep's value ({sweep.labels[-1]}, see mk.outer_values(geom)) "
             'and run model.build(geom).')
-    if decision == 'unknown':
-        raise NotImplementedError(
-            f'The solution of {where} covers part of the geometry only (no '
-            'physics on the rest): reading it is not supported yet.')
-    raise NotImplementedError(f'The sweep of {where} changes the geometry: '
-                              'reading it is not supported yet.')
+    return decision
 
 
 #########

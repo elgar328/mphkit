@@ -42,6 +42,8 @@ def check(geom: Node, flag: bool, step: int | str) -> None:
     assert_type(mk.outer_values(geom), list[dict[str, float]])
     assert_type(mk.step_values(geom, outer=2), dict[str, NDArray[Any]])
     assert_type(mk.plot(geom, 'T', 'T.png', view='top', step='last'), Path)
+    assert_type(mk.plot(geom, 'T', 'T.png', outer=2, step='last'), Path)
+    assert_type(mk.plot(geom, 'T', 'T_{outer}.png', outer='all'), list[Path])
     assert_type(mk.image(geom, 'mesh.png', mesh=True), Path)
     assert_type(mk.physics_types(geom, search='heat'), list[dict])
     assert_type(mk.feature_types(geom, search='flux'), list[dict])

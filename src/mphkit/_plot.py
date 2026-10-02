@@ -17,7 +17,7 @@ import os
 import tempfile
 from difflib import get_close_matches
 from pathlib import Path
-from typing import Literal
+from typing import Literal, overload
 
 import numpy
 from mph.node import Node
@@ -37,15 +37,40 @@ View = Literal['top', 'bottom', 'front', 'back', 'left', 'right', 'iso']
 # The slice plane across each axis
 PLANES = {'x': 'yz', 'y': 'zx', 'z': 'xy'}
 
+# Stands for the outer value's number in file names
+PLACEHOLDER = '{outer}'
+
 # The displacement a deformed plot uses, by kind of geometry
 DISPLACEMENT = {3: '(u, v, w)', 2: '(u, v)', 'axisymmetric': '(u, w)'}
 
 
+@overload
 def plot(geom: Node, expr: str, filename, /, selection: Node | None = None,
          *, unit: str | None = None, dataset=None, step: _results.One = None,
-         x=None, y=None, z=None, view: View | None = None,
-         color_range=None, colortable: str | None = None,
-         deform: bool | float = False, size=(800, 600)) -> Path:
+         outer: _results.OuterOne = None, x=None, y=None, z=None,
+         view: View | None = None, color_range=None,
+         colortable: str | None = None, deform: bool | float = False,
+         size=(800, 600)) -> Path: ...
+@overload
+def plot(geom: Node, expr: str, filename, /, selection: Node | None = None,
+         *, unit: str | None = None, dataset=None, step: _results.One = None,
+         outer: _results.OuterMany, x=None, y=None, z=None,
+         view: View | None = None, color_range=None,
+         colortable: str | None = None, deform: bool | float = False,
+         size=(800, 600)) -> list[Path]: ...
+@overload
+def plot(geom: Node, expr: str, filename, /, selection: Node | None = None,
+         *, unit: str | None = None, dataset=None, step: _results.One = None,
+         outer: _results.Outer = None, x=None, y=None, z=None,
+         view: View | None = None, color_range=None,
+         colortable: str | None = None, deform: bool | float = False,
+         size=(800, 600)) -> Path | list[Path]: ...
+def plot(geom: Node, expr: str, filename, /, selection: Node | None = None,
+         *, unit: str | None = None, dataset=None, step: _results.One = None,
+         outer: _results.Outer = None, x=None, y=None, z=None,
+         view: View | None = None, color_range=None,
+         colortable: str | None = None, deform: bool | float = False,
+         size=(800, 600)) -> Path | list[Path]:
     """
     Saves a picture of an expression on a solved model and returns the file
     path, e.g. to look at a temperature field without the COMSOL Desktop,
@@ -86,11 +111,21 @@ def plot(geom: Node, expr: str, filename, /, selection: Node | None = None,
     picks and does not show; a number sets the scale, 1 for the true
     shape. The undeformed outline stays in the picture.
 
-    `unit`, `dataset` and `step` work as in `mk.integral`, but a picture
-    shows one step: `'first'`, `'last'` or a number. A selection set on
-    the solution dataset in the COMSOL Desktop also limits the picture.
-    `size` and the file type work as in `mk.image`. The model is left as
-    it was.
+    `unit`, `dataset`, `step` and `outer` work as in `mk.integral`, but a
+    picture shows one step: `'first'`, `'last'` or a number. Several
+    outer values (`outer='all'` or a list) give a picture each, in a list
+    of paths; `{outer}` in the file name stands for the value's number,
+    e.g. `mk.plot(geom, 'T', 'T_{outer}.png', outer='all', step='last')`
+    (a plain string, not an f-string). The title shows the value, checked
+    against the one asked for. A sweep that changes the geometry is not
+    drawn: every value must have been solved on the geometry as built.
+    A selection set on the solution dataset in the COMSOL Desktop also
+    limits the picture. `size` and the file type work as in `mk.image`.
+
+    Pictures are drawn to temporary files next to them and replace the
+    files once checked, so an error leaves existing files as they were
+    (unless replacing several fails halfway). The model is left as it
+    was.
     """
     name = 'plot'
     if (isinstance(expr, os.PathLike) or isinstance(filename, Node)
@@ -118,19 +153,15 @@ def plot(geom: Node, expr: str, filename, /, selection: Node | None = None,
         raise ValueError('Slices and views are for 3D geometries.')
     if slices is not None and scale is not None:
         raise ValueError('deform= draws on surfaces; leave out x/y/z.')
+    _results.steps(outer, None, '', what='outer')
     model = geom.model.java
-    data = _datasets.solved_dataset(geom, dataset)
-    _results.check_current(geom)
-    count = _datasets.step_count(model, data)
-    solnums, _ = _results.steps(
-        step, count, f'Dataset {_datasets.describe(data)}', single=name,
-        hint=f' ({_sweep._call("step_values", dataset)} gives their times '
-             'or parameter values)')
-    level, entities = None, None
-    if selection is not None:
-        level, _, entities = _image.drawn_selection(geom, selection)
-        _check_level(selection, level, sdim, slices is not None)
     with _datasets.scratch(model) as create:
+        pictures, many = _sweep.pictures(create, geom, dataset, step, outer)
+        files = _files(filename, path, pictures, many)
+        level, entities = None, None
+        if selection is not None:
+            level, _, entities = _image.drawn_selection(geom, selection)
+            _check_level(selection, level, sdim, slices is not None)
         # measuring the domains goes into the history otherwise
         facts = summary(geom)
         if slices is not None:
@@ -141,53 +172,141 @@ def plot(geom: Node, expr: str, filename, /, selection: Node | None = None,
             view_tag = 'auto' if shown is None else str(shown.tag())
         else:
             view_tag = _temporary_view(create, geom, facts, view)
-        # the step only matters, and was only tried, with several steps
-        level_step = solnums[0] if count > 1 else None
-        group, feature = _group(create, model, geom, data, level_step,
-                                view_tag, expr, unit, slices, level,
-                                entities)
-        if scale is not None:
-            _deform(feature, scale, geom)
-        if limits is not None:
-            for key, value in (('rangecoloractive', 'on'),
-                               ('rangecolormin', repr(limits[0])),
-                               ('rangecolormax', repr(limits[1]))):
-                _comsol.set_property(feature, key, value)
-        if colortable is not None:
-            _comsol.set_property(feature, 'colortable',
-                                 _colortable(feature, colortable))
-        _draw(create, model, group, path, pixels, sdim, expr, slices)
-        if unit is not None:
-            applied = str(feature.getString('rangeunit'))
-            if applied != unit:
-                # the unit COMSOL uses without one, in a group of its own so
-                # that the picture keeps a single plot
-                plain, plain_feature = _group(
-                    create, model, geom, data, level_step, view_tag, expr,
-                    None, slices, level, entities)
-                with tempfile.TemporaryDirectory() as folder:
-                    _draw(create, model, plain, Path(folder)/'unit.png',
-                          (64, 48), sdim, expr, slices)
-                if str(plain_feature.getString('rangeunit')) == applied:
-                    path.unlink(missing_ok=True)
-                    raise _results.unit_error(expr, applied, unit)
-    return path
+        drawn: list[Path] = []
+        try:
+            for picture, file in zip(pictures, files):
+                # the file is replaced once every picture is checked
+                temporary = _temporary(file)
+                drawn.append(temporary)
+                group, feature = _group(create, model, geom, picture,
+                                        view_tag, expr, unit, slices, level,
+                                        entities)
+                if scale is not None:
+                    _deform(feature, scale, geom)
+                if limits is not None:
+                    for key, value in (('rangecoloractive', 'on'),
+                                       ('rangecolormin', repr(limits[0])),
+                                       ('rangecolormax', repr(limits[1]))):
+                        _comsol.set_property(feature, key, value)
+                if colortable is not None:
+                    _comsol.set_property(feature, 'colortable',
+                                         _colortable(feature, colortable))
+                _draw(create, model, group, temporary, pixels, sdim, expr,
+                      slices)
+                if picture.title is not None:
+                    _check_title(group, picture.title)
+                if unit is not None and len(drawn) == 1:
+                    _check_unit(create, model, geom, picture, view_tag, expr,
+                                unit, slices, level, entities, sdim,
+                                str(feature.getString('rangeunit')))
+            for temporary, file in zip(drawn, files):
+                os.replace(temporary, file)
+        finally:
+            for temporary in drawn:
+                temporary.unlink(missing_ok=True)
+    return files if many else files[0]
 
 
-def _group(create, model, geom: Node, data, step: int | None, view: str,
-           expr: str, unit: str | None, slices, level: int | None,
+def _check_unit(create, model, geom: Node, picture, view: str, expr: str,
+                unit: str, slices, level: int | None, entities: list | None,
+                sdim: int, applied: str):
+    """
+    Raises if COMSOL ignored `unit`: `applied` is the unit it drew in,
+    filled in when drawing. Draws the unit COMSOL uses without one, in a
+    group of its own so that the picture keeps a single plot.
+    """
+    if applied == unit:
+        return
+    plain, plain_feature = _group(create, model, geom, picture, view, expr,
+                                  None, slices, level, entities)
+    with tempfile.TemporaryDirectory() as folder:
+        _draw(create, model, plain, Path(folder)/'unit.png', (64, 48), sdim,
+              expr, slices)
+    if str(plain_feature.getString('rangeunit')) == applied:
+        raise _results.unit_error(expr, applied, unit)
+
+
+def _check_title(group, title):
+    """
+    Raises unless the drawn picture's title shows the outer value asked
+    for: COMSOL fills it in when drawing.
+    """
+    indicator = str(group.getString('evaluatedparamindicator'))
+    problem = _sweep.title_problem(indicator, title)
+    if problem == 'missing':
+        raise RuntimeError(f'COMSOL drew {title.where} without its values in '
+                           f'the title ("{indicator}"), so which value it '
+                           'drew cannot be checked.')
+    if problem == 'wrong':
+        raise RuntimeError(f'COMSOL drew another value than {title.where}: '
+                           f'its title says "{indicator}".')
+
+
+def _files(filename, path: Path, pictures: list, many: bool) -> list[Path]:
+    """
+    Returns the file of each picture: `{outer}` in the file name stands
+    for the outer value's number.
+    """
+    folder, name = os.path.split(os.fspath(filename))
+    if PLACEHOLDER in folder:
+        raise ValueError(f'{PLACEHOLDER} goes in the file name, not in the '
+                         f'folder: "{filename}".')
+    if PLACEHOLDER not in name:
+        if many:
+            example = os.path.join(folder, f'{path.stem}_{PLACEHOLDER}'
+                                           f'{path.suffix}')
+            raise ValueError(f'mk.plot draws a picture per outer value; put '
+                             f'{PLACEHOLDER} in the file name, e.g. '
+                             f'{example!r} (a plain string, not an '
+                             'f-string).')
+        return [path]
+    if pictures[0].number is None:
+        raise ValueError(f'"{name}" has {PLACEHOLDER} for the outer value, '
+                         f'but dataset {_datasets.describe(pictures[0].data)}'
+                         ' has no outer sweep.')
+    return [path.with_name(path.name.replace(PLACEHOLDER,
+                                             str(picture.number)))
+            for picture in pictures]
+
+
+def _temporary(file: Path) -> Path:
+    """
+    Creates an empty file next to `file`, of the same type, to draw into
+    before replacing `file`; makes the folder if needed.
+    """
+    try:
+        file.parent.mkdir(parents=True, exist_ok=True)
+        handle, name = tempfile.mkstemp(dir=file.parent,
+                                        prefix=f'.{file.stem}.',
+                                        suffix=file.suffix)
+    except OSError as error:
+        raise OSError(f'Could not write the picture "{file}": '
+                      f'{error.strerror or error}') from error
+    os.close(handle)
+    return Path(name)
+
+
+def _group(create, model, geom: Node, picture, view: str, expr: str,
+           unit: str | None, slices, level: int | None,
            entities: list | None):
     """
-    Creates a plot group with one surface or slice plot and returns both.
-    The dataset is set first: a new plot group uses the first dataset of
-    the model, whatever its geometry, and a Deform added later takes its
-    displacement from the dataset set by then.
+    Creates a plot group with one surface or slice plot of `picture` and
+    returns both. The dataset is set first: a new plot group uses the
+    first dataset of the model, whatever its geometry, and a Deform added
+    later takes its displacement from the dataset set by then. Of a sweep,
+    the outer value comes next: it fills in the levels of the loop, of
+    which only the first, the step, is changed.
     """
     sdim = _comsol.sdim(geom)
     group = create(model.result(), f'PlotGroup{sdim}D')
-    _comsol.set_property(group, 'data', str(data.tag()))
-    if step is not None:
-        _comsol.set_property(group, 'looplevel', [str(step)])
+    _comsol.set_property(group, 'data', str(picture.data.tag()))
+    if picture.outer is not None:
+        _comsol.set_property(group, 'outersolnum', str(picture.outer))
+    if picture.step is not None:
+        levels = ([str(level) for level in group.getStringArray('looplevel')]
+                  if picture.outer is not None else [''])
+        levels[0] = str(picture.step)
+        _comsol.set_property(group, 'looplevel', levels)
     for key, value in (('view', view), ('edges', 'on'),
                        ('titletype', 'auto')):
         _comsol.set_property(group, key, value)

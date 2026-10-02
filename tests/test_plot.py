@@ -233,7 +233,7 @@ def test_more_plot_errors(solved, tmp_path):
         mk.plot(geom, 'T', tmp_path/'x.png', edges)
     # a folder that cannot be made: its name is taken by a file
     (tmp_path/'file').write_text('', encoding='utf-8')
-    with pytest.raises(OSError, match='could not write the picture'):
+    with pytest.raises(OSError, match='[Cc]ould not write the picture'):
         mk.plot(geom, 'T', tmp_path/'file'/'x.png')
     nothing = mk.sel.box(geom, 'boundary', z=50, name='nothing')
     with pytest.raises(ValueError, match='is empty; nothing to draw'):
@@ -507,3 +507,225 @@ def test_mesh_pictures_2d_and_1d(model, tmp_path):
     model.build(line)
     with pytest.raises(ValueError, match='Mesh pictures are for 2D and 3D'):
         mk.image(line, tmp_path/'x.png', mesh=True)
+
+
+##########
+# Sweeps #
+##########
+
+def sweep(study, values='100 200 300', name='Th', unit='degC'):
+    """Adds a parametric sweep to a study node."""
+    node = study.create('Parametric')
+    node.property('pname', [name])
+    node.property('plistarr', [values])
+    node.property('punit', [unit])
+    return node
+
+
+@pytest.fixture(scope='module')
+def swept(client):
+    """The heat plate swept over Th = 100, 200, 300 degC, time-dependent."""
+    model, geom, faces = heat_plate(client, 'swept plate', study=False)
+    study = (model/'studies').create(name='sweep')
+    study.create('Transient').property('tlist', 'range(0,1,2)')
+    sweep(study)
+    model.solve()
+    yield model, geom
+    client.remove(model)
+
+
+def test_sweep_pictures(swept, tmp_path):
+    model, geom = swept
+    one = mk.plot(geom, 'T', tmp_path/'two.png', outer=2, step='last')
+    assert one == tmp_path/'two.png'
+    every = mk.plot(geom, 'T', str(tmp_path/'T_{outer}.png'), outer='all',
+                    step='last', unit='degC')
+    assert every == [tmp_path/f'T_{n}.png' for n in (1, 2, 3)]
+    pictures = [path.read_bytes() for path in every]
+    assert len(set(pictures)) == 3
+    again = mk.plot(geom, 'T', tmp_path/'again_{outer}.png', outer=[3, 1],
+                    step='last', unit='degC')
+    assert again == [tmp_path/'again_3.png', tmp_path/'again_1.png']
+    assert [path.read_bytes() for path in again] == [pictures[2], pictures[0]]
+    # one value, with or without {outer}
+    assert mk.plot(geom, 'T', tmp_path/'v{outer}.png', outer=2, step='last',
+                   unit='degC') == tmp_path/'v2.png'
+    assert mk.plot(geom, 'T', tmp_path/'list_{outer}.png', outer=[2],
+                   step='last', unit='degC') == [tmp_path/'list_2.png']
+    assert mk.plot(geom, 'T', tmp_path/'first.png', outer=1,
+                   step=1).exists()
+    # no temporary file is left
+    assert not [path for path in tmp_path.iterdir()
+                if path.name.startswith('.')]
+
+
+def test_sweep_picture_errors(swept, tmp_path):
+    model, geom = swept
+    with pytest.raises(ValueError, match=r'sweep over 3 values \(1: '
+                                         r'Th=373.15 \(100 degC\);'):
+        mk.plot(geom, 'T', tmp_path/'x.png', step='last')
+    with pytest.raises(ValueError, match=r"put \{outer\} in the file name, "
+                       r"e.g. '.*x_\{outer\}.png' \(a plain string"):
+        mk.plot(geom, 'T', tmp_path/'x.png', outer='all', step='last')
+    with pytest.raises(ValueError, match='goes in the file name, not in the '
+                                         'folder'):
+        mk.plot(geom, 'T', tmp_path/'{outer}'/'x.png', outer=1, step='last')
+    with pytest.raises(ValueError, match='value 2 more than once'):
+        mk.plot(geom, 'T', tmp_path/'x{outer}.png', outer=[2, 1, 2],
+                step='last')
+    with pytest.raises(ValueError, match="plot\\(\\) draws one step"):
+        mk.plot(geom, 'T', tmp_path/'x.png', outer=1, step='all')
+    with pytest.raises(ValueError, match=r'at outer=2 \(Th=473.15 \(200 '
+                                         r'degC\)\) has 3 steps'):
+        mk.plot(geom, 'T', tmp_path/'x.png', outer=2)
+    # an error leaves existing files as they were
+    keep = tmp_path/'keep_2.png'
+    keep.write_bytes(b'old')
+    with pytest.raises(ValueError, match=r"not 'kg'"):
+        mk.plot(geom, 'T', tmp_path/'keep_{outer}.png', outer=[1, 2],
+                step='last', unit='kg')
+    assert keep.read_bytes() == b'old'
+    assert sorted(path.name for path in tmp_path.iterdir()) == ['keep_2.png']
+
+
+def test_outer_without_sweep(client, tmp_path):
+    model, geom, faces = heat_plate(client, 'plain')
+    try:
+        with pytest.raises(ValueError, match=r'has \{outer\} for the outer '
+                           r'value, but dataset .* has no outer sweep'):
+            mk.plot(geom, 'T', tmp_path/'T_{outer}.png')
+        with pytest.raises(ValueError, match='has no outer sweep; leave out '
+                                             'outer='):
+            mk.plot(geom, 'T', tmp_path/'T.png', outer=1)
+    finally:
+        client.remove(model)
+
+
+def test_mesh_and_geometry_sweeps(client, tmp_path):
+    model, geom, faces = heat_plate(client, 'mesh sweep', study=False)
+    try:
+        model.parameter('hm', '0.02')
+        size = (model/'meshes'/'mesh').create('Size')
+        size.property('custom', 'on')
+        size.property('hmaxactive', True)
+        size.property('hmax', 'hm')
+        (model/'meshes'/'mesh').create('FreeTet')
+        study = (model/'studies').create(name='mesh')
+        study.create('Stationary')
+        sweep(study, '0.02 0.01', 'hm', 'm')
+        model.solve()
+        coarse, fine = mk.plot(geom, 'T', tmp_path/'hm_{outer}.png',
+                               outer='all')
+        assert coarse.read_bytes() != fine.read_bytes()
+        # a sweep that changes the geometry
+        model.parameter('W', '0.1')
+        (geom/'Block 1').property('size', ['W', '0.05', '0.01'])
+        model.build(geom)
+        width = (model/'studies').create(name='width')
+        width.create('Stationary')
+        sweep(width, '0.1 0.12', 'W', 'm')
+        model.solve('width')
+        with pytest.raises(ValueError, match='changes the geometry, and '
+                                             'mk.plot draws on the geometry '
+                                             'as built'):
+            mk.plot(geom, 'T', tmp_path/'W.png', dataset='width', outer=1)
+    finally:
+        client.remove(model)
+
+
+def conductivity(model):
+    """Makes the heat plate's conductivity the parameter k."""
+    model.parameter('k', '45[W/(m*K)]')
+    (model/'materials'/'steel'/'Basic').property('thermalconductivity',
+                                                ['k'])
+
+
+def two_parameters(model, geom, study):
+    conductivity(model)
+    study.create('Transient').property('tlist', '0 1')
+    both = study.create('Parametric')
+    both.property('pname', ['Th', 'k'])
+    both.property('plistarr', ['100 200', '10 90'])
+    both.property('punit', ['degC', 'W/(m*K)'])
+    both.java.set('sweeptype', 'filled')
+    return 4, 'last'
+
+
+def auxiliary(model, geom, study):
+    conductivity(model)
+    stationary = study.create('Stationary')
+    stationary.property('useparam', True)
+    stationary.property('pname', ['k'])
+    stationary.property('plistarr', ['10 90'])
+    stationary.property('punit', ['W/(m*K)'])
+    sweep(study, '100 200')
+    return 2, 1
+
+
+def nested(model, geom, study):
+    conductivity(model)
+    study.create('Stationary')
+    sweep(study, '100 200')
+    sweep(study, '10 90', 'k', 'W/(m*K)')
+    return 2, 2
+
+
+def materials(model, geom, study):
+    container = mk.component_of(geom).java.material()
+    for tag in list(container.tags()):
+        container.remove(tag)
+    switch = container.create('sw1', 'Switch')
+    switch.selection().all()
+    for tag, value in (('ma', '10'), ('mb', '90')):
+        group = switch.feature().create(tag, 'Common').propertyGroup('def')
+        for key, number in (('thermalconductivity', value),
+                            ('density', '7850'), ('heatcapacity', '475')):
+            group.set(key, number)
+    study.create('Transient').property('tlist', '0 1')
+    swept = study.java.create('matsw', 'MaterialSweep')
+    swept.set('pname', ['matsw.comp1.sw1'])
+    swept.set('plistarr', ['1 2'])
+    return 2, 'last'
+
+
+@pytest.mark.parametrize('kind', [two_parameters, auxiliary, nested,
+                                  materials])
+def test_sweep_kinds(client, tmp_path, kind):
+    model, geom, faces = heat_plate(client, kind.__name__, study=False)
+    try:
+        study = (model/'studies').create(name='sweep')
+        count, step = kind(model, geom, study)
+        model.solve()
+        paths = mk.plot(geom, 'T', tmp_path/'T_{outer}.png', outer='all',
+                        step=step)
+        assert len(paths) == count
+        assert len({path.read_bytes() for path in paths}) == count
+    finally:
+        client.remove(model)
+
+
+def test_eigenvalue_sweep(client, tmp_path):
+    model = client.create('eigen')
+    try:
+        model.parameter('a', '1')
+        geom = mk.geometry(model, 2)
+        mk.feature(geom, 'Rectangle', size=[1, 0.5])
+        model.build(geom)
+        pde = (model/'physics').create('CoefficientFormPDE', geom)
+        pde.java.create('dir1', 'DirichletBoundary', 1).selection().all()
+        # a coefficient, not the geometry: the same mesh for every value
+        pde.java.feature('cfeq1').set('da', 'a')
+        (model/'meshes').create(geom)
+        study = (model/'studies').create(name='eigen')
+        steps = study.create('Eigenvalue')
+        steps.property('neigs', 3)
+        steps.property('shift', '0')
+        sweep(study, '1 2', 'a', '')
+        model.solve()
+        first = mk.plot(geom, 'u', tmp_path/'first.png', outer=2, step=1)
+        third = mk.plot(geom, 'u', tmp_path/'third.png', outer=2, step=3)
+        assert first.read_bytes() != third.read_bytes()
+        assert len(mk.plot(geom, 'u', tmp_path/'u_{outer}.png', outer='all',
+                           step=2)) == 2
+    finally:
+        client.remove(model)
