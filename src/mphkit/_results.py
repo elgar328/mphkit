@@ -19,8 +19,7 @@ import numpy
 from mph.node import Node
 from numpy.typing import NDArray
 
-from . import _comsol
-from ._datasets import scratch, solved_dataset, step_count
+from . import _comsol, _datasets
 from ._measure import numbers_of
 
 # COMSOL feature types: the kind of result, then the level of the entities
@@ -95,8 +94,9 @@ def integral(geom: Node, entity: str, expr: str, /, selection=None, *,
     in mm (a volume in m³, while `measure()` gives mm³).
 
     `dataset` is the solution to evaluate, by name as in
-    `model.datasets()`, by tag or node; it is needed when the geometry has
-    several solutions. `step` picks steps of a time-dependent study,
+    `model.datasets()`, by tag or node, or the study that made it; it is
+    needed when the geometry has several solutions. A study whose last
+    solve failed raises, until it is solved again. `step` picks steps of a time-dependent study,
     sweep or frequency list, counted from 1: `'first'`, `'last'`, a number,
     a list of numbers or `'all'`; `model.inner(dataset name)` gives their
     times or parameter values. Unlike MPh's `model.evaluate`, `None`
@@ -269,11 +269,12 @@ def value(geom: Node, expr: str, points, /, *, unit: str | None = None,
     coordinates, single = _points(geom, points, sdim)
     steps(step, None, '')
     model = geom.model.java
-    data = solved_dataset(geom, dataset)
+    data = _datasets.solved_dataset(geom, dataset)
     check_current(geom)
-    solnums, many = steps(step, step_count(model, data), _comsol.name_of(data))
+    solnums, many = steps(step, _datasets.step_count(model, data),
+                          _comsol.name_of(data))
     unique, order = _unique(solnums)
-    with scratch(model) as create:
+    with _datasets.scratch(model) as create:
         feature = create(model.result().numerical(), 'Interp')
         _comsol.set_properties(feature, {
             'data': str(data.tag()), 'expr': [expr, '1'],
@@ -339,9 +340,10 @@ def _over(name: str, geom: Node, entity: str, expr: str, selection,
                          'points.')
     steps(step, None, '')
     model = geom.model.java
-    data = solved_dataset(geom, dataset)
+    data = _datasets.solved_dataset(geom, dataset)
     check_current(geom)
-    solnums, many = steps(step, step_count(model, data), _comsol.name_of(data))
+    solnums, many = steps(step, _datasets.step_count(model, data),
+                          _comsol.name_of(data))
     unique, order = _unique(solnums)
     found = numbers_of(geom, entity, selection)
     if not found:
@@ -357,7 +359,7 @@ def _over(name: str, geom: Node, entity: str, expr: str, selection,
         settings['intvolume' if level == 2 else 'intsurface'] = True
     ftype = KINDS[name] + LEVELS[level]
     column = -(sdim + 1) if position else -1
-    with scratch(model) as create:
+    with _datasets.scratch(model) as create:
         def evaluate(settings: dict) -> tuple[str, Array, Array | None]:
             feature = create(model.result().numerical(), ftype)
             table = create(model.result().table(), 'Table')

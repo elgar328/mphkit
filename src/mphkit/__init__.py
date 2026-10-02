@@ -193,6 +193,7 @@ from ._plot import plot
 from ._props import set_ as set  # not in __all__: keeps builtin set
 from ._results import average, integral, maximum, minimum, value
 from ._solve import log_progress, problem_size, progress
+from ._sweep import outer_values
 from .errors import LicenseError
 from .geometry import (array, block, chamfer, circle, component_of,
                        coordinate_system, cylinder, delete, difference,
@@ -208,13 +209,13 @@ __all__ = ['LicenseError', 'array', 'average', 'block', 'bounding_box',
            'chamfer', 'check', 'circle', 'component_of', 'coordinate_system',
            'coordinates', 'cylinder', 'delete', 'difference', 'extrude',
            'feature', 'feature_types', 'fillet', 'geometry', 'image',
-           'import_', 'integral', 'intersection', 'interval',
-           'line_segment', 'log_progress', 'material', 'materials',
-           'maximum', 'measure', 'mesh_quality', 'minimum', 'mirror', 'move',
+           'import_', 'integral', 'intersection', 'interval', 'line_segment',
+           'log_progress', 'material', 'materials', 'maximum', 'measure',
+           'mesh_quality', 'minimum', 'mirror', 'move', 'outer_values',
            'partition', 'physics_types', 'plot', 'point', 'polygon',
-           'problem_size', 'progress', 'properties', 'rectangle', 'revolve', 'rigid_transform',
-           'rotate', 'sel', 'sphere', 'square', 'summary', 'union', 'value',
-           'variables', 'workplane']
+           'problem_size', 'progress', 'properties', 'rectangle', 'revolve',
+           'rigid_transform', 'rotate', 'sel', 'sphere', 'square', 'summary',
+           'union', 'value', 'variables', 'workplane']
 
 # Unknown names raise errors that name the right helper (see _hints).
 _sys.modules[__name__].__class__ = _HintModule

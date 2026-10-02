@@ -440,10 +440,12 @@ def test_sweep_with_outer_loop(fresh):
     sweep.property('plistarr', ['100 200'])
     sweep.property('punit', ['degC'])
     model.solve()
-    for dataset in (None, 'dset1', 'dset2'):
+    for dataset in (None, 'dset2'):
         with pytest.raises(NotImplementedError, match='outer loop are not '
                                                       'supported yet'):
             mk.average(geom, 'domain', 'T', step='last', dataset=dataset)
+    with pytest.raises(ValueError, match='holds only the last value'):
+        mk.average(geom, 'domain', 'T', step='last', dataset='dset1')
 
 
 def test_physics_in_one_domain(model):
