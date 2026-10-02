@@ -45,9 +45,10 @@ objects), and those that create something return one, so mphkit and MPh
 mix freely. Physics, mesh and study stay plain MPh (or the COMSOL Java
 API through `node.java`); mphkit looks up the COMSOL names they need.
 
-`help(mphkit)` sums up the workflow, the rules and the common pitfalls,
-and each helper has its own `help()`. Point an AI assistant to
-`help(mphkit)` first.
+`print(mphkit.__doc__)` sums up the workflow, the rules and the common
+pitfalls, and each helper has its own `help()`; `help(mphkit)` shows
+both, at length. Point an AI assistant to `print(mphkit.__doc__)`
+first.
 
 ## Requirements
 
@@ -164,20 +165,24 @@ mk.value(geom, 'T', [(50, 20, 2.5), (100, 20, 2.5)], unit='degC')  # array([89.8
 ```
 
 `ht.ntflux` is the flux out of the domain. With several solutions, pass
-`dataset=` (or the study); with time steps or a sweep, `step=`. A unit
-that does not fit, a point outside the geometry or, in most cases, a
-geometry changed since the solve raise instead of giving a wrong number.
-Global values come from MPh: `model.evaluate('expression', 'unit')`,
-which reads only the last value of a sweep stored as an outer loop
-unless given its dataset.
+`dataset=` (or the study); with time steps or a sweep stored as steps,
+`step=`: a position (`step=10` is the tenth step) or a value
+(`step={'t': 10}`). A unit that does not fit, a point outside the
+geometry or a geometry changed since the solve and not built again
+raise instead of giving a wrong number; solve again after any change,
+as a geometry changed and then built and meshed again is read with the
+old solution. Global values come from MPh: `model.evaluate('expression',
+'unit')`, which reads only the last value of a sweep stored as an outer
+loop unless given the sweep's dataset.
 
 Parametric sweeps that COMSOL stores as an outer loop (around a
-time-dependent or eigenvalue study or a list of frequencies, or over
-the geometry, mesh, materials or functions) take
-`outer=`, e.g. `mk.average(geom, 'domain', 'T', unit='degC',
+time-dependent or eigenvalue study or several frequencies, or over
+geometry or mesh parameters, or COMSOL's Material and Function Sweeps)
+take `outer=`, e.g. `mk.average(geom, 'domain', 'T', unit='degC',
 outer='all', step='last')` for one value per parameter value, or
-`outer={'Th': '200[degC]'}` for one; `mk.outer_values(geom)` and
-`mk.step_values(geom)` list the values, in SI units.
+`outer={'Th': '200[degC]'}` for one; `mk.outer_values(geom)` tells
+whether a sweep is one (and lists the values, in SI units), and
+`mk.step_values(geom)` lists the steps' values.
 
 Pictures, written to a file:
 

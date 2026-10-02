@@ -217,7 +217,9 @@ def box(geom: Node, entity: str, /, x=None, y=None, z=None, *,
     domains in single precision; features thinner than that may be picked
     too. So `x=1.1` is stored as 1.0999989 to 1.1000011, and `z='L'` as
     `(L)-1e-6*abs(L)` to `(L)+1e-6*abs(L)`; pass `xmin=`, `xmax=`, ... to
-    set a bound exactly.
+    set a bound exactly. In a parametric sweep that changes the geometry,
+    COMSOL evaluates the box in each value's geometry: a range given by
+    parameters, e.g. `x='W'`, follows each value; fixed numbers stay put.
 
     With `where='geometry'` (or in a work plane), `entity` may be
     `'object'` to select whole objects as input of a geometry operation.

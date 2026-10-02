@@ -25,6 +25,7 @@ import numpy
 from mph.node import Node
 
 from . import _comsol, _datasets, _image, _results, _sweep
+from ._results import One, Outer, OuterMany, OuterOne
 from ._measure import bounding_box, summary
 
 # Where the camera sits, seen from the centre, and which way is up.
@@ -48,28 +49,28 @@ DISPLACEMENT = {3: '(u, v, w)', 2: '(u, v)', 'axisymmetric': '(u, w)'}
 
 @overload
 def plot(geom: Node, expr: str, filename, /, selection: Node | None = None,
-         *, unit: str | None = None, dataset=None, step: _results.One = None,
-         outer: _results.OuterOne = None, x=None, y=None, z=None,
+         *, unit: str | None = None, dataset=None, step: One = None,
+         outer: OuterOne = None, x=None, y=None, z=None,
          view: View | None = None, color_range=None,
          colortable: str | None = None, deform: bool | float = False,
          size=(800, 600)) -> Path: ...
 @overload
 def plot(geom: Node, expr: str, filename, /, selection: Node | None = None,
-         *, unit: str | None = None, dataset=None, step: _results.One = None,
-         outer: _results.OuterMany, x=None, y=None, z=None,
+         *, unit: str | None = None, dataset=None, step: One = None,
+         outer: OuterMany, x=None, y=None, z=None,
          view: View | None = None, color_range=None,
          colortable: str | None = None, deform: bool | float = False,
          size=(800, 600)) -> list[Path]: ...
 @overload
 def plot(geom: Node, expr: str, filename, /, selection: Node | None = None,
-         *, unit: str | None = None, dataset=None, step: _results.One = None,
-         outer: _results.Outer = None, x=None, y=None, z=None,
+         *, unit: str | None = None, dataset=None, step: One = None,
+         outer: Outer = None, x=None, y=None, z=None,
          view: View | None = None, color_range=None,
          colortable: str | None = None, deform: bool | float = False,
          size=(800, 600)) -> Path | list[Path]: ...
 def plot(geom: Node, expr: str, filename, /, selection: Node | None = None,
-         *, unit: str | None = None, dataset=None, step: _results.One = None,
-         outer: _results.Outer = None, x=None, y=None, z=None,
+         *, unit: str | None = None, dataset=None, step: One = None,
+         outer: Outer = None, x=None, y=None, z=None,
          view: View | None = None, color_range=None,
          colortable: str | None = None, deform: bool | float = False,
          size=(800, 600)) -> Path | list[Path]:

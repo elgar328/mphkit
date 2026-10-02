@@ -153,26 +153,25 @@ def integral(geom: Node, entity: str, expr: str, /, selection=None, *,
     Complex results (e.g. frequency domain) come back as complex numbers.
 
     Other keyword arguments are COMSOL properties of the numerical feature
-    (e.g. `intorder`). The geometry must be built as it was solved:
-    changing it after the solve raises, unless it was built and meshed
-    again without solving. Changing physics, materials or parameters
-    without solving again goes unnoticed too. An empty selection raises,
-    while `measure()` gives 0.
+    (e.g. `intorder`). A geometry changed since the solve raises until
+    it is built again; solve again after any change, as one built and
+    meshed again without solving is read with the old solution, and so
+    are changed physics, materials or parameters. An empty selection
+    raises, while `measure()` gives 0.
 
-    Each value of a sweep is read from its own solution, and the
-    geometry it was solved on is compared with the one built, more
-    strictly than for a solution without sweep, as COMSOL rebuilds the
-    geometry for each value. A sweep that changes the geometry (or whose
-    mesh leaves part of it out, as with physics on some domains and the
-    default mesh; material sweeps excepted) is read with a selection node
-    or `None` only, which COMSOL evaluates on each value's geometry:
-    e.g. `mk.sel.box(geom, 'boundary', x='W')`, whose range follows each
-    value of W. Entity numbers, explicit selections and selections made
-    in the geometry sequence raise, as does a selection that is empty
-    for a value; `sel.result`, `sel.layer` and `sel.cumulative` must be
-    made before the solve. A box at fixed coordinates picks, in each
-    value's geometry, what lies there then. A change that keeps every
-    vertex but numbers the entities otherwise goes unnoticed.
+    Each value of a sweep is read from its own solution and checked
+    against the geometry as built. A sweep that changes the geometry
+    (and any outer sweep but a Material Sweep, with physics on some
+    domains and the default, physics-controlled mesh) is read with a
+    selection node or `None` only, which COMSOL evaluates on each
+    value's geometry: e.g. `mk.sel.box(geom, 'boundary', x='W')`, whose
+    range follows each value of W. Entity numbers, explicit selections
+    and selections made in the geometry sequence raise, as does a
+    selection that is empty for a value; make `sel.result`, `sel.layer`
+    and `sel.cumulative` before the solve. A box at fixed coordinates
+    picks, in each value's geometry, what lies there then. A change that
+    keeps every vertex but numbers the entities otherwise goes
+    unnoticed.
     """
     return _over('integral', geom, entity, expr, selection, unit, dataset,
                  step, outer, False, properties)

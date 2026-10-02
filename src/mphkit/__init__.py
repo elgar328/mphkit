@@ -1,14 +1,14 @@
 """
-Helpers on top of MPh for building COMSOL geometries and selections,
-inserting materials from COMSOL's libraries, and reading and drawing
-results.
+Helpers on top of MPh for COMSOL: mphkit builds geometry and named
+selections, inserts materials from COMSOL's libraries, and reads and
+draws results; physics, mesh and studies stay plain MPh (or the COMSOL
+Java API through `node.java`), and mphkit looks up the COMSOL names they
+need. Helpers take MPh nodes (`mk.geometry` the model, `mk.set` also
+Java objects), and those that create something return one.
 
-mphkit builds geometry and named selections, inserts materials from
-COMSOL's libraries, and reads and draws results; physics, mesh and
-studies stay plain MPh (or the COMSOL Java API through `node.java`), and
-mphkit looks up the COMSOL names they need.
-Helpers take MPh nodes (`mk.geometry` the model, `mk.set` also Java
-objects), and those that create something return one.
+This overview is `mphkit.__doc__`; `help(mphkit)` adds every helper's
+documentation after it, which is long: read this first, then
+`help(mk.<helper>)` for the helpers you use.
 
     import mph
     import mphkit as mk
@@ -25,6 +25,21 @@ objects), and those that create something return one.
     # 2: boundaries in 3D
     temp = physics.create('TemperatureBoundary', 2)
     temp.select(bottom)
+
+The rest is plain MPh, e.g. a material with values of one's own, the
+default mesh, a time-dependent study swept over a parameter, the solve:
+
+    model.parameter('Th', '100[degC]')
+    temp.property('T0', 'Th')
+    steel = (model/'materials').create('Common')
+    mk.set(steel/'Basic', thermalconductivity='45', density='7850',
+           heatcapacity='475')
+    (model/'meshes').create(geom)       # COMSOL's default mesh
+    study = (model/'studies').create(name='heating')
+    study.create('Transient').property('tlist', 'range(0,1,10)')
+    sweep = study.create('Parametric')
+    mk.set(sweep, pname=['Th'], plistarr=['100 200 300'], punit=['degC'])
+    model.solve('heating')
 
 Rules:
 
@@ -136,41 +151,52 @@ Results, once the model is solved (`model.solve()`):
     mk.plot(geom, 'T', 'mid.png', unit='degC', z=2.5, view='top')
 
 They check what COMSOL would silently get wrong: a unit that does not
-fit, a geometry changed since the solve (unless built and meshed again),
-a point outside the geometry. Changed physics, materials or parameters
-need `model.solve()` again; that goes unnoticed.
+fit, a geometry changed since the solve and not built again, a point
+outside the geometry. Solve again after any change: a geometry changed
+and then built and meshed again, or changed physics, materials or
+parameters, are read with the old solution, unnoticed.
 Values are in SI units unless `unit` is given, also in an mm geometry;
 positions and points in the geometry's length unit. `ht.ntflux` is the
 flux out of the domain, negative where heat enters. With several
 solutions pass `dataset=` (a dataset or its study), with several steps
-(time, sweep, frequency) `step='last'`, a number, a list or `'all'` (a
-picture shows one step). `mk.plot` also draws a selection only, slices
-(`x=`, `y=` or `z=`), views from a side (`view='top'`, ...) and deformed
-shapes (`deform=True`). Global values and values at all mesh nodes:
-`model.evaluate('expression', 'unit')` in MPh, which reads only the last
-value of a sweep stored as an outer loop unless given its dataset.
+(time, frequency, a sweep stored as steps) `step='last'`, a number, a
+list or `'all'` (a picture shows one step). A number is a position:
+`step=10` is the tenth step, not t = 10 s; `step={'t': 10}` picks by
+value. `mk.plot` also draws a selection only, slices (`x=`, `y=` or
+`z=`), views from a side (`view='top'`, ...) and deformed shapes
+(`deform=True`). Global values and values at all mesh nodes:
+`model.evaluate('expression', 'unit')` in MPh; of a sweep stored as an
+outer loop it reads the last value only, unless given the sweep's
+dataset (all values, or one with MPh's `outer=k`).
 
-Parametric sweeps come in two kinds. `mk.outer_values(geom)` tells
-which: a list of values means `outer=`, `[]` no such sweep, and an error
-pointing to `step=` a sweep stored as steps (`mk.step_values(geom)`
-gives their values). All values are in SI units.
-
-    stationary, over parameters that change no geometry  -> step=
-    around a time-dependent or eigenvalue study or a list of
-      frequencies, over the geometry, the mesh, materials or
-      functions                                            -> outer=
-    a stationary study with two parametric sweeps: one becomes outer=,
-      the other step=
+Parametric sweeps come in two kinds; ask, do not guess.
+`mk.outer_values(geom)` returns a list of values: read them with
+`outer=`; `[]`: there is no such sweep; a ValueError saying "as steps":
+read them with `step=` (`mk.step_values(geom)` lists the values of the
+steps). All values are in SI units. As a rule, a stationary study swept
+over parameters that change neither geometry nor mesh (also parameters
+used in material properties) keeps them as steps; sweeps around a
+time-dependent or eigenvalue study or several frequencies, over geometry
+or mesh parameters, and COMSOL's Material and Function Sweeps are outer
+loops; a stationary study with two parametric sweeps gets one of each.
 
     mk.average(geom, 'domain', 'T', unit='degC', outer='all', step='last')
-    mk.maximum(geom, 'domain', 'T', outer={'Th': '200[degC]'}, step='last')
+    mk.maximum(geom, 'domain', 'T', unit='degC',
+               outer={'Th': '200[degC]'}, step={'t': 10})
     mk.plot(geom, 'T', 'T_{outer}.png', outer='all', step='last')
+    tmax = mk.maximum(geom, 'domain', 'T', unit='degC', outer='all',
+                      step='last')
+    table = [dict(values, Tmax=value)       # a row per value
+             for values, value in zip(mk.outer_values(geom), tmax)]
 
-`outer=` takes the forms of `step=` or values by name; several values
-give an axis before the steps' one, and `outer='all'` is faster than a
-loop. A sweep that changes the geometry is read over selection nodes or
-all entities (e.g. `mk.sel.box(geom, 'boundary', x='W')` follows W),
-not drawn.
+`outer=` takes the forms of `step=`: positions from 1, or values by name
+(numbers in SI units, or strings with a unit). Several values give an
+axis before the steps' one, and `outer='all'` is faster than a loop. A
+sweep that changes the geometry, and any outer sweep but a Material
+Sweep with physics on some domains and the default (physics-controlled)
+mesh, is read over selection nodes or all entities, e.g.
+`mk.sel.box(geom, 'boundary', x='W')`, which follows W; no entity
+numbers, no pictures.
 
 Long solves: `mk.problem_size(model)` gives, before solving, the degrees
 of freedom and the solver COMSOL would use, with the computer's memory

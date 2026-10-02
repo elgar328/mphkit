@@ -146,6 +146,10 @@ MEANINGS: dict[str, str | tuple[str, ...]] = {
     'frequency_values': 'mphkit.step_values',
     'freq_values': 'mphkit.step_values', 'sweep_steps': 'mphkit.step_values',
     'outer_value': 'mphkit.outer_values', 'step_value': 'mphkit.step_values',
+    'steps': 'mphkit.step_values', 'step': 'mphkit.step_values',
+    'times': 'mphkit.step_values', 'get_steps': 'mphkit.step_values',
+    'list_steps': 'mphkit.step_values', 'get_times': 'mphkit.step_values',
+    'maxval': 'mphkit.maximum', 'minval': 'mphkit.minimum',
     # Materials from COMSOL's libraries
     'matlib': ('mphkit.materials', 'mphkit.material'),
     'material_library': ('mphkit.materials', 'mphkit.material'),
@@ -182,6 +186,52 @@ NOTES = {
     'mphkit.image': 'Pictures of the geometry, selections and the mesh '
                     '(mesh=True); mphkit.plot draws results.',
     'mphkit.sel.neighbors': 'mphkit.sel.adjacent makes a selection instead.',
+}
+
+# Notes for guessed names of mphkit itself that ask for plain MPh or an
+# argument, and the helpers to suggest with them
+SWEEP_NOTE = ("A parametric sweep is plain MPh: sweep = study.create("
+              "'Parametric'); mk.set(sweep, pname=['Th'], plistarr=['100 "
+              "200'], punit=['degC']). Read it with outer= or step= of the "
+              'results helpers; mphkit.outer_values tells which.')
+PARAMETER_NOTE = ("Parameters are plain MPh: model.parameter('L', "
+                  "'0.1[m]').")
+DATASET_NOTE = ('The results helpers take dataset= (a dataset or its '
+                "study); MPh's model.datasets() lists them.")
+SOLVE_NOTE = ("Studies, meshes and solving are plain MPh: (model/'studies')"
+              ".create(name='s'), study.create('Stationary'), "
+              "(model/'meshes').create(geom), model.solve('s'); "
+              'mphkit.feature_types(study) lists the step types.')
+GUESSED: dict[str, tuple[tuple[str, ...], str]] = {
+    **{name: ((), SWEEP_NOTE) for name in (
+        'parametric_sweep', 'param_sweep', 'parameter_sweep', 'parametric',
+        'outer_sweep', 'sweep_parameter', 'sweep_parameters',
+        'parametric_sweeps')},
+    **{name: (("mphkit.feature(geom, 'Sweep', ...) (a geometry sweep)",),
+              SWEEP_NOTE) for name in (
+        'sweep', 'sweeps', 'get_sweep', 'sweep_results', 'sweep_table')},
+    **{name: ((), PARAMETER_NOTE) for name in (
+        'parameter', 'param', 'parameters', 'params', 'set_parameter',
+        'set_param', 'set_parameters', 'add_parameter',
+        'define_parameter')},
+    **{name: ((), DATASET_NOTE) for name in (
+        'datasets', 'dataset', 'list_datasets', 'get_dataset',
+        'solutions', 'solution')},
+    **{name: ((), SOLVE_NOTE) for name in (
+        'solve', 'study', 'studies', 'create_study', 'mesh', 'create_mesh',
+        'meshes')},
+    'outer': ((), 'outer= is an argument of the results helpers and '
+                  'mphkit.plot; mphkit.outer_values lists its values.'),
+    **{name: ((), 'The results helpers are mphkit.integral, '
+                  'mphkit.average, mphkit.maximum, mphkit.minimum, '
+                  'mphkit.value and mphkit.plot; mphkit.sel.result selects '
+                  'what a geometry feature left.')
+       for name in ('result', 'results')},
+    'flux': (('mphkit.integral',), "e.g. mk.integral(geom, 'boundary', "
+             "'ht.ntflux', faces, unit='W'); mphkit.variables(physics, "
+             "search='flux') finds the names."),
+    **{name: ((), 'Animations stay plain MPh; mphkit.plot draws one step '
+                  'per call (step=).') for name in ('animate', 'animation')},
 }
 
 # How selection helpers are called; `{kind}` stands for the entity kind.
@@ -284,6 +334,16 @@ def _suggest(module: str, name: str) -> Result:
     intent, prefix, rest = _parse(name.lower())
     if rest in ('evaluate', 'eval'):
         return [], EVALUATE_NOTE
+    if module == MAIN and rest in GUESSED:
+        meant, guessed = GUESSED[rest]
+        return list(meant), guessed
+    # values of a sweep or of steps, as in `outer_sweep_values`
+    if module == MAIN and rest.endswith(('_values', '_value')):
+        parts = set(rest.split('_'))
+        if parts & {'outer', 'sweep', 'sweeps', 'parametric'}:
+            return [f'{MAIN}.outer_values'], None
+        if parts & {'step', 'steps', 'time', 'times', 'inner'}:
+            return [f'{MAIN}.step_values'], None
     words = rest.split('_')
     if 'mesh' in words and any(word in PICTURES for word in words):
         return [f'{MAIN}.image'], ('Pass mesh=True for a picture of the '

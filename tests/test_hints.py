@@ -223,10 +223,41 @@ def test_suggestion(module, name, expected):
 
 @pytest.mark.parametrize('module, name', [
     (mk.sel, 'inner'), (mk.sel, 'outer'), (mk, 'inner_boundaries'),
-    (mk, 'outer'), (mk, 'inner')])
+    (mk, 'inner')])
 def test_no_sweep_suggestion(module, name):
     # inner and outer boundaries are no sweeps
     assert 'values' not in message(module, name)
+
+
+@pytest.mark.parametrize('name, expected', [
+    ('outer', 'outer= is an argument of the results helpers'),
+    ('sweep', "Did you mean mphkit.feature(geom, 'Sweep', ...) (a geometry "
+              "sweep)? A parametric sweep is plain MPh"),
+    ('parametric_sweep', "sweep = study.create('Parametric')"),
+    ('param_sweep', 'Read it with outer= or step='),
+    ('set_parameter', "model.parameter('L', '0.1[m]')"),
+    ('parameters', "model.parameter("),
+    ('datasets', 'take dataset= (a dataset or its study)'),
+    ('solve', "model.solve('s')"),
+    ('mesh', "(model/'meshes').create(geom)"),
+    ('create_study', "study.create('Stationary')"),
+    ('results', 'The results helpers are mphkit.integral'),
+    ('flux', "Did you mean mphkit.integral? e.g. mk.integral(geom, "
+             "'boundary', 'ht.ntflux'"),
+    ('animate', 'mphkit.plot draws one step per call'),
+    ('outer_sweep_values', 'Did you mean mphkit.outer_values?'),
+    ('steps_values', 'Did you mean mphkit.step_values?'),
+    ('steps', 'Did you mean mphkit.step_values?'),
+    ('times', 'Did you mean mphkit.step_values?'),
+    ('maxval', 'Did you mean mphkit.maximum?'),
+    ('minval', 'Did you mean mphkit.minimum?')])
+def test_guessed_notes(name, expected):
+    assert expected in message(mk, name)
+
+
+def test_sel_result_stays():
+    assert mk.sel.result is not None
+    assert 'results helpers' not in message(mk.sel, 'results')
 
 
 def test_meanings_name_helpers():
@@ -452,6 +483,28 @@ def test_help_example(client, monkeypatch, tmp_path):
         assert any(v['name'] == 'ht.ntflux' for v in found[5])
 
     run_example(code, client, monkeypatch, tmp_path, check)
+
+
+def test_help_sweep_example(client, monkeypatch, tmp_path):
+    # the plain MPh lines up to the solve, then the sweep lines
+    lines = [line[4:] for line in mk.__doc__.splitlines()
+             if line.startswith('    ') or not line.strip()]
+    joined = '\n'.join(lines)
+    code = re.search(r"import mph\n.*?model\.solve\('heating'\)\n", joined,
+                     re.S).group(0)
+    reading = re.search(r"(mk\.average\(geom, 'domain', 'T', unit='degC', "
+                        r"outer='all'.*?\n)\n", joined, re.S).group(1)
+    reading = reading.replace("'T_{outer}.png'",
+                              repr(str(tmp_path/'T_{outer}.png')))
+
+    def check(namespace):
+        exec(reading, namespace)
+        table = namespace['table']
+        assert [row['Th'] for row in table] == \
+            pytest.approx([373.15, 473.15, 573.15])
+        assert all('Tmax' in row for row in table)
+    run_example(code, client, monkeypatch, tmp_path, check)
+    assert len(list(tmp_path.glob('T_*.png'))) == 3
 
 
 def test_help_java_export(client, model, tmp_path):

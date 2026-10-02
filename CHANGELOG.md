@@ -30,7 +30,9 @@ until 1.0, a minor release (0.2, 0.3, ...) may change the API. See
   that changes the geometry is read over selection nodes or all
   entities, evaluated on each value's geometry; entity numbers, explicit
   selections and selections that are empty for a value raise. Unknown names such as
-  `mk.time_values` or `mk.sweep_values` suggest them.
+  `mk.time_values` or `mk.sweep_values` suggest them; `mk.sweep`,
+  `mk.parametric_sweep` and `mk.solve` say how to make a sweep or solve
+  with plain MPh.
 - Unknown names such as `mk.volume_integral`, `mk.mphint2` or `mk.probe`
   suggest the results helpers; `mk.evaluate` points to MPh's
   `model.evaluate`.

@@ -59,19 +59,21 @@ def outer_values(geom: Node, /, *, dataset=None) -> list[dict[str, float]]:
     (`{'matsw.comp1.sw1': 2.0}`); errors that list the values show their
     names. A sweep that keeps the last solution only gives one dictionary.
 
-    `[]` means that the dataset has no outer sweep. A stationary study
-    swept over parameters that change no geometry stores them as steps:
-    that raises, pointing to `step=` and `mk.step_values`. So this tells
-    which of `outer=` and `step=` a sweep takes. `dataset` works as in
-    `mk.integral()`, also by study. Leaves nothing in the model.
+    `[]` means that the dataset has no outer sweep. A sweep stored as
+    steps (a stationary study swept over parameters that change neither
+    geometry nor mesh) raises a ValueError pointing to `step=` and
+    `mk.step_values`. So this tells which of `outer=` and `step=` a sweep
+    takes. `dataset` works as in `mk.integral()`, also by study. Leaves
+    nothing in the model.
 
-    A table of results by value, with pandas:
+    A table of results by value, a row each:
 
     ```python
-    table = pd.DataFrame(mk.outer_values(geom)).assign(
-        Tmax=mk.maximum(geom, 'domain', 'T', unit='degC', outer='all',
-                        step='last'))
-    table.Th - 273.15      # Th is in K, as all values: SI units
+    tmax = mk.maximum(geom, 'domain', 'T', unit='degC', outer='all',
+                      step='last')
+    table = [dict(values, Tmax=value)
+             for values, value in zip(mk.outer_values(geom), tmax)]
+    # with pandas: pd.DataFrame(table); its Th is in K (SI units)
     ```
     """
     _results.check_geometry('outer_values', geom)
