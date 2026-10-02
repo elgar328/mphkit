@@ -14,6 +14,8 @@ from __future__ import annotations
 import math
 import numbers
 import os
+import secrets
+import stat
 import tempfile
 from difflib import get_close_matches
 from pathlib import Path
@@ -155,10 +157,13 @@ def plot(geom: Node, expr: str, filename, /, selection: Node | None = None,
         raise ValueError('Slices and views are for 3D geometries.')
     if slices is not None and scale is not None:
         raise ValueError('deform= draws on surfaces; leave out x/y/z.')
-    _check_name(filename, path, _sweep.check_outer(outer))
+    _check_folder(filename)
+    _sweep.check_outer(outer)
     model = geom.model.java
     with _datasets.scratch(model) as create:
-        pictures, many = _sweep.pictures(create, geom, dataset, step, outer)
+        pictures, many = _sweep.pictures(
+            create, geom, dataset, step, outer,
+            lambda many: _check_name(path, many))
         files = _files(path, pictures)
         level, entities = None, None
         if selection is not None:
@@ -207,7 +212,7 @@ def plot(geom: Node, expr: str, filename, /, selection: Node | None = None,
                 os.replace(temporary, file)
         finally:
             for temporary in drawn:
-                temporary.unlink(missing_ok=True)
+                _remove(temporary)
     return files if many else files[0]
 
 
@@ -248,21 +253,25 @@ def _check_title(group, title):
                            f'its title says "{indicator}".')
 
 
-def _check_name(filename, path: Path, many: bool):
-    """
-    Checks `{outer}` in the file name: needed for several pictures, and
-    not in the folder.
-    """
-    folder, name = os.path.split(os.fspath(filename))
+def _check_folder(filename):
+    """Checks that `{outer}` is not in the folder of the file name."""
+    folder = os.path.dirname(os.fspath(filename))
     if PLACEHOLDER in folder:
         raise ValueError(f'{PLACEHOLDER} goes in the file name, not in the '
                          f'folder: "{filename}".')
-    if many and PLACEHOLDER not in name:
-        example = os.path.join(folder, f'{path.stem}_{PLACEHOLDER}'
-                                       f'{path.suffix}')
+
+
+def _check_name(path: Path, many: bool):
+    """
+    Checks that the file name has `{outer}` for several pictures of a
+    sweep; called once the dataset is known to be one.
+    """
+    if many and PLACEHOLDER not in path.name:
+        example = path.with_name(f'{path.stem}_{PLACEHOLDER}{path.suffix}')
         raise ValueError(f'mk.plot draws a picture per outer value; put '
-                         f'{PLACEHOLDER} in the file name, e.g. {example!r} '
-                         '(a plain string, not an f-string).')
+                         f'{PLACEHOLDER} in the file name, e.g. '
+                         f'{str(example)!r} (a plain string, not an '
+                         'f-string).')
 
 
 def _files(path: Path, pictures: list) -> list[Path]:
@@ -285,35 +294,53 @@ def _files(path: Path, pictures: list) -> list[Path]:
 def _settle(temporary: Path, file: Path):
     """
     Checks that COMSOL drew into `temporary`, and gives it the permissions
-    `file` has, or a new file would have: a temporary file is the owner's
-    only.
+    of the `file` it replaces, if any (on POSIX systems; Windows has only
+    a read-only flag, which would keep it from replacing the file).
     """
     if not temporary.stat().st_size:
         raise OSError(f'COMSOL wrote nothing to the picture "{file}".')
+    if os.name == 'nt':
+        return
     try:
         mode = file.stat().st_mode & 0o777
     except OSError:
-        mask = os.umask(0)
-        os.umask(mask)
-        mode = 0o666 & ~mask
+        return
     os.chmod(temporary, mode)
 
 
 def _temporary(file: Path) -> Path:
     """
     Creates an empty file next to `file`, of the same type, to draw into
-    before replacing `file`; makes the folder if needed.
+    before replacing `file`; makes the folder if needed. It gets the
+    permissions of a new file.
     """
     try:
         file.parent.mkdir(parents=True, exist_ok=True)
-        handle, name = tempfile.mkstemp(dir=file.parent,
-                                        prefix=f'.{file.stem}.',
-                                        suffix=file.suffix)
+        for _ in range(100):
+            name = file.with_name(f'.{file.stem}.{secrets.token_hex(4)}'
+                                  f'{file.suffix}')
+            try:
+                os.close(os.open(name, os.O_CREAT | os.O_EXCL | os.O_WRONLY,
+                                 0o666))
+                return name
+            except FileExistsError:
+                continue
+        raise FileExistsError(f'no free temporary name next to "{file}"')
     except OSError as error:
         raise OSError(f'Could not write the picture "{file}": '
                       f'{error.strerror or error}') from error
-    os.close(handle)
-    return Path(name)
+
+
+def _remove(temporary: Path):
+    """Removes a temporary picture, also a read-only one; errors pass."""
+    try:
+        temporary.unlink(missing_ok=True)
+    except OSError:
+        try:
+            os.chmod(temporary, stat.S_IWRITE)
+            temporary.unlink(missing_ok=True)
+        except OSError:
+            pass
 
 
 def _group(create, model, geom: Node, picture, view: str, expr: str,

@@ -48,8 +48,10 @@ def numbers_of(geom: Node, entity: str, selection) -> list[int]:
     found = []
     for item in items:
         if isinstance(item, bool) or not isinstance(item, numbers.Integral):
+            named = (f"; a selection by name is model/'selections'/"
+                     f'{item!r}' if isinstance(item, str) else '')
             raise TypeError(f'Expected entity numbers, a selection node '
-                            f'or None, not {selection!r}.')
+                            f'or None, not {selection!r}{named}.')
         found.append(int(item))
     wrong = [n for n in found if not 1 <= n <= count]
     if wrong:

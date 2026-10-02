@@ -383,7 +383,9 @@ def value(geom: Node, expr: str, points, /, *, unit: str | None = None,
                                           coordinates)
             if missing.any():
                 if outside == 'error':
-                    raise ValueError(_outside_message(missing, target.where))
+                    raise ValueError(_outside_message(
+                        missing, target.where,
+                        str(_comsol.java_of(geom).lengthUnit())))
                 found[missing] = numpy.nan
             results.append((found, missing))
         if unit is not None:
@@ -641,11 +643,18 @@ def _check_unit(expr: str, unit: str, header: str, plain: str):
         raise unit_error(expr, _unit_of(header), unit)
 
 
+# Temperature units people write, and COMSOL's names
+TEMPERATURES = {'C': 'degC', '°C': 'degC', 'celsius': 'degC',
+                'F': 'degF', '°F': 'degF', 'fahrenheit': 'degF'}
+
+
 def unit_error(expr: str, applied: str, unit: str) -> ValueError:
     """Returns the error for a unit COMSOL ignored."""
+    meant = TEMPERATURES.get(unit) or TEMPERATURES.get(unit.lower())
+    hint = f" (COMSOL writes {meant!r})" if meant else ''
     return ValueError(f'COMSOL evaluated "{expr}" in {applied}, not '
-                      f'{unit!r}; give a unit of the same kind, or none for '
-                      'SI units.')
+                      f'{unit!r}{hint}; give a unit of the same kind, or '
+                      'none for SI units.')
 
 
 def _check_point_unit(create, model, data: str, expr: str, unit: str,
@@ -788,7 +797,8 @@ def _points(geom: Node, points, sdim: int) -> tuple[Array, bool]:
     raise ValueError(message + '.')
 
 
-def _outside_message(missing: Array, where: str = '') -> str:
+def _outside_message(missing: Array, where: str = '',
+                     length: str = '') -> str:
     """
     Names the points (counted from 1) that have no value, at `where` (an
     outer value) if given.
@@ -799,9 +809,11 @@ def _outside_message(missing: Array, where: str = '') -> str:
     noun = 'Point' if len(points) == 1 else 'Points'
     verb = 'is' if len(points) == 1 else 'are'
     at = f' at {where}' if where else ''
+    unit = f' (coordinates are in {length}, the geometry\'s unit)' \
+        if length else ''
     return (f'{noun} {shown} of {len(missing)} {verb} outside the geometry '
-            f"or where nothing was solved{at}; pass outside='nan' to get "
-            'nan there.')
+            f"or where nothing was solved{at}{unit}; pass outside='nan' to "
+            'get nan there.')
 
 
 ##########

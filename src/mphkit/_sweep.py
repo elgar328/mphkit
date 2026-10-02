@@ -297,10 +297,7 @@ class Sweep:
             info = self.model.sol(self.tag).getSolutioninfo()
             self._swept = []
             for number, child in zip(self.numbers, self.children):
-                try:
-                    row = [float(v) for v in info.getPvals([[number, 1]])[0]]
-                except Exception:
-                    row = []
+                row = [float(v) for v in info.getPvals([[number, 1]])[0]]
                 names = _datasets.param_names(self.model.sol(child))
                 self._swept.append({name: value for name, value
                                     in zip(names, row) if name in self.names})
@@ -363,7 +360,7 @@ class Sweep:
             if name.startswith(SWITCHES):
                 continue
             unit, given = self.units.get(name), self.swept[k - 1].get(name)
-            text = (f'{given:g}[{unit}]' if unit and given is not None
+            text = (f'{_exact(given)}[{unit}]' if unit and given is not None
                     else repr(value))
             calls.append(f'model.parameter({name!r}, {text!r})')
         return '; '.join(calls)
@@ -377,7 +374,7 @@ class Sweep:
         given = self.swept[k - 1].get(name)
         if name.startswith(SWITCHES) or not unit or given is None:
             return f'{{{name!r}: {value!r}}}'
-        return f"{{{name!r}: '{given:g}[{unit}]'}}"
+        return f"{{{name!r}: '{_exact(given)}[{unit}]'}}"
 
     def title(self, k: int, step: int | None) -> Title:
         """
@@ -398,11 +395,9 @@ class Sweep:
         if step is not None:
             table = named_steps(self.model, self.model.sol(
                 self.children[k - 1]))
-            uniform = same_steps(self.model, self.children)
             for name, item in STEP_ITEMS.items():
                 if name in table and numpy.isrealobj(table[name]):
-                    steps[item] = (float(table[name][step - 1]),
-                                   not uniform)
+                    steps[item] = float(table[name][step - 1])
         return Title(self.numbers[k - 1],
                      {name: every[k - 1][name] for name in plain},
                      {name: [row[name] for row in every] for name in plain},
@@ -427,6 +422,7 @@ class Restriction(NamedTuple):
     kind: str
     where: str
     matching: Callable[[], list[str]]
+    built: Callable[[], bool]
 
 
 class Request(NamedTuple):
@@ -469,12 +465,14 @@ class Swept(NamedTuple):
 
 
 def _prepare(create, geom: Node, dataset, step, outer,
-             caller: str | None) -> Plain | Swept:
+             caller: str | None,
+             ready: Callable[[bool], None] | None = None) -> Plain | Swept:
     """
     Picks the dataset and checks `step` and `outer` against it; of an
     outer sweep, also the geometry of the values asked for, on temporary
     datasets made with `create`. `caller` is `'plot'` for pictures, which
-    show one step and one picture per value.
+    show one step and one picture per value. `ready(many)` runs once a
+    sweep's values are picked, before COMSOL evaluates anything.
     """
     model = geom.model.java
     chosen = _datasets.select(geom, dataset)
@@ -492,6 +490,8 @@ def _prepare(create, geom: Node, dataset, step, outer,
         return Plain(data, count, solnums, many)
     sweep = Sweep(model, str(data.getString('solution')), data, dataset)
     positions, many = pick(outer, sweep, step)
+    if ready is not None:
+        ready(many)
     unique, order = _results.once(positions)
     if caller == 'plot' and len(unique) < len(positions):
         twice = next(k for k in positions if positions.count(k) > 1)
@@ -519,7 +519,8 @@ def resolve(create, geom: Node, dataset, step, outer) -> Request:
     if prepared.decision in ('sweep', 'unknown'):
         restricted = Restriction(
             prepared.decision, f'dataset {_datasets.describe(sweep.data)}',
-            lambda: _matching(geom, sweep, children))
+            lambda: _matching(geom, sweep, children),
+            lambda: _built(geom))
     targets = [Target(str(children.dataset(k).tag()), prepared.steps[k][0],
                       f'outer={k} ({sweep.labels[k - 1]})')
                for k in prepared.unique]
@@ -527,11 +528,18 @@ def resolve(create, geom: Node, dataset, step, outer) -> Request:
                    prepared.steps[prepared.unique[0]][1], restricted)
 
 
-def _matching(geom: Node, sweep: Sweep, children: Children) -> list[str]:
-    """Lists the outer values solved on the geometry as built."""
+def _built(geom: Node) -> bool:
+    """Tells whether the geometry is built as it stands."""
     try:
         _comsol.check_built(geom)
     except RuntimeError:
+        return False
+    return True
+
+
+def _matching(geom: Node, sweep: Sweep, children: Children) -> list[str]:
+    """Lists the outer values solved on the geometry as built."""
+    if not _built(geom):
         return []
     current = vertices(geom)
     found = []
@@ -590,9 +598,9 @@ class Title(NamedTuple):
     where: str
     # whether every outer parameter has an item above to check
     complete: bool = True
-    # the step drawn, by title item ('Time', 'freq'), in SI units, and
-    # whether it must show: when the values have different steps
-    steps: dict[str, tuple[float, bool]] = {}
+    # the step drawn, by title item ('Time', 'freq'), in SI units: checked
+    # where the title shows it in a known unit
+    steps: dict[str, float] = {}
 
 
 # Units COMSOL prints the step items of titles in, to SI
@@ -605,7 +613,8 @@ STEP_UNITS = {
 STEP_ITEMS = {'t': 'Time', 'freq': 'freq'}
 
 
-def pictures(create, geom: Node, dataset, step, outer
+def pictures(create, geom: Node, dataset, step, outer,
+             ready: Callable[[bool], None] | None = None
              ) -> tuple[list[Picture], bool]:
     """
     Returns what to draw for `dataset`, `step` and `outer`, a picture per
@@ -614,7 +623,7 @@ def pictures(create, geom: Node, dataset, step, outer
     the geometry as built: drawing a loop of values one by one compares
     them all each time, `outer='all'` once.
     """
-    prepared = _prepare(create, geom, dataset, step, outer, 'plot')
+    prepared = _prepare(create, geom, dataset, step, outer, 'plot', ready)
     if isinstance(prepared, Plain):
         return [Picture(prepared.data, None,
                         prepared.solnums[0] if prepared.total > 1 else None,
@@ -690,14 +699,13 @@ def title_problem(indicator: str, title: Title) -> str | None:
             if not re.match(rf'{re.escape(right)}(?=$|,|\s+[^\s=,]+=)',
                             indicator[match.end():]):
                 return 'wrong'
-    for item, (value, required) in title.steps.items():
+    for item, value in title.steps.items():
         shown = re.search(rf'(?<![\w.]){item}(?:\(\d+\))?=\s*{NUMBER}'
                           r'\s*([^\s,]*)', indicator)
         factor = None if shown is None else \
             STEP_UNITS[item].get(shown.group(2))
         if shown is None or factor is None:
-            if required:
-                return 'missing'
+            # another name or unit: the values above still tell
             continue
         if not _printed_as(shown.group(1), value/factor, [value/factor]):
             return 'wrong'
@@ -754,7 +762,14 @@ def pick(outer, sweep: Sweep, step) -> tuple[list[int], bool]:
         return [by_value(sweep, outer)], False
     if _by_name(outer):
         return [by_value(sweep, wanted) for wanted in outer], True
-    return _results.steps(outer, count, where, what='outer')
+    try:
+        return _results.steps(outer, count, where, what='outer')
+    except ValueError as error:
+        if 'outer values, not' not in str(error):
+            raise
+        raise ValueError(f'{str(error)[:-1]}: outer counts the values from '
+                         f'1; to pick one by value, pass e.g. '
+                         f'outer={sweep.example()}.') from None
 
 
 #################
@@ -984,9 +999,15 @@ def restricted_selection(geom: Node, entity: str, level: int, selection,
             'all. For numbers and pictures, mesh all domains with a mesh '
             'of your own (not physics-controlled) and solve again.')
     matching = restriction.matching()
-    numbered = (f'for {", ".join(matching)}, solved on the geometry as '
-                'built' if matching else
-                'for a value solved on the geometry as built (none is now)')
+    if matching:
+        numbered = f'for {", ".join(matching)}, solved on the geometry as built'
+    elif restriction.built():
+        numbered = ('for a value solved on the geometry as built; none of '
+                    'them matches it now')
+    else:
+        numbered = ('for a value solved on the geometry as built; the '
+                    'geometry is not built now (a sweep that changes it '
+                    'leaves it so): run model.build(geom) first')
     raise ValueError(
         f'The sweep of {restriction.where} changes the geometry, so entity '
         'numbers stand for other entities in some values. Pass a selection '
@@ -1511,6 +1532,12 @@ def _call(name: str, dataset, extra: str = '') -> str:
     if extra:
         arguments.append(extra)
     return f'mk.{name}({", ".join(arguments)})'
+
+
+def _exact(number: float) -> str:
+    """Spells a number to paste back: short if that is exact, else all digits."""
+    short = f'{number:g}'
+    return short if float(short) == number else repr(number)
 
 
 def _capital(text: str) -> str:

@@ -837,7 +837,8 @@ def refusals(model, geom, block, faces, tmp_path):
                        r'numbers stand for other entities in some values\. '
                        r'Pass a selection node or None instead of numbers: '
                        r"e.g. mk.sel.box\(geom, 'boundary', x='W'\).* "
-                       r'\(none is now\)'):
+                       r'the geometry is not built now .* run '
+                       r'model.build\(geom\) first'):
         mk.average(geom, 'boundary', 'T', 1, outer='all')
     fixed = mk.sel.box(geom, 'boundary', x=0.1, name='fixed')
     with pytest.raises(ValueError, match=r'"selections/fixed" is empty at '
@@ -1174,17 +1175,16 @@ def test_title_incomplete():
 
 
 @pytest.mark.parametrize('indicator, steps, problem', [
-    ('Th(2)=200 degC Time=2 s', {'Time': (2.0, True)}, None),
-    ('Th(2)=200 degC Time=2 s', {'Time': (3.0, True)}, 'wrong'),
-    ('Th(2)=200 degC Time=2 s', {'Time': (3.0, False)}, 'wrong'),
-    ('Th(2)=200 degC Time=1 min', {'Time': (60.0, True)}, None),
-    ('Th(2)=200 degC Time=1.5 ms', {'Time': (1.5e-3, True)}, None),
-    ('Th(2)=200 degC', {'Time': (2.0, True)}, 'missing'),
-    ('Th(2)=200 degC', {'Time': (2.0, False)}, None),
-    ('Th(2)=200 degC Time=2 fortnights', {'Time': (2.0, True)}, 'missing'),
-    ('p0(2)=2 kPa freq(1)=100 Hz', {'freq': (100.0, True)}, None),
-    ('p0(2)=2 kPa freq(1)=0.1 kHz', {'freq': (100.0, True)}, None),
-    ('p0(2)=2 kPa freq(2)=200 Hz', {'freq': (100.0, False)}, 'wrong')])
+    ('Th(2)=200 degC Time=2 s', {'Time': 2.0}, None),
+    ('Th(2)=200 degC Time=2 s', {'Time': 3.0}, 'wrong'),
+    ('Th(2)=200 degC Time=1 min', {'Time': 60.0}, None),
+    ('Th(2)=200 degC Time=1.5 ms', {'Time': 1.5e-3}, None),
+    # not shown, or in a unit not known: the values above tell
+    ('Th(2)=200 degC', {'Time': 2.0}, None),
+    ('Th(2)=200 degC Time=10 ns', {'Time': 2.0}, None),
+    ('p0(2)=2 kPa freq(1)=100 Hz', {'freq': 100.0}, None),
+    ('p0(2)=2 kPa freq(1)=0.1 kHz', {'freq': 100.0}, None),
+    ('p0(2)=2 kPa freq(2)=200 Hz', {'freq': 100.0}, 'wrong')])
 def test_title_steps(indicator, steps, problem):
     expected = ({'p0': 2} if indicator.startswith('p0') else {'Th': 200})
     candidates = {name: [1, value] for name, value in expected.items()}
@@ -1202,24 +1202,29 @@ def test_same_points_one_to_one():
 @pytest.mark.skipif(sys.platform == 'win32',
                     reason='Windows has no POSIX permissions')
 def test_settle(tmp_path):
-    settle = mk._plot._settle
-    empty = tmp_path/'.empty.png'
-    empty.write_bytes(b'')
+    settle, temporary = mk._plot._settle, mk._plot._temporary
+    empty = temporary(tmp_path/'x.png')
     with pytest.raises(OSError, match='COMSOL wrote nothing'):
         settle(empty, tmp_path/'x.png')
-    drawn = tmp_path/'.drawn.png'
-    drawn.write_bytes(b'png')
-    os.chmod(drawn, 0o600)
-    old = tmp_path/'old.png'
-    old.write_bytes(b'old')
-    os.chmod(old, 0o644)
-    settle(drawn, old)
-    assert drawn.stat().st_mode & 0o777 == 0o644
-    os.chmod(drawn, 0o600)
+    # a new picture gets the permissions of a new file
     mask = os.umask(0)
     os.umask(mask)
+    drawn = temporary(tmp_path/'new.png')
+    assert drawn.name.startswith('.new.') and drawn.suffix == '.png'
+    assert drawn.stat().st_mode & 0o777 == 0o666 & ~mask
+    drawn.write_bytes(b'png')
     settle(drawn, tmp_path/'new.png')
     assert drawn.stat().st_mode & 0o777 == 0o666 & ~mask
+    # one replacing a picture, its permissions
+    old = tmp_path/'old.png'
+    old.write_bytes(b'old')
+    os.chmod(old, 0o640)
+    settle(drawn, old)
+    assert drawn.stat().st_mode & 0o777 == 0o640
+    # a read-only temporary file is removed too
+    os.chmod(drawn, 0o444)
+    mk._plot._remove(drawn)
+    assert not drawn.exists()
 
 
 def test_file_names(tmp_path):
@@ -1227,16 +1232,15 @@ def test_file_names(tmp_path):
     path = tmp_path/'T_{outer}.png'
     pictures = [mk._sweep.Picture(None, number, None, number, None)
                 for number in (3, 1)]
-    check(str(path), path, True)
+    check(path, True)
     assert files(path, pictures) == [tmp_path/'T_3.png', tmp_path/'T_1.png']
     assert files(tmp_path/'T.png', pictures[:1]) == [tmp_path/'T.png']
     with pytest.raises(ValueError, match=r"e.g. '.*T_\{outer\}.png' \(a "
                                          r'plain string, not an f-string\)'):
-        check(str(tmp_path/'T.png'), tmp_path/'T.png', True)
-    check(str(tmp_path/'T.png'), tmp_path/'T.png', False)
+        check(tmp_path/'T.png', True)
+    check(tmp_path/'T.png', False)
     with pytest.raises(ValueError, match='not in the folder'):
-        check(str(tmp_path/'{outer}'/'T.png'), tmp_path/'{outer}'/'T.png',
-              False)
+        mk._plot._check_folder(str(tmp_path/'{outer}'/'T.png'))
     # other braces stay
     braces = tmp_path/'T_{x}_{outer}.png'
     assert files(braces, pictures[1:]) == [tmp_path/'T_{x}_1.png']
@@ -1895,3 +1899,41 @@ def test_micrometres(client):
             pytest.approx(7.5e-13)
     finally:
         client.remove(model)
+
+
+def test_exact():
+    exact = mk._sweep._exact
+    assert exact(200.0) == '200'
+    assert exact(0.15) == '0.15'
+    assert exact(400/3) == repr(400/3)
+    assert float(exact(100.123456789)) == 100.123456789
+
+
+def test_copied_dataset(fresh):
+    model, geom = fresh()
+    (model/'studies').create(name='static').create('Stationary')
+    model.solve()
+    java = mk.set((model/'datasets').create('Solution').java,
+                  solution='sol1', geom=geom.tag())
+    with pytest.raises(ValueError, match=r'several solved datasets: .* Some '
+                       r'of them show the same solution \(a dataset copied'):
+        mk.average(geom, 'domain', 'T')
+    assert mk.average(geom, 'domain', 'T', unit='degC',
+                      dataset=str(java.tag())) == pytest.approx(60)
+
+
+def test_hints_in_messages(swept):
+    model, geom, study, faces = swept
+    with pytest.raises(ValueError, match=r"not 'C' \(COMSOL writes "
+                                         r"'degC'\)"):
+        mk.average(geom, 'domain', 'T', unit='C', outer=1, step='last')
+    with pytest.raises(TypeError, match=r"a selection by name is "
+                                        r"model/'selections'/'hot'"):
+        mk.average(geom, 'boundary', 'T', 'hot', outer=1, step='last')
+    with pytest.raises(ValueError, match=r'coordinates are in m, the '
+                                         r"geometry's unit"):
+        mk.value(geom, 'T', (50, 25, 5), outer=1, step='last')
+    with pytest.raises(ValueError, match=r"has 3 outer values, not 200: "
+                       r'outer counts the values from 1; to pick one by '
+                       r"value, pass e.g. outer=\{'Th': '200\[degC\]'\}"):
+        mk.average(geom, 'domain', 'T', outer=200, step='last')

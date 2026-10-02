@@ -142,15 +142,23 @@ def _only(geom: Node, solutions: Solutions, own: list, study) -> Chosen:
         message += (", or the study, e.g. dataset="
                     f'{_study_name(model, studies[0])!r}')
     message += '.'
-    if len(set(studies)) < len(studies):
-        old = next((java for java in usable
-                    if solutions.kind(str(java.getString('solution')))
-                    == 'sweep'), usable[-1])
+    tags = [str(java.getString('solution')) for java in usable]
+    if len(set(tags)) < len(tags):
+        message += (' Some of them show the same solution (a dataset '
+                    'copied, e.g. for a selection of its own); pass the one '
+                    'you mean.')
+    elif len(set(studies)) < len(studies):
+        sweeps = [java for java, tag in zip(usable, tags)
+                  if solutions.kind(tag) == 'sweep']
         message += (' Some come from the same study, solved again after '
-                    'its steps changed; to drop results you no longer need, '
-                    "remove their solution, e.g. model.java.sol().remove("
-                    f"{str(old.getString('solution'))!r}) for "
-                    f'{describe(old)}.')
+                    'its steps changed')
+        if sweeps and len(sweeps) < len(usable):
+            old = sweeps[0]
+            message += (f'; {describe(old)} holds a sweep of an earlier '
+                        'solve: to drop it, remove its solution, '
+                        "model.java.sol().remove("
+                        f"{str(old.getString('solution'))!r})")
+        message += '.'
     raise ValueError(message)
 
 
