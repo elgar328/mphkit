@@ -591,6 +591,17 @@ def find(geom: Node, entity: str, /, x=None, y=None, z=None, *,
     `set("dif1(1)", 3)`, count that object's entities during the build,
     not in the finished geometry: select them by location from the drawn
     shapes, with `where='geometry'`, or in a work plane.
+
+    `old.reset()` keeps the solutions: read them with the results helpers,
+    before or after, to compare with the rebuilt model; these leave no
+    lines in the Java file, MPh's `old.evaluate` does. On a loaded physics
+    feature, `node.selection()` gives its entity numbers or its selection
+    node and `node.properties()` its settings. A node the Java file
+    creates without a selection line keeps COMSOL's default: a material
+    or physics interface takes all domains, also after the geometry
+    changes. Default features such as `Solid 1` or `Thermal Insulation 1`
+    are not in the file; they take all domains, or the exterior
+    boundaries no other condition takes.
     """
     _comsol.check_not_workplane(geom, 'sel.find')
     with _comsol.history_off(geom.model.java):

@@ -516,8 +516,11 @@ def test_help_example(client, monkeypatch, tmp_path):
                if re.match(r'mk\.(physics_types|feature_types|properties|'
                            r'variables)\(', line)]
     assert len(lookups) == 4, 'update the checks below with the help'
+    entities, = [line for line in code.splitlines()
+                 if line.startswith('mk.sel.entities(')]
 
     def check(namespace):
+        assert eval(entities.split('#')[0], namespace) == [3]
         found = [eval(line.split('#')[0], namespace) for line in lookups]
         assert any(e['type'] == 'HeatTransfer' for e in found[0])
         assert any(e['type'] == 'TemperatureBoundary'
@@ -570,6 +573,12 @@ def test_help_java_export(client, model, tmp_path):
     for part in ('client.load', 'reset()', "old.save('old.java')",
                  'bounding_box', 'mk.sel.box', 'overwrite'):
         assert part in mk.sel.find.__doc__
+    text = ' '.join(mk.sel.find.__doc__.split())
+    for part in ('`old.reset()` keeps the solutions', 'node.selection()',
+                 'node.properties()', 'takes all domains, also after the '
+                 'geometry changes', 'the exterior boundaries no other '
+                 'condition takes'):
+        assert part in text
     geom = mk.geometry(model, 3)
     mk.block(geom, (1, 1, 1))
     mk.cylinder(geom, 0.1, 1, (2, 0, 0)).remove()   # history to compact
@@ -599,5 +608,60 @@ def test_help_java_export(client, model, tmp_path):
         rebuilt = mk.sel.box(geom, 'boundary', **box)
         assert mk.sel.entities(geom, rebuilt) == bottom
         assert (tmp_path/'demo.mph').read_bytes() == saved
+    finally:
+        client.remove(old)
+
+
+def test_help_loaded_model(client, model, tmp_path):
+    # what help(mk.sel.find) says about inspecting a loaded model
+    geom = mk.geometry(model, 3)
+    mk.block(geom, (1, 1, 1))
+    mk.block(geom, (1, 1, 1), pos=(1, 0, 0))
+    model.build(geom)
+    heat = (model/'physics').create('HeatTransfer', geom)
+    material = (model/'materials').create('Common')
+    mk.set(material/'Basic', thermalconductivity='45', density='7850',
+           heatcapacity='475')
+    temp = heat.create('TemperatureBoundary', 2)
+    temp.select(mk.sel.box(geom, 'boundary', x=0))
+    temp.property('T0', '100[degC]')
+    flux = heat.create('HeatFluxBoundary', 2)
+    flux.select(mk.sel.box(geom, 'boundary', x=2))
+    flux.property('q0_input', '-1e4')
+    (model/'meshes').create(geom)
+    (model/'studies').create().create('Stationary')
+    model.solve()
+    model.save(tmp_path/'two.mph')
+    old = client.load(tmp_path/'two.mph')
+    try:
+        g = (old/'geometries').children()[0]
+        physics = (old/'physics').children()[0]
+        solid, insulation = (physics/'Solid 1', physics/'Thermal Insulation 1')
+        inner = mk.sel.find(g, 'boundary', x=1)
+        exterior = [b for b in range(1, mk.summary(g)['boundaries'] + 1)
+                    if b not in inner]
+        hot = mk.sel.find(g, 'boundary', x=0)
+        cooled = mk.sel.find(g, 'boundary', x=2)
+        # defaults: all domains; the exterior boundaries left over
+        assert list((old/'materials').children()[0].selection()) == [1, 2]
+        assert list(physics.selection()) == [1, 2]
+        assert list(solid.selection()) == [1, 2]
+        assert list(insulation.selection()) == [
+            b for b in exterior if b not in hot + cooled]
+        assert (physics/'Temperature 1').selection().name() == 'Box 1'
+        assert (physics/'Temperature 1').properties()['T0'] == '100[degC]'
+        before = mk.minimum(g, 'domain', 'T', unit='degC')
+        old.reset()
+        assert mk.minimum(g, 'domain', 'T', unit='degC') == before
+        old.save(tmp_path/'old.java')
+        text = read(tmp_path/'old.java')
+        assert 'material().create("mat1", "Common");' in text
+        assert 'material("mat1").selection()' not in text
+        assert '"solid1"' not in text and 'numerical()' not in text
+        # the defaults follow the geometry
+        mk.block(g, (1, 1, 1), pos=(2, 0, 0))
+        old.build(g)
+        assert list((old/'materials').children()[0].selection()) == [1, 2, 3]
+        assert list(solid.selection()) == [1, 2, 3]
     finally:
         client.remove(old)

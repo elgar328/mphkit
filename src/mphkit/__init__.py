@@ -21,6 +21,7 @@ them, at length.
     mk.difference(geom, plate, [hole])
     model.build(geom)
     bottom = mk.sel.box(geom, 'boundary', z=0)    # by location
+    mk.sel.entities(geom, bottom)                 # [3]: check it
     mk.physics_types(geom, search='heat')         # 'HeatTransfer', ...
     physics = (model/'physics').create('HeatTransfer', geom)
     mk.feature_types(physics, search='temperature')  # levels: boundary 2
@@ -77,9 +78,10 @@ Rules:
 - Objects that touch or overlap stay separate domains, also after
   `mk.union`; `mk.union(geom, [a, b], intbnd=False)` merges them.
 
-Existing models: `old = client.load('file.mph')`, then `old.reset()` and
-`old.save('old.java')` show it as Java (`old.save()` without a path
-overwrites the .mph); `help(mk.sel.find)` moves numbered selections.
+Existing models: `old = client.load('file.mph')`, then `old.reset()` (it
+keeps the solutions) and `old.save('old.java')` show it as Java
+(`old.save()` without a path overwrites the .mph); `help(mk.sel.find)`
+moves numbered selections and tells how to inspect the old model.
 
 Index:
 
