@@ -215,7 +215,8 @@ __all__ = ['LicenseError', 'array', 'average', 'block', 'bounding_box',
            'partition', 'physics_types', 'plot', 'point', 'polygon',
            'problem_size', 'progress', 'properties', 'rectangle', 'revolve',
            'rigid_transform', 'rotate', 'sel', 'sphere', 'square',
-           'step_values', 'summary', 'union', 'value', 'variables', 'workplane']
+           'step_values', 'summary', 'union', 'value', 'variables',
+           'workplane']
 
 # Unknown names raise errors that name the right helper (see _hints).
 _sys.modules[__name__].__class__ = _HintModule

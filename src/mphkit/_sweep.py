@@ -12,8 +12,9 @@ swept over other parameters keeps them as steps instead.
 from __future__ import annotations
 
 import math
+import numbers
 import re
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from typing import Any, NamedTuple
 
 import numpy
@@ -219,7 +220,7 @@ def step_values(geom: Node, /, *, dataset=None, outer=None
     Leaves nothing in the model.
     """
     _results.check_geometry('step_values', geom)
-    _results.steps(outer, None, '', what='outer')
+    check_outer(outer)
     model = geom.model.java
     chosen = _datasets.select(geom, dataset)
     data = chosen.java
@@ -238,8 +239,7 @@ def step_values(geom: Node, /, *, dataset=None, outer=None
                 if len(counts) == 1 else 'outer=k for one value at a time')
         raise ValueError(f'The outer values of {where} have different steps '
                          f'({_differences(model, sweep)}); pass {rows}.')
-    positions, many = _results.steps(outer, len(sweep.children), where,
-                                     what='outer')
+    positions, many = pick(outer, sweep, data, None)
     tables = [named_steps(model, model.sol(sweep.children[k - 1]))
               for k in positions]
     if not many:
@@ -585,7 +585,155 @@ def pick(outer, sweep: Sweep, data, step) -> tuple[list[int], bool]:
                         f'an outer loop, so pass outer={step!r} instead of '
                         'step=.')
         raise ValueError(message)
+    if isinstance(outer, Mapping):
+        return [by_value(sweep, outer, where)], False
+    if _by_name(outer):
+        return [by_value(sweep, wanted, where) for wanted in outer], True
     return _results.steps(outer, count, where, what='outer')
+
+
+#################
+# Picking value #
+#################
+
+def check_outer(outer):
+    """Checks the form of `outer`, before COMSOL is asked anything."""
+    if isinstance(outer, Mapping):
+        _check_values(outer)
+    elif _by_name(outer):
+        for wanted in outer:
+            _check_values(wanted)
+    else:
+        _results.steps(outer, None, '', what='outer')
+
+
+def _by_name(outer) -> bool:
+    """
+    Tells whether `outer` is a list of values by name; raises for a list
+    that mixes them with numbers.
+    """
+    if not isinstance(outer, (list, tuple)) or not outer:
+        return False
+    named = [isinstance(item, Mapping) for item in outer]
+    if any(named) and not all(named):
+        raise TypeError(f'outer mixes numbers and values by name: '
+                        f'{outer!r}; give either.')
+    return all(named)
+
+
+def _check_values(wanted):
+    """Checks one outer value by name, e.g. {'Th': '200[degC]'}."""
+    if not wanted:
+        raise TypeError("outer={} names no parameter; e.g. outer="
+                        "{'Th': '200[degC]'} or {'Th': 473.15} (SI).")
+    for name, given in wanted.items():
+        if not isinstance(name, str):
+            raise TypeError(f'outer takes parameters by name, not '
+                            f'{name!r}.')
+        if (isinstance(given, (bool, numpy.bool_))
+                or not isinstance(given, (numbers.Real, str))):
+            raise TypeError(f'outer={{{name!r}: ...}} takes a number in SI '
+                            f"units or a value with its unit such as "
+                            f"'200[degC]', not {given!r}.")
+
+
+def by_value(sweep: Sweep, wanted: Mapping, where: str) -> int:
+    """
+    Returns the outer value (counted from 1) that has the values
+    `wanted`, by name: numbers in SI units, or strings with a unit that
+    COMSOL converts, e.g. '200[degC]'. Some parameters are enough if they
+    pick one value.
+    """
+    model = sweep.model
+    rows = values(model, sweep.tag)
+    swept = [sweep.swept(k) for k in range(1, len(rows) + 1)]
+    for name in wanted:
+        if name not in sweep.names:
+            steps = _names(model.sol(sweep.children[0]))
+            if name in steps:
+                raise ValueError(
+                    f'{where} holds {name} as steps of each outer value, not '
+                    f"as an outer value: pass step= (mk.step_values(geom, "
+                    'outer=k) gives them).')
+            raise ValueError(f'{where} has no outer parameter {name!r}; its '
+                             f'outer parameters are '
+                             f'{", ".join(sweep.names)}.')
+    targets = {name: _si(model, name, given)
+               for name, given in wanted.items()}
+    found = [k for k, row in enumerate(rows, 1)
+             if all(_close(row[name], target, [r[name] for r in rows])
+                    for name, target in targets.items())]
+    asked = ', '.join(f'{name}={given!r}' for name, given in wanted.items())
+    if len(found) == 1:
+        return found[0]
+    if not found:
+        message = (f'{where} has no value with {asked}; it has '
+                   f'{listed(sweep.labels)}.')
+        numbers_given = {name: float(given) for name, given in wanted.items()
+                         if not isinstance(given, str)}
+        if numbers_given and any(
+                all(_close(row.get(name, math.nan), number,
+                           [r.get(name, math.nan) for r in swept])
+                    for name, number in numbers_given.items())
+                for row in swept):
+            message += (' Numbers are in SI units; give the unit as a '
+                        "string instead, e.g. '200[degC]'.")
+        raise ValueError(message)
+    if all(rows[k - 1] == rows[found[0] - 1] for k in found):
+        raise ValueError(f'{where} has {asked} more than once (outer='
+                         f'{_numbers(found)}); pass outer= one of these '
+                         'numbers.')
+    raise ValueError(f'{asked} fits several values of {where}: '
+                     f'{listed(sweep.labels)}; give more parameters, or '
+                     'the number.')
+
+
+def _step_of(model, solution, wanted: Mapping) -> int | None:
+    """
+    Returns the step (from 1) of a sweep stored as steps that has the
+    values `wanted` by name, or `None` unless exactly one has.
+    """
+    table = named_steps(model, solution)
+    targets = {name: _si(model, name, given)
+               for name, given in wanted.items()}
+    count = len(next(iter(table.values())))
+    found = [k for k in range(1, count + 1)
+             if all(_close(float(table[name][k - 1].real), target,
+                           [float(v) for v in table[name].real])
+                    for name, target in targets.items())]
+    return found[0] if len(found) == 1 else None
+
+
+def _si(model, name: str, given) -> float:
+    """
+    Returns a value given for parameter `name` in SI units: a number as
+    it is, a string converted by COMSOL with the parameter's unit.
+    """
+    if not isinstance(given, str):
+        return float(given)
+    if name.startswith(SWITCHES):
+        raise ValueError(f'{name} takes the number of the case, not '
+                         f'{given!r}.')
+    parameters = model.param()
+    unit = parameters.evaluateUnit(name)
+    if unit is None:
+        raise ValueError(f'Parameter {name} has no unit, or the model no '
+                         f'longer has it: give its value as a number (in SI '
+                         f'units), not {given!r}.')
+    try:
+        with _comsol.history_off(model):
+            return float(parameters.evaluate(given, str(unit)))
+    except Exception as error:
+        raise ValueError(f'COMSOL cannot read {given!r} as a value of {name} '
+                         f'in {unit}: {_comsol.reason(error)} Give the unit '
+                         "in brackets, e.g. '200[degC]', or a number in SI "
+                         'units.') from error
+
+
+def _close(value: float, target: float, every: list[float]) -> bool:
+    """Tells whether two values agree within 1e-9 of the largest swept."""
+    scale = max([abs(v) for v in every if not math.isnan(v)] or [0.0])
+    return abs(value - target) <= TOLERANCE * scale
 
 
 def no_outer(model, data, outer, caller: str | None, dataset
@@ -601,9 +749,17 @@ def no_outer(model, data, outer, caller: str | None, dataset
             f'{where} holds its sweep over {", ".join(names)} as steps, not '
             'as outer values; leave out outer= to get them.')
     if names:
+        instead = (f'step={outer!r}' if not isinstance(outer, (Mapping, list,
+                                                              tuple))
+                   else 'step=')
+        if isinstance(outer, Mapping) and set(outer) <= set(names):
+            found = _step_of(model, _datasets.solution_of(model, data),
+                             outer)
+            if found is not None:
+                instead = f'step={found}'
         return ValueError(
             f'{where} holds its sweep over {", ".join(names)} as steps, not '
-            f'as outer values: pass step={outer!r} instead of outer= '
+            f'as outer values: pass {instead} instead of outer= '
             f'({_call("step_values", dataset)} gives the values).')
     return ValueError(f'{where} has no outer sweep; leave out outer=.')
 

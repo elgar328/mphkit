@@ -12,7 +12,7 @@ unit that does not fit the expression.
 from __future__ import annotations
 
 import numbers
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from typing import Any, Literal, overload
 
 import numpy
@@ -49,10 +49,11 @@ One = int | numpy.integer | Literal['first', 'last'] | None
 Many = Literal['all'] | Sequence[int] | NDArray[numpy.integer]
 Step = (int | numpy.integer | str | Sequence[int] | NDArray[numpy.integer]
         | None)
-# outer values of a sweep: the same forms
-OuterOne = One
-OuterMany = Many
-Outer = Step
+# outer values of a sweep: the same forms, or values by name
+Values = Mapping[str, float | str]
+OuterOne = One | Values
+OuterMany = Many | Sequence[Values]
+Outer = Step | Values | Sequence[Values]
 
 
 ###########
@@ -352,7 +353,7 @@ def value(geom: Node, expr: str, points, /, *, unit: str | None = None,
     sdim = _comsol.sdim(geom)
     coordinates, single = _points(geom, points, sdim)
     steps(step, None, '')
-    steps(outer, None, '', what='outer')
+    _sweep.check_outer(outer)
     model = geom.model.java
     with _datasets.scratch(model) as create:
         request = _sweep.resolve(create, geom, dataset, step, outer)
@@ -443,7 +444,7 @@ def _over(name: str, geom: Node, entity: str, expr: str, selection,
                          'use mk.value(geom, expr, points) for values at '
                          'points.')
     steps(step, None, '')
-    steps(outer, None, '', what='outer')
+    _sweep.check_outer(outer)
     model = geom.model.java
     sdim = _comsol.sdim(geom)
     settings: dict[str, Any] = {'expr': expr, 'unit': unit,
@@ -671,6 +672,8 @@ def steps(step, count: int | None, where: str, *,
     noun = 'step' if what == 'step' else 'outer value'
     forms = ("'first', 'last' or a number" if single else
              "'first', 'last', 'all', a number or a list of numbers")
+    if what == 'outer':
+        forms += ", or values by name such as {'Th': 473.15}"
     if single and (step == 'all' if isinstance(step, str)
                    else numpy.ndim(step) > 0):
         raise ValueError(f"{single}() draws one {noun}; pass {what}='last' "

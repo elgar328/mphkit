@@ -123,6 +123,9 @@ def test_plain_and_inner_sweep(fresh):
     with pytest.raises(ValueError, match='as steps, not as outer values; '
                                          'leave out outer= to get them'):
         step_values(geom, outer=1)
+    with pytest.raises(ValueError, match=r'as steps, not as outer values: '
+                                         r'pass step=2 instead of outer='):
+        mk.average(geom, 'domain', 'T', outer={'Th': '200[degC]'})
 
 
 ############
@@ -469,6 +472,11 @@ def test_material_sweep(fresh):
     hot = mk.sel.box(geom, 'boundary', x=0)
     flux = mk.integral(geom, 'boundary', 'ht.ntflux', hot, outer='all')
     assert flux == pytest.approx([-10/45*18, -90/45*18])
+    assert mk.integral(geom, 'boundary', 'ht.ntflux', hot,
+                       outer={'matsw.comp1.sw1': 2}) == pytest.approx(-36)
+    with pytest.raises(ValueError, match='takes the number of the case'):
+        mk.integral(geom, 'boundary', 'ht.ntflux', hot,
+                    outer={'matsw.comp1.sw1': '2'})
 
 
 ############
@@ -922,3 +930,96 @@ def test_cumulative_and_geometry_selections(client):
             mk.integral(geom, 'boundary', '1', inside, outer='all')
     finally:
         client.remove(model)
+
+
+############
+# By value #
+############
+
+def test_by_value(swept):
+    model, geom, study, faces = swept
+    hot = faces['hot']
+
+    def read(outer):
+        return mk.average(geom, 'boundary', 'T', hot, unit='degC',
+                          outer=outer, step='last')
+    assert read({'Th': 473.15}) == pytest.approx(200)
+    assert read({'Th': '200[degC]'}) == pytest.approx(200)
+    assert read({'Th': '392[degF]'}) == pytest.approx(200)
+    assert read([{'Th': '300[degC]'}, {'Th': 373.15}]) == \
+        pytest.approx([300, 100])
+    assert read(mk.outer_values(geom)) == pytest.approx([100, 200, 300])
+    assert read(mk.outer_values(geom)[1]) == pytest.approx(200)
+    assert step_values(geom, outer={'Th': '300[degC]'})['t'] == \
+        pytest.approx([0, 1, 2])
+    for given, message in (
+            ('200[kg]', r"COMSOL cannot read '200\[kg\]' as a value of Th "
+                        r'in K: .*Inconsistent unit'),
+            ('200[xyz]', 'Unknown unit'),
+            ('473.15', r"cannot read '473.15'.* Give the unit in brackets")):
+        with pytest.raises(ValueError, match=message):
+            read({'Th': given})
+    with pytest.raises(ValueError, match=r"has no value with Th=200; it has "
+                       r'1: Th=373.15 \(100 degC\);.* Numbers are in SI '
+                       r"units; give the unit as a string instead, e.g. "
+                       r"'200\[degC\]'"):
+        read({'Th': 200})
+    with pytest.raises(ValueError, match=r"has no outer parameter 'T'; its "
+                                         r'outer parameters are Th\.'):
+        read({'T': 1})
+    with pytest.raises(ValueError, match='holds t as steps of each outer '
+                                         'value'):
+        read({'t': 1})
+    with pytest.raises(TypeError, match='names no parameter'):
+        read({})
+    with pytest.raises(TypeError, match='mixes numbers and values by name'):
+        read([1, {'Th': 373.15}])
+    with pytest.raises(TypeError, match='takes a number in SI units'):
+        read({'Th': True})
+    with pytest.raises(TypeError, match=r"or values by name such as "):
+        read(1.5)
+
+
+def test_two_parameters_by_value(fresh):
+    model, geom = fresh()
+    model.parameter('k', '45[W/(m*K)]')
+    (model/'materials'/'steel'/'Basic').property('thermalconductivity',
+                                                ['k'])
+    study = (model/'studies').create(name='both')
+    study.create('Transient').property('tlist', '0 1')
+    both = study.create('Parametric')
+    both.property('pname', ['Th', 'k'])
+    both.property('plistarr', ['100 200', '10 90'])
+    both.property('punit', ['degC', 'W/(m*K)'])
+    both.java.set('sweeptype', 'filled')
+    model.solve()
+    found = outer_values(geom)
+    assert len(found) == 4
+    second = {'Th': '100[degC]', 'k': 90}
+    k = found.index(next(row for row in found
+                         if row['k'] == pytest.approx(90)
+                         and row['Th'] == pytest.approx(373.15))) + 1
+    assert mk.integral(geom, 'domain', '1', outer=second, step='last') == \
+        pytest.approx(mk.integral(geom, 'domain', '1', outer=k,
+                                  step='last'))
+    with pytest.raises(ValueError, match=r"Th='100\[degC\]' fits several "
+                                         r'values of .*give more parameters'):
+        mk.integral(geom, 'domain', '1', outer={'Th': '100[degC]'},
+                    step='last')
+
+
+def test_repeated_value(fresh):
+    model, geom = fresh()
+    transient(model, values='100 100')
+    with pytest.raises(ValueError, match=r'has Th=373.15 more than once '
+                                         r'\(outer=1 and 2\); pass outer= '
+                                         r'one of these numbers'):
+        mk.average(geom, 'domain', 'T', outer={'Th': 373.15}, step='last')
+
+
+def test_width_by_value(widths):
+    model, geom, block, faces = widths
+    assert mk.integral(geom, 'domain', '1', outer={'W': '150[mm]'}) == \
+        pytest.approx(7.5e-5)
+    assert mk.integral(geom, 'domain', '1', outer={'W': 0.1}) == \
+        pytest.approx(5e-5)

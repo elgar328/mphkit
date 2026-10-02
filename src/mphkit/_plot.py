@@ -153,7 +153,7 @@ def plot(geom: Node, expr: str, filename, /, selection: Node | None = None,
         raise ValueError('Slices and views are for 3D geometries.')
     if slices is not None and scale is not None:
         raise ValueError('deform= draws on surfaces; leave out x/y/z.')
-    _results.steps(outer, None, '', what='outer')
+    _sweep.check_outer(outer)
     model = geom.model.java
     with _datasets.scratch(model) as create:
         pictures, many = _sweep.pictures(create, geom, dataset, step, outer)

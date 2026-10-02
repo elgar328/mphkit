@@ -39,6 +39,18 @@ def check(geom: Node, flag: bool, step: int | str) -> None:
                 tuple[NDArray[Any], NDArray[Any]])
     assert_type(mk.minimum(geom, 'domain', 'T', outer='first',
                            position=True), tuple[float, NDArray[Any]])
+    assert_type(mk.average(geom, 'domain', 'T', outer={'Th': 473.15}),
+                float)
+    assert_type(mk.average(geom, 'domain', 'T', outer={'Th': '200[degC]'}),
+                float)
+    assert_type(mk.average(geom, 'domain', 'T', outer={'W': 1}), float)
+    assert_type(mk.average(geom, 'domain', 'T', outer=[{'W': '100[mm]'}]),
+                NDArray[Any])
+    assert_type(mk.maximum(geom, 'domain', 'T',
+                           outer=mk.outer_values(geom)), NDArray[Any])
+    assert_type(mk.maximum(geom, 'domain', 'T',
+                           outer=mk.outer_values(geom)[1]), float)
+    assert_type(mk.plot(geom, 'T', 'T.png', outer={'Th': 473.15}), Path)
     assert_type(mk.outer_values(geom), list[dict[str, float]])
     assert_type(mk.step_values(geom, outer=2), dict[str, NDArray[Any]])
     assert_type(mk.plot(geom, 'T', 'T.png', view='top', step='last'), Path)

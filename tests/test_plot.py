@@ -538,6 +538,9 @@ def test_sweep_pictures(swept, tmp_path):
     model, geom = swept
     one = mk.plot(geom, 'T', tmp_path/'two.png', outer=2, step='last')
     assert one == tmp_path/'two.png'
+    named = mk.plot(geom, 'T', tmp_path/'named.png', step='last',
+                    outer={'Th': '200[degC]'})
+    assert named.read_bytes() == one.read_bytes()
     every = mk.plot(geom, 'T', str(tmp_path/'T_{outer}.png'), outer='all',
                     step='last', unit='degC')
     assert every == [tmp_path/f'T_{n}.png' for n in (1, 2, 3)]
