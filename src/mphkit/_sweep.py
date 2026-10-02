@@ -803,14 +803,10 @@ def pick(outer, sweep: Sweep, step) -> tuple[list[int], bool]:
         return [by_value(sweep, outer)], False
     if _by_name(outer):
         return [by_value(sweep, wanted) for wanted in outer], True
-    try:
-        return _results.steps(outer, count, where, what='outer')
-    except ValueError as error:
-        if 'outer values, not' not in str(error):
-            raise
-        raise ValueError(f'{str(error)[:-1]}: outer counts the values from '
-                         f'1; to pick one by value, pass e.g. '
-                         f'outer={sweep.example()}.') from None
+    return _results.steps(
+        outer, count, where, what='outer',
+        hint=lambda: (': outer counts the values from 1; to pick one by '
+                      f'value, pass e.g. outer={sweep.example()}'))
 
 
 #################

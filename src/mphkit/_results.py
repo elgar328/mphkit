@@ -711,8 +711,9 @@ def steps(step, count: int | None, where: str, *,
     Returns the step numbers `step` stands for and whether it asks for
     several (an array). With `count=None`, only checks its form.
     `where` names what has the steps in messages, e.g. `Dataset "s//Solution
-    1"`, and `hint` follows the error for several steps, e.g. where to look
-    them up; a function gives it only then. `single` names a caller that
+    1"`, and `hint` follows the errors for a step past the last and for
+    `None` with several steps, e.g. where to look them up; a function
+    gives it only then. `single` names a caller that
     takes one step only, such as `'plot'`. `what` is the argument's name,
     `'step'` or `'outer'`.
     """

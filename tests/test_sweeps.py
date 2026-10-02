@@ -8,6 +8,7 @@ The plate of test_results, 0.1 x 0.05 x 0.01 m, held at Th at x = 0 and
 """
 import math
 import os
+import re
 import sys
 import warnings
 
@@ -2264,3 +2265,52 @@ def test_outer_number_in_sweep_units(fresh):
     _, found = caught(lambda: mk.average(geom, 'domain', 'T', outer=1,
                                          step='last', dataset='widths'))
     assert found == []
+
+
+def test_outer_out_of_range_hint():
+    # the hint follows the error for one value as for several, and is
+    # only worked out then
+    from types import SimpleNamespace
+
+    class Data:
+        def label(self):
+            return 'sweep/Parametric Solutions 1'    # names double '/'
+
+        def tag(self):
+            return 'dset2'
+
+    def fake(count):
+        calls = []
+
+        def example():
+            calls.append(1)
+            return {'Th': '100[degC]'}
+        return SimpleNamespace(children=['sol'] * count, data=Data(),
+                               example=example), calls
+
+    hint = ("outer counts the values from 1; to pick one by value, pass "
+            "e.g. outer={'Th': '100[degC]'}.")
+    sweep, calls = fake(1)
+    assert mk._sweep.pick(1, sweep, None) == ([1], False)
+    assert calls == []
+    with pytest.raises(ValueError) as error:
+        mk._sweep.pick(5, sweep, None)
+    assert str(error.value) == ('Dataset "sweep//Parametric Solutions 1" '
+                                f'(dset2) has 1 outer value, not 5: {hint}')
+    assert calls == [1]
+    with pytest.raises(ValueError, match=re.escape(hint) + '$'):
+        mk._sweep.pick([1, 5], sweep, None)
+    sweep, calls = fake(3)
+    with pytest.raises(ValueError) as error:
+        mk._sweep.pick(5, sweep, None)
+    assert str(error.value) == ('Dataset "sweep//Parametric Solutions 1" '
+                                f'(dset2) has 3 outer values, not 5: {hint}')
+
+
+def test_outer_out_of_range_one_value(fresh):
+    model, geom = fresh()
+    transient(model, values='100')
+    with pytest.raises(ValueError, match=re.escape(
+            "has 1 outer value, not 5: outer counts the values from 1; to "
+            "pick one by value, pass e.g. outer={'Th': '100[degC]'}.") + '$'):
+        mk.average(geom, 'domain', 'T', outer=5, step='last')
