@@ -14,8 +14,12 @@ from __future__ import annotations
 
 import math
 import numbers
+import os
 import re
+import sys
+import warnings
 from collections.abc import Callable, Mapping
+from types import FrameType
 from typing import Any, NamedTuple
 
 import numpy
@@ -504,9 +508,12 @@ def _prepare(create, geom: Node, dataset, step, outer,
                 hint=lambda: f' ({_call("step_values", dataset)} gives their '
                              'times or parameter values'
                              f'{_by_value_hint(solution)})')
+            warn_numbers('step', step, lambda: step_columns(model, solution))
         return Plain(data, count, solnums, many)
     sweep = Sweep(model, str(data.getString('solution')), data, dataset)
     positions, many = pick(outer, sweep, step)
+    # here, not in pick(): mk.step_values loops over outer=k by position
+    warn_numbers('outer', outer, lambda: _outer_columns(sweep))
     if ready is not None:
         ready(many)
     unique, order = _results.once(positions)
@@ -515,6 +522,9 @@ def _prepare(create, geom: Node, dataset, step, outer,
         raise ValueError(f'outer asks for value {twice} more than once; '
                          'mk.plot draws one picture per value.')
     found = _steps(sweep, unique, step, caller)
+    # the values asked for have the same steps, see _steps()
+    warn_numbers('step', step, lambda: step_columns(
+        model, model.sol(sweep.children[unique[0] - 1])))
     children = Children(create, geom, sweep)
     decision = check(geom, sweep, children, unique)
     return Swept(sweep, positions, unique, order, many, found, children,
@@ -1057,6 +1067,100 @@ def _close(value: float, target: float, every: list[float]) -> bool:
     """Tells whether two values agree within 1e-9 of the largest swept."""
     scale = max([abs(v) for v in every if not math.isnan(v)] or [0.0])
     return abs(value - target) <= TOLERANCE * scale
+
+
+######################
+# Numbers and values #
+######################
+
+def warn_numbers(what: str, given,
+                 columns: Callable[[], dict[str, list[float]]]):
+    """
+    Warns when numbers given as `what` (`'step'` or `'outer'`), which are
+    positions, are also the values of other positions, as `step=10` on
+    times 0, 1, ..., 10 (the tenth step is t = 9). `columns` gives the
+    values by name, in SI units. Checking never fails a call.
+    """
+    try:
+        message = _ambiguity(what, given, columns)
+    except Exception:
+        message = None
+    if message:
+        warnings.warn(message, UserWarning, stacklevel=_outside())
+
+
+def _ambiguity(what: str, given,
+               columns: Callable[[], dict[str, list[float]]]) -> str | None:
+    """Returns the warning of `warn_numbers()`, or `None`."""
+    numbers = _given_numbers(given)
+    if not numbers:
+        return None
+    noun = 'step' if what == 'step' else 'value'
+    table = columns()
+    found = []
+    for k in dict.fromkeys(numbers):
+        for name, values in table.items():
+            at = [j for j, v in enumerate(values, 1) if _close(v, k, values)]
+            if len(at) == 1 and at[0] != k and k <= len(values):
+                found.append((k, name, values[k - 1]))
+                break
+    if not found:
+        return None
+    parts = [f'{k} is {noun} number {k} ({name}={value:g}), not {name}={k}'
+             for k, name, value in found[:3]]
+    if len(found) > 3:
+        parts.append(f'and {len(found) - 3} more')
+    k, name, _ = found[0]
+    if _comsol.is_integer(given):
+        first = f", {what}='first' the first {noun}" if k == 1 else ''
+        return (f'{what}={parts[0]}; {what}={{{name!r}: {k}}} picks '
+                f'{name}={k}{first}.')
+    return (f'{what}={numbers}: {"; ".join(parts)}; pick by value, e.g. '
+            f'{what}={{{name!r}: {k}}}.')
+
+
+def _given_numbers(given) -> list[int]:
+    """Returns the numbers `step` or `outer` gives, `[]` for other forms."""
+    if _comsol.is_integer(given):
+        return [int(given)]
+    if (isinstance(given, (list, tuple, numpy.ndarray)) and len(given)
+            and all(_comsol.is_integer(v) for v in given)):
+        return [int(v) for v in given]
+    return []
+
+
+def step_columns(model, solution) -> dict[str, list[float]]:
+    """
+    Returns the real step values of a solution by name, for
+    `warn_numbers()`; none for eigenvalues, which are picked by number.
+    """
+    table = named_steps(model, solution)
+    if 'lambda' in table:
+        return {}
+    return {name: [float(v) for v in values]
+            for name, values in table.items()
+            if not numpy.iscomplexobj(values)}
+
+
+def _outer_columns(sweep: Sweep) -> dict[str, list[float]]:
+    """Returns the outer values by name, for `warn_numbers()`."""
+    rows = sweep.rows
+    return {name: [row[name] for row in rows] for name in sweep.names
+            if not name.startswith(SWITCHES)}
+
+
+def _outside() -> int:
+    """
+    Returns the `stacklevel` of a warning raised in the function that
+    calls this one: the first caller outside the package.
+    """
+    package = os.path.dirname(os.path.abspath(__file__)) + os.sep
+    frame: FrameType | None = sys._getframe(1)
+    level = 1
+    while frame is not None and os.path.abspath(
+            frame.f_code.co_filename).startswith(package):
+        frame, level = frame.f_back, level + 1
+    return level
 
 
 def no_outer(model, data, outer, caller: str | None, dataset

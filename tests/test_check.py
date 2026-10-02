@@ -443,12 +443,12 @@ def test_documented(client):
     readme = read(root/'README.md')
     lines = [re.search(r'Before solving, a check.*?```python\n(.*?)```',
                        readme, re.S).group(1)]
-    lines.append(re.search(r'\n    (warnings = .*?)\n', mk.__doc__).group(1))
+    lines.append(re.search(r'\n    (problems = .*?)\n', mk.__doc__).group(1))
     model, geom, _ = plate_with_holes.build_model(client, 1)
     try:
         for code in lines:
             namespace = {'mk': mk, 'model': model}
             exec(code, namespace)
-            assert namespace['warnings'] == []
+            assert namespace['problems'] == []
     finally:
         client.remove(model)

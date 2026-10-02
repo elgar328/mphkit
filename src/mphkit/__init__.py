@@ -35,8 +35,8 @@ them, at length.
     study.create('Transient').property('tlist', 'range(0,1,10)')
     sweep = study.create('Parametric')
     mk.set(sweep, pname=['Th'], plistarr=['100 200 300'], punit=['degC'])
-    warnings = [p for p in mk.check(model) if p['severity'] == 'warning']
-    assert not warnings, warnings
+    problems = [p for p in mk.check(model) if p['severity'] == 'warning']
+    assert not problems, problems
     model.solve('heating')
     mk.variables(physics, search='heat flux')     # 'ht.ntflux', ...
     heat = mk.integral(geom, 'boundary', 'ht.ntflux', bottom, unit='W',
@@ -55,7 +55,7 @@ Results are in SI units unless `unit` is given, also in an mm geometry
 `dataset=` picks one of several solutions, a dataset or its study.
 `step=` picks steps by position from 1 ('first', 'last', a number, a
 list, 'all') or by value: `step=10` is the tenth step, `step={'t': 10}`
-the one at t = 10 s. A sweep stored as an outer loop needs `outer=` in
+the one at t = 10 s (a warning tells when they differ). A sweep stored as an outer loop needs `outer=` in
 every call, in the same forms; `mk.outer_values(geom)` tells which kind
 a sweep is. MPh's `model.evaluate` reads only the last value of such a
 sweep unless given its dataset.

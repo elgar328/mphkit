@@ -116,7 +116,8 @@ def plot(geom: Node, expr: str, filename, /, selection: Node | None = None,
 
     `unit`, `dataset`, `step` and `outer` work as in `mk.integral`, but a
     picture shows one step: `'first'`, `'last'`, a number or a value
-    such as `{'t': 10}`. Several
+    such as `{'t': 10}`; for a picture per step, loop over the values,
+    `for t in mk.step_values(geom)['t']: ... step={'t': t}`. Several
     outer values (`outer='all'` or a list) give a picture each, in a list
     of paths; `{outer}` in the file name stands for the value's number,
     e.g. `mk.plot(geom, 'T', 'T_{outer}.png', outer='all', step='last')`

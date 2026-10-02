@@ -9,6 +9,7 @@ The plate of test_results, 0.1 x 0.05 x 0.01 m, held at Th at x = 0 and
 import math
 import os
 import sys
+import warnings
 
 import numpy
 import pytest
@@ -308,6 +309,8 @@ def test_failed_then_fixed(fresh):
 # Numbers #
 ###########
 
+# positions on purpose: the warning about numbers that are also values
+@pytest.mark.filterwarnings('ignore:(step|outer)=:UserWarning')
 def test_numbers(swept):
     model, geom, study, faces = swept
     hot = faces['hot']
@@ -1302,6 +1305,8 @@ def test_history_unchanged(fresh, tmp_path):
     outer_values(geom)
     step_values(geom, outer='all')
     mk.average(geom, 'domain', 'T', outer='all', step='last')
+    with pytest.warns(UserWarning, match='^step=2'):    # t = 0, 1, 2
+        mk.average(geom, 'domain', 'T', outer=1, step=2)
     mk.value(geom, 'T', (0.01, 0.025, 0.005), unit='degC', step='last',
              outer={'Th': '200[degC]'})
     plot(geom, 'T', tmp_path/'T_{outer}.png', outer='all', step='last',
@@ -1994,6 +1999,8 @@ def test_steps_by_value(swept, tmp_path):
         flux(7)
 
 
+# positions on purpose: the warning about numbers that are also values
+@pytest.mark.filterwarnings('ignore:(step|outer)=:UserWarning')
 def test_steps_by_value_without_sweep(fresh):
     model, geom = fresh()
     study = (model/'studies').create(name='transient')
@@ -2015,3 +2022,131 @@ def test_steps_by_value_without_sweep(fresh):
                       step={'Th': '200[degC]'}) == \
         pytest.approx(mk.average(geom, 'domain', 'T', dataset=inner,
                                  step=2))
+
+
+###############################
+# Numbers that are values too #
+###############################
+
+def caught(call):
+    """Returns what `call` gives and the warnings it raised, all of them."""
+    with warnings.catch_warnings(record=True) as found:
+        warnings.simplefilter('always')
+        result = call()
+    return result, [str(w.message) for w in found]
+
+
+def timed(fresh, tlist, name='timed'):
+    """A plate solved over the times `tlist`, without a sweep."""
+    model, geom = fresh()
+    study = (model/'studies').create(name=name)
+    study.create('Transient').property('tlist', tlist)
+    model.solve(name)
+    return model, geom
+
+
+def test_step_number_warning(fresh, tmp_path):
+    model, geom = timed(fresh, 'range(0,1,10)')
+    before = java_export(model, tmp_path/'model.java')
+    # the helpers themselves: leaves_nothing wraps those of mk
+    with pytest.warns(UserWarning) as found:
+        tenth = mk._results.maximum(geom, 'domain', 'T', step=10)
+    assert [str(w.message) for w in found] == [
+        "step=10 is step number 10 (t=9), not t=10; step={'t': 10} picks "
+        't=10.']
+    assert found[0].filename == __file__          # the caller's line
+    assert tenth == mk.maximum(geom, 'domain', 'T', step={'t': 9})
+    with pytest.warns(UserWarning, match=r"^step=1 is step number 1 "
+                      r"\(t=0\), not t=1; step=\{'t': 1\} picks t=1, "
+                      r"step='first' the first step\.$"):
+        mk.average(geom, 'domain', 'T', step=1)
+    with pytest.warns(UserWarning) as found:
+        mk._results.value(geom, 'T', (0.01, 0.025, 0.005), step=[1, 10, 11])
+    assert [str(w.message) for w in found] == [
+        'step=[1, 10, 11]: 1 is step number 1 (t=0), not t=1; 10 is step '
+        "number 10 (t=9), not t=10; pick by value, e.g. step={'t': 1}."]
+    assert found[0].filename == __file__
+    with pytest.warns(UserWarning, match=r'^step=10 is step number 10'):
+        plot(geom, 'T', tmp_path/'T.png', step=10)
+    for step in ('first', 'last', {'t': 10}, [{'t': 1}, {'t': 10}], 11):
+        _, found = caught(lambda: mk.average(geom, 'domain', 'T', step=step))
+        assert found == [], step
+    with warnings.catch_warnings():
+        warnings.simplefilter('error')
+        with pytest.raises(UserWarning, match='^step=10'):
+            mk.maximum(geom, 'domain', 'T', step=10)
+    # reading the step values leaves no history
+    assert java_export(model, tmp_path/'model.java') == before
+
+
+@pytest.mark.parametrize('tlist', ['range(1,1,10)', 'range(0,0.1,0.5)',
+                                   '0.999999999999 2 3'])
+def test_step_number_no_warning(fresh, tlist):
+    # numbers that are their own values, or no other step's
+    model, geom = timed(fresh, tlist)
+    _, found = caught(lambda: mk.average(geom, 'domain', 'T', step=[1, 3]))
+    assert found == []
+
+
+def test_outer_number_warning(fresh, tmp_path):
+    model, geom = fresh()
+    model.parameter('n', '0')
+    study = (model/'studies').create(name='counted')
+    study.create('Transient').property('tlist', 'range(0,1,2)')
+    sweep(study, '0 1 2', name='n', unit='')
+    model.solve('counted')
+    _, found = caught(lambda: mk.average(geom, 'domain', 'T', outer=1,
+                                         step=1))
+    assert found == [
+        "outer=1 is value number 1 (n=0), not n=1; outer={'n': 1} picks "
+        "n=1, outer='first' the first value.",
+        "step=1 is step number 1 (t=0), not t=1; step={'t': 1} picks t=1, "
+        "step='first' the first step."]
+    _, found = caught(lambda: mk.average(geom, 'domain', 'T', outer=[2, 3],
+                                         step='last'))
+    assert found == ["outer=[2, 3]: 2 is value number 2 (n=1), not n=2; "
+                     "pick by value, e.g. outer={'n': 2}."]
+    with pytest.warns(UserWarning, match=r'^outer=2 is value number 2'):
+        plot(geom, 'T', tmp_path/'T.png', outer=2, step='last')
+    for call in (lambda: step_values(geom, outer=1),
+                 lambda: mk.average(geom, 'domain', 'T', outer={'n': 1},
+                                    step={'t': 2}),
+                 lambda: mk.average(geom, 'domain', 'T', outer='all',
+                                    step='first')):
+        _, found = caught(call)
+        assert found == []
+
+
+def test_step_number_of_the_value_asked(swept, monkeypatch):
+    # an outer value's own steps, not the first value's
+    model, geom, study, faces = swept
+    read = []
+    columns = mk._sweep.step_columns
+
+    def spy(java, solution):
+        read.append(str(solution.tag()))
+        return columns(java, solution)
+    monkeypatch.setattr(mk._sweep, 'step_columns', spy)
+    data = model.java.result().dataset(dataset_named(model, 'Parametric'))
+    children = mk._sweep.Sweep(model.java,
+                               str(data.getString('solution'))).children
+    caught(lambda: mk.average(geom, 'domain', 'T', outer=3, step=2))
+    assert read == [children[2]]
+
+
+def test_ambiguity():
+    # the rule on its own: one other step with that value
+    def message(given, table, what='step'):
+        return mk._sweep._ambiguity(what, given, lambda: table)
+    assert message(2, {'t': [0.0, 2.0, 2.0]}) is None       # two of them
+    assert message(2, {'t': [0.0, 1.0, 2.0]}).startswith('step=2 is step')
+    assert message(3, {'p': [5.0, 6.0, 7.0], 't': [0.0, 1.0, 2.0, 3.0]}) \
+        .startswith("step=3 is step number 3 (t=2), not t=3; step={'t': 3}")
+    assert message(1, {'t': [float('nan'), 1.0]}).startswith('step=1')
+    assert message([1, 2, 3, 4], {'t': [0.0, 1.0, 2.0, 3.0, 4.0]}) == (
+        'step=[1, 2, 3, 4]: 1 is step number 1 (t=0), not t=1; 2 is step '
+        'number 2 (t=1), not t=2; 3 is step number 3 (t=2), not t=3; and 1 '
+        "more; pick by value, e.g. step={'t': 1}.")
+    for given in ('last', None, {'t': 1}, [{'t': 1}], [], True):
+        assert message(given, {'t': [0.0, 1.0]}) is None
+    assert message(numpy.int64(1), {'t': [0.0, 1.0]}).startswith('step=1 ')

@@ -370,6 +370,8 @@ def test_saved_and_loaded(fresh, client, tmp_path):
         client.remove(loaded)
 
 
+# positions on purpose: the warning about numbers that are also values
+@pytest.mark.filterwarnings('ignore:(step|outer)=:UserWarning')
 def test_time_dependent(fresh):
     model, geom, faces = fresh(study=False)
     study = (model/'studies').create(name='transient')

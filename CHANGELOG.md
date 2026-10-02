@@ -26,10 +26,13 @@ until 1.0, a minor release (0.2, 0.3, ...) may change the API. See
   in SI units), each value from its own solution; `mk.outer_values` gives
   their parameter values and `mk.step_values` the times, frequencies or
   parameter values of the steps by name, both in SI units; `step=` also
-  picks a step by value, e.g. `{'t': 10}`, in each outer value. A sweep
-  that changes the geometry is read over selection nodes or all
-  entities, evaluated on each value's geometry; entity numbers, explicit
-  selections and selections that are empty for a value raise. Unknown names such as
+  picks a step by value, e.g. `{'t': 10}`, in each outer value. A number
+  given as `step=` or `outer=` is a position; one that is also the value
+  of another position, such as `step=10` on times 0, 1, ..., 10 (the
+  tenth step is t = 9), gives a warning. A sweep that changes the
+  geometry is read over selection nodes or all entities, evaluated on
+  each value's geometry; entity numbers, explicit selections and
+  selections that are empty for a value raise. Unknown names such as
   `mk.time_values` or `mk.sweep_values` suggest them; `mk.sweep`,
   `mk.parametric_sweep` and `mk.solve` say how to make a sweep or solve
   with plain MPh.
@@ -43,6 +46,7 @@ until 1.0, a minor release (0.2, 0.3, ...) may change the API. See
   `outer=` it draws values of a parametric sweep stored as an outer
   loop, one picture each (`'T_{outer}.png'`), and checks that the title
   shows the value asked for. An error leaves existing files as they were.
+  Numbers given as `step=` or `outer=` warn as in the results helpers.
 - `mk.image(geom, filename, mesh=True)` saves a picture of the mesh,
   coloured by element quality, also of a selection only.
 - Unknown names such as `mk.mphplot`, `mk.slice` or `mk.surface_plot`

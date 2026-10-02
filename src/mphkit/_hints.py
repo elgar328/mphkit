@@ -237,7 +237,9 @@ GUESSED: dict[str, tuple[tuple[str, ...], str]] = {
              "'ht.ntflux', faces, unit='W'); mphkit.variables(physics, "
              "search='flux') finds the names."),
     **{name: ((), 'Animations stay plain MPh; mphkit.plot draws one step '
-                  'per call (step=).') for name in ('animate', 'animation')},
+                  "per call, e.g. step={'t': t} for each t of "
+                  "mphkit.step_values(geom)['t'].")
+       for name in ('animate', 'animation')},
     **{name: ((), LOAD_NOTE) for name in (
         'load_model', 'load_mph', 'open_model', 'import_model',
         'import_mph')},

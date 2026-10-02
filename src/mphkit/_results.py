@@ -119,7 +119,10 @@ def integral(geom: Node, entity: str, expr: str, /, selection=None, *,
     `step` picks steps of a time-dependent study, sweep or frequency list,
     counted from 1: `'first'`, `'last'`, a number, a list of numbers or
     `'all'`; `mk.step_values(geom)` gives their times or parameter values.
-    A number is a position: `step=10` is the tenth step, not t = 10 s.
+    A number is a position: `step=10` is the tenth step, not t = 10 s;
+    where another step has t = 10 s, a warning says so (in code that
+    means positions, `warnings.filterwarnings('ignore', '(step|outer)=')`
+    turns it off).
     By value, `step={'t': 10}` (SI units: s, Hz, K) or `{'t': '2[min]'}`
     picks the step with exactly that value, not interpolated, and a list
     of them several. Unlike MPh's `model.evaluate`, `None` means the only

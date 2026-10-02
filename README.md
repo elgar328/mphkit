@@ -132,7 +132,7 @@ vaguely (wrong units, domains without material, conditions that apply
 nowhere, no mesh, physics no study solves):
 
 ```python
-warnings = [p for p in mk.check(model) if p['severity'] == 'warning']
+problems = [p for p in mk.check(model) if p['severity'] == 'warning']
 ```
 
 Before a long solve, its size; while it runs, its progress, read from
@@ -166,8 +166,8 @@ mk.value(geom, 'T', [(50, 20, 2.5), (100, 20, 2.5)], unit='degC')  # array([89.8
 
 `ht.ntflux` is the flux out of the domain. With several solutions, pass
 `dataset=` (or the study); with time steps or a sweep stored as steps,
-`step=`: a position (`step=10` is the tenth step) or a value
-(`step={'t': 10}`). A unit that does not fit, a point outside the
+`step=`: a position (`step=10` is the tenth step; a warning tells when
+another step has t = 10) or a value (`step={'t': 10}`). A unit that does not fit, a point outside the
 geometry or a geometry changed since the solve and not built again
 raise instead of giving a wrong number; solve again after any change,
 as a geometry changed and then built and meshed again is read with the
