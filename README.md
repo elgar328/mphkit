@@ -164,10 +164,19 @@ mk.value(geom, 'T', [(50, 20, 2.5), (100, 20, 2.5)], unit='degC')  # array([89.8
 ```
 
 `ht.ntflux` is the flux out of the domain. With several solutions, pass
-`dataset=`; with time steps or a sweep, `step=`. A unit that does not fit,
-a point outside the geometry or, in most cases, a geometry changed since
-the solve raise instead of giving a wrong number. Global values come from MPh:
-`model.evaluate('expression', 'unit')`.
+`dataset=` (or the study); with time steps or a sweep, `step=`. A unit
+that does not fit, a point outside the geometry or, in most cases, a
+geometry changed since the solve raise instead of giving a wrong number.
+Global values come from MPh: `model.evaluate('expression', 'unit')`,
+which reads only the last value of a sweep stored as an outer loop
+unless given its dataset.
+
+Parametric sweeps that COMSOL stores as an outer loop (around a
+time-dependent study, or over the geometry, mesh or materials) take
+`outer=`, e.g. `mk.average(geom, 'domain', 'T', unit='degC',
+outer='all', step='last')` for one value per parameter value, or
+`outer={'Th': '200[degC]'}` for one; `mk.outer_values(geom)` and
+`mk.step_values(geom)` list the values, in SI units.
 
 Pictures, written to a file:
 
@@ -179,8 +188,10 @@ mk.plot(geom, 'T', 'T.png', unit='degC')                # a solved result
 mk.plot(geom, 'T', 'mid.png', unit='degC', z=2.5, view='top')  # a slice from above
 ```
 
-`mk.plot` also draws a selection only and deformed shapes
-(`deform=True`); like the other helpers it leaves nothing in the model.
+`mk.plot` also draws a selection only, deformed shapes (`deform=True`)
+and the values of a sweep, one picture each (`mk.plot(geom, 'T',
+'T_{outer}.png', outer='all', step='last')`); like the other helpers it
+leaves nothing in the model.
 
 Mesh quality in numbers, after `model.mesh()` (skewness by default, 1 is
 best):
@@ -241,9 +252,12 @@ a plate with a row of cooling holes, for one or more holes.
 - mphkit covers geometry, selections, materials from COMSOL's
   libraries, reading and drawing results, and looking up COMSOL's names. Physics, mesh, studies and plots beyond
   `mk.plot` (arrows, streamlines, graphs, animations) are left to MPh.
-- Parametric sweeps that COMSOL stores as an outer loop, e.g. around a
-  time-dependent study or over a geometry parameter, cannot be read yet;
-  other sweeps of a stationary study can.
+- A parametric sweep that changes the geometry is read over selection
+  nodes or all entities, each value in its own geometry, and not drawn;
+  a box at fixed coordinates picks what lies there in each value. With
+  physics on part of the geometry and the default mesh, the same holds
+  for any sweep stored as an outer loop. Batch and cluster sweeps and
+  optimization studies were not tried.
 - `mk.progress` reads memory and CPU from macOS; on Linux and Windows
   some of them are `None` (not tried there).
 - No named helpers yet for geometry parts (`PartInstance`), sweeps, cones

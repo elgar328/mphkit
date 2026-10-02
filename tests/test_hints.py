@@ -192,12 +192,41 @@ def message(module, name):
     (mk, 'geometry_types',
      'Did you mean mphkit.feature_types or mphkit.feature?'),
     (mk, 'geom_types', 'Did you mean mphkit.feature_types or mphkit.feature?'),
+    (mk, 'outer_solutions', 'Did you mean mphkit.outer_values?'),
+    (mk, 'outer_parameters', 'Did you mean mphkit.outer_values?'),
+    (mk, 'sweep_values', 'Did you mean mphkit.outer_values?'),
+    (mk, 'mphsolinfo', 'Did you mean mphkit.outer_values?'),
+    (mk, 'parameter_values',
+     'Did you mean mphkit.outer_values or mphkit.step_values?'),
+    (mk, 'param_values',
+     'Did you mean mphkit.outer_values or mphkit.step_values?'),
+    (mk, 'time_values', 'Did you mean mphkit.step_values?'),
+    (mk, 'get_time_values', 'Did you mean mphkit.step_values?'),
+    (mk, 'time_steps', 'Did you mean mphkit.step_values?'),
+    (mk, 'timesteps', 'Did you mean mphkit.step_values?'),
+    (mk, 'frequencies', 'Did you mean mphkit.step_values?'),
+    (mk, 'eigenvalues', 'Did you mean mphkit.step_values?'),
+    (mk, 'eigen_values', 'Did you mean mphkit.step_values?'),
+    (mk, 'eigenfrequencies', 'Did you mean mphkit.step_values?'),
+    (mk, 'frequency_values', 'Did you mean mphkit.step_values?'),
+    (mk, 'freq_values', 'Did you mean mphkit.step_values?'),
+    (mk, 'sweep_steps', 'Did you mean mphkit.step_values?'),
+    (mk, 'outer_value', 'Did you mean mphkit.outer_values?'),
+    (mk, 'step_value', 'Did you mean mphkit.step_values?'),
 ])
 def test_suggestion(module, name, expected):
     text = message(module, name)
     assert text.startswith(f"module '{module.__name__}' has no attribute {name!r}.")
     assert expected in text
     assert text.endswith(f'See help({module.__name__}) for all helpers.')
+
+
+@pytest.mark.parametrize('module, name', [
+    (mk.sel, 'inner'), (mk.sel, 'outer'), (mk, 'inner_boundaries'),
+    (mk, 'outer'), (mk, 'inner')])
+def test_no_sweep_suggestion(module, name):
+    # inner and outer boundaries are no sweeps
+    assert 'values' not in message(module, name)
 
 
 def test_meanings_name_helpers():

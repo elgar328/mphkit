@@ -142,12 +142,30 @@ need `model.solve()` again; that goes unnoticed.
 Values are in SI units unless `unit` is given, also in an mm geometry;
 positions and points in the geometry's length unit. `ht.ntflux` is the
 flux out of the domain, negative where heat enters. With several
-solutions pass `dataset=`, with several steps (time, sweep, frequency)
-`step='last'`, a number, a list or `'all'` (a picture shows one step).
-`mk.plot` also draws a selection only, slices (`x=`, `y=` or `z=`), views
-from a side (`view='top'`, ...) and deformed shapes (`deform=True`).
-Global values and values at all mesh nodes:
-`model.evaluate('expression', 'unit')` in MPh.
+solutions pass `dataset=` (a dataset or its study), with several steps
+(time, sweep, frequency) `step='last'`, a number, a list or `'all'` (a
+picture shows one step). `mk.plot` also draws a selection only, slices
+(`x=`, `y=` or `z=`), views from a side (`view='top'`, ...) and deformed
+shapes (`deform=True`). Global values and values at all mesh nodes:
+`model.evaluate('expression', 'unit')` in MPh, which reads only the last
+value of a sweep stored as an outer loop unless given its dataset.
+
+Parametric sweeps come in two kinds; `mk.step_values(geom)` and
+`mk.outer_values(geom)` show which (all values in SI units):
+
+    stationary, over parameters that change no geometry  -> step=
+    around a time-dependent, frequency or eigenvalue study,
+      over the geometry, the mesh, materials or functions  -> outer=
+    two sweeps of a stationary study: one of each
+
+    mk.average(geom, 'domain', 'T', unit='degC', outer='all', step='last')
+    mk.maximum(geom, 'domain', 'T', outer={'Th': '200[degC]'}, step='last')
+    mk.plot(geom, 'T', 'T_{outer}.png', outer='all', step='last')
+
+`outer=` takes the forms of `step=` or values by name; several values
+give an axis before the steps' one. A sweep that changes the geometry is
+read over selection nodes or all entities (e.g. `mk.sel.box(geom,
+'boundary', x='W')` follows W), not drawn.
 
 Long solves: `mk.problem_size(model)` gives, before solving, the degrees
 of freedom and the solver COMSOL would use, with the computer's memory
