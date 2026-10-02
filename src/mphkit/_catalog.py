@@ -864,11 +864,19 @@ def lists_properties(node) -> bool:
     Tells whether `mk.properties(node)` lists properties that are set on
     the node itself: not those of a physics interface (`'group/name'`),
     nor of a geometry, mesh or study, which have none of their own.
+    Selections in a geometry sequence are left out as well, as
+    `mk.feature` does for their types.
     """
-    return (isinstance(node, Node) and len(node.path) >= 2
+    if not (isinstance(node, Node) and len(node.path) >= 2
             and node.path[0] in GROUPS
             and not (len(node.path) == 2 and node.path[0] in
-                     ('geometries', 'meshes', 'studies', 'physics')))
+                     ('geometries', 'meshes', 'studies', 'physics'))):
+        return False
+    if node.path[0] == 'geometries':
+        java = _java(node)
+        return not (java is not None and hasattr(java, 'getType')
+                    and str(java.getType()).endswith('Selection'))
+    return True
 
 
 def properties(node: Node, type: str | None = None, /, *,

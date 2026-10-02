@@ -287,7 +287,8 @@ class Sweep:
         """
         if self._rows is None:
             outer = set(self.names)
-            self._rows = []
+            # cached once complete: a read that fails must fail again
+            rows = []
             for child in self.children:
                 solution = self.model.sol(child)
                 names = _datasets.param_names(solution)
@@ -297,8 +298,9 @@ class Sweep:
                         f'Solution {child} of the sweep in solution '
                         f'{self.tag} has no value of {", ".join(missing)}.')
                 numbers = [float(value) for value in solution.getParamVals()]
-                self._rows.append({name: number for name, number
-                                   in zip(names, numbers) if name in outer})
+                rows.append({name: number for name, number
+                             in zip(names, numbers) if name in outer})
+            self._rows = rows
         return self._rows
 
     @property
@@ -309,12 +311,13 @@ class Sweep:
         """
         if self._swept is None:
             info = self.model.sol(self.tag).getSolutioninfo()
-            self._swept = []
+            swept = []
             for number, child in zip(self.numbers, self.children):
                 row = [float(v) for v in info.getPvals([[number, 1]])[0]]
                 names = _datasets.param_names(self.model.sol(child))
-                self._swept.append({name: value for name, value
-                                    in zip(names, row) if name in self.names})
+                swept.append({name: value for name, value
+                              in zip(names, row) if name in self.names})
+            self._swept = swept
         return self._swept
 
     @property
@@ -326,7 +329,7 @@ class Sweep:
         label, e.g. `[Material Switch 1=Material 2]`.
         """
         if self._labels is None:
-            self._labels = []
+            labels = []
             for child, row, swept in zip(self.children, self.rows,
                                          self.swept):
                 parts = []
@@ -341,7 +344,8 @@ class Sweep:
                 text = ', '.join(parts)
                 if any(name.startswith(SWITCHES) for name in row):
                     text += f' [{self.model.sol(child).label()}]'
-                self._labels.append(text)
+                labels.append(text)
+            self._labels = labels
         return self._labels
 
     def count(self, k: int) -> int:
@@ -1096,13 +1100,19 @@ def _ambiguity(what: str, given,
     if not numbers:
         return None
     noun = 'step' if what == 'step' else 'value'
-    table = columns()
+    table = {name: numpy.asarray(values, dtype=float)
+             for name, values in columns().items()}
+    # the tolerance of _close(), for a whole column at once
+    scales = {name: _scale(values) for name, values in table.items()}
     found = []
     for k in dict.fromkeys(numbers):
         for name, values in table.items():
-            at = [j for j, v in enumerate(values, 1) if _close(v, k, values)]
-            if len(at) == 1 and at[0] != k and k <= len(values):
-                found.append((k, name, values[k - 1]))
+            if k > len(values) or math.isnan(values[k - 1]):
+                continue
+            at = numpy.flatnonzero(
+                numpy.abs(values - k) <= TOLERANCE*scales[name]) + 1
+            if len(at) == 1 and at[0] != k:
+                found.append((k, name, float(values[k - 1])))
                 break
     if not found:
         return None
@@ -1117,6 +1127,12 @@ def _ambiguity(what: str, given,
                 f'{name}={k}{first}.')
     return (f'{what}={numbers}: {"; ".join(parts)}; pick by value, e.g. '
             f'{what}={{{name!r}: {k}}}.')
+
+
+def _scale(values: Array) -> float:
+    """Returns the largest magnitude of values, NaN left out, as _close()."""
+    finite = numpy.abs(values[~numpy.isnan(values)])
+    return float(finite.max()) if finite.size else 0.0
 
 
 def _given_numbers(given) -> list[int]:

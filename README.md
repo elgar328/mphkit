@@ -167,13 +167,14 @@ mk.value(geom, 'T', [(50, 20, 2.5), (100, 20, 2.5)], unit='degC')  # array([89.8
 `ht.ntflux` is the flux out of the domain. With several solutions, pass
 `dataset=` (or the study); with time steps or a sweep stored as steps,
 `step=`: a position (`step=10` is the tenth step; a warning tells when
-another step has t = 10) or a value (`step={'t': 10}`). A unit that does not fit, a point outside the
-geometry or a geometry changed since the solve and not built again
-raise instead of giving a wrong number; solve again after any change,
-as a geometry changed and then built and meshed again is read with the
-old solution. Global values come from MPh: `model.evaluate('expression',
-'unit')`, which reads only the last value of a sweep stored as an outer
-loop unless given the sweep's dataset.
+another step has t = 10 s) or a value (`step={'t': 10}`). A unit that
+does not fit, a point outside the geometry or a geometry changed since
+the solve and not built again raise instead of giving a wrong number;
+solve again after any change, as a geometry changed and then built and
+meshed again is read with the old solution. Global values come from
+MPh: `model.evaluate('expression', 'unit')`, which reads only the last
+value of a sweep stored as an outer loop unless given the sweep's
+dataset.
 
 Parametric sweeps that COMSOL stores as an outer loop (around a
 time-dependent or eigenvalue study or several frequencies, or over

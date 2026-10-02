@@ -542,6 +542,11 @@ def test_overview_length():
     assert len(mk.__doc__) <= 7500
 
 
+def test_overview_line_length():
+    # as printed, without wrapping
+    assert max(len(line) for line in mk.__doc__.splitlines()) <= 80
+
+
 def test_overview_first_line():
     # pydoc shows it on the NAME line of help(mphkit)
     first = pydoc.splitdoc(inspect.getdoc(mk))[0]
@@ -623,7 +628,8 @@ def test_help_loaded_model(client, model, tmp_path):
     mk.set(material/'Basic', thermalconductivity='45', density='7850',
            heatcapacity='475')
     temp = heat.create('TemperatureBoundary', 2)
-    temp.select(mk.sel.box(geom, 'boundary', x=0))
+    heated = mk.sel.box(geom, 'boundary', x=0)
+    temp.select(heated)
     temp.property('T0', '100[degC]')
     flux = heat.create('HeatFluxBoundary', 2)
     flux.select(mk.sel.box(geom, 'boundary', x=2))
@@ -648,7 +654,7 @@ def test_help_loaded_model(client, model, tmp_path):
         assert list(solid.selection()) == [1, 2]
         assert list(insulation.selection()) == [
             b for b in exterior if b not in hot + cooled]
-        assert (physics/'Temperature 1').selection().name() == 'Box 1'
+        assert (physics/'Temperature 1').selection().name() == heated.name()
         assert (physics/'Temperature 1').properties()['T0'] == '100[degC]'
         before = mk.minimum(g, 'domain', 'T', unit='degC')
         old.reset()
@@ -657,11 +663,14 @@ def test_help_loaded_model(client, model, tmp_path):
         text = read(tmp_path/'old.java')
         assert 'material().create("mat1", "Common");' in text
         assert 'material("mat1").selection()' not in text
-        assert '"solid1"' not in text and 'numerical()' not in text
+        for default in (solid, insulation):
+            assert f'"{default.tag()}"' not in text
+        assert 'numerical()' not in text
         # the defaults follow the geometry
         mk.block(g, (1, 1, 1), pos=(2, 0, 0))
         old.build(g)
         assert list((old/'materials').children()[0].selection()) == [1, 2, 3]
+        assert list(physics.selection()) == [1, 2, 3]
         assert list(solid.selection()) == [1, 2, 3]
     finally:
         client.remove(old)

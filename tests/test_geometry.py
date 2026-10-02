@@ -730,6 +730,7 @@ def test_property_listing(model, geom):
     node = r'mk\.properties\(node, search=\.\.\.\) lists them\.$'
     with pytest.raises(ValueError, match=f'{names}; {node}'):
         mk.set(block, bogus=1)
+    assert 'size' in mk.properties(block, search='size')   # as the hint says
     physics = (model/'physics').create('HeatTransfer', geom)
     flux = physics.create('HeatFluxBoundary', 2)
     with pytest.raises(ValueError, match=r'^"HeatFluxBoundary" has no '
@@ -742,6 +743,19 @@ def test_property_listing(model, geom):
             mk.set(target, bogus=1)
     with pytest.raises(ValueError, match=f'{names}\\.$'):
         mk.sel.box(geom, 'boundary', x=0, where='geometry', bogus=1)
+    mk.sel.box(geom, 'boundary', x=0, where='geometry', name='seqbox')
+    with pytest.raises(ValueError, match=f'{names}\\.$'):
+        mk.set(geom/'seqbox', bogus=1)
+    mesh = (model/'meshes').create(geom)
+    study = (model/'studies').create()
+    study.create('Stationary')
+    system = mk.coordinate_system(geom, 'Rotated')
+    for target in (geom, mesh, study, physics, system):
+        # COMSOL's own error or none at all: either way no hint
+        try:
+            mk.set(target, bogus=1)
+        except Exception as error:
+            assert 'mk.properties' not in str(error), target
 
 
 @pytest.mark.parametrize('dim, types', [
@@ -750,7 +764,12 @@ def test_property_listing(model, geom):
          'Rotate', 'Mirror', 'Revolve', 'Partition', 'Fillet3D', 'Chamfer3D',
          'LineSegment', 'WorkPlane', 'Extrude', 'Import']),
     ('plane', ['Square', 'Rectangle', 'Circle', 'Polygon', 'Fillet',
-               'Chamfer', 'LineSegment', 'Union', 'Point']),
+               'Chamfer', 'LineSegment', 'Union', 'Point', 'Difference',
+               'Intersection', 'Delete', 'Array', 'Move', 'Rotate', 'Mirror',
+               'Partition']),
+    (2, ['Square', 'Rectangle', 'Circle', 'Polygon', 'Fillet', 'Chamfer',
+         'LineSegment', 'Union', 'Difference', 'Intersection', 'Delete',
+         'Array', 'Move', 'Rotate', 'Mirror', 'Partition', 'Point']),
     (1, ['Interval']),
 ])
 def test_property_listing_types(model, dim, types):

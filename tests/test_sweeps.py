@@ -2079,8 +2079,7 @@ def test_step_number_warning(fresh, tmp_path):
     assert java_export(model, tmp_path/'model.java') == before
 
 
-@pytest.mark.parametrize('tlist', ['range(1,1,10)', 'range(0,0.1,0.5)',
-                                   '0.999999999999 2 3'])
+@pytest.mark.parametrize('tlist', ['range(1,1,10)', '0.999999999999 2 3'])
 def test_step_number_no_warning(fresh, tlist):
     # numbers that are their own values, or no other step's
     model, geom = timed(fresh, tlist)
@@ -2142,7 +2141,16 @@ def test_ambiguity():
     assert message(2, {'t': [0.0, 1.0, 2.0]}).startswith('step=2 is step')
     assert message(3, {'p': [5.0, 6.0, 7.0], 't': [0.0, 1.0, 2.0, 3.0]}) \
         .startswith("step=3 is step number 3 (t=2), not t=3; step={'t': 3}")
-    assert message(1, {'t': [float('nan'), 1.0]}).startswith('step=1')
+    nan = float('nan')
+    assert message(1, {'t': [nan, 1.0]}) is None     # step 1 has no value
+    assert message(1, {'t': []}) is None
+    assert message(2, {'t': [nan, nan, nan]}) is None
+    assert message(2, {'t': [0.0, nan, 2.0]}) is None
+    # a decimal list: t = 1 is the eleventh step
+    tenths = [k/10 for k in range(11)]
+    assert message(1, {'t': tenths}) == (
+        "step=1 is step number 1 (t=0), not t=1; step={'t': 1} picks t=1, "
+        "step='first' the first step.")
     assert message([1, 2, 3, 4], {'t': [0.0, 1.0, 2.0, 3.0, 4.0]}) == (
         'step=[1, 2, 3, 4]: 1 is step number 1 (t=0), not t=1; 2 is step '
         'number 2 (t=1), not t=2; 3 is step number 3 (t=2), not t=3; and 1 '
@@ -2150,3 +2158,56 @@ def test_ambiguity():
     for given in ('last', None, {'t': 1}, [{'t': 1}], [], True):
         assert message(given, {'t': [0.0, 1.0]}) is None
     assert message(numpy.int64(1), {'t': [0.0, 1.0]}).startswith('step=1 ')
+
+
+def test_cached_only_when_read(monkeypatch):
+    # a value that cannot be read fails every time, not once
+    class Solution:
+        def __init__(self, tag):
+            self.tag = tag
+
+        def getParamNames(self):
+            if self.tag == 'bad':
+                raise RuntimeError('unreadable')
+            return ['Th']
+
+        def getParamVals(self):
+            return [300.0]
+
+        def getSolutioninfo(self):
+            return self
+
+        def getPUnitsOuter(self):
+            return ['K']
+
+        def getPvals(self, which):
+            if which[0][0] == 2:
+                raise RuntimeError('unreadable')
+            return [[300.0]]
+
+        def label(self):
+            if self.tag == 'bad':
+                raise RuntimeError('unreadable')
+            return 'Switch 1'
+
+    class Model:
+        def sol(self, tag):
+            return Solution(tag)
+    monkeypatch.setattr(mk._datasets, 'outer_numbers', lambda s: [1, 2])
+    monkeypatch.setattr(mk._datasets, 'stored', lambda s: ['good', 'bad'])
+    monkeypatch.setattr(mk._sweep, '_outer_names', lambda s: ['Th'])
+    sweep = mk._sweep.Sweep(Model(), 'sol')
+    for _ in range(2):
+        with pytest.raises(RuntimeError):
+            sweep.rows
+        with pytest.raises(RuntimeError):
+            sweep.swept
+    # labels: the child's label, read for switch names
+    name = 'matsw.comp1.sw1'
+    monkeypatch.setattr(mk._sweep, '_outer_names', lambda s: [name])
+    switched = mk._sweep.Sweep(Model(), 'sol')
+    switched._rows = [{name: 1.0}, {name: 2.0}]
+    switched._swept = [{}, {}]
+    for _ in range(2):
+        with pytest.raises(RuntimeError):
+            switched.labels

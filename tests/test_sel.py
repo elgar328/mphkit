@@ -135,7 +135,8 @@ def test_set_operations_reject_numbers(model, cube):
                                         r"mk\.sel\.box\(geom, 'domain', "
                                         r"\.\.\.\)\)\.$"):
         mk.sel.adjacent(cube, 1)
-    with pytest.raises(TypeError, match=r"input_entity='edge'\)\.$"):
+    with pytest.raises(TypeError, match=r"mk\.sel\.box\(geom, 'edge', \.\.\.\), "
+                                        r"'point', input_entity='edge'\)\.$"):
         mk.sel.adjacent(cube, [1], 'point', input_entity='edge')
     assert [str(t) for t in model.java.selection().tags()] == selections
     assert [str(t) for t in cube.java.feature().tags()] == features

@@ -28,7 +28,8 @@ def set_(target, /, **properties):
     Ints, numpy arrays and lists mixing numbers and expressions are
     converted for COMSOL; lists of numbers become string arrays. Unknown
     names raise `ValueError`, with a suggestion where one is close and,
-    for nodes `mk.properties` reads, the call that lists them; objects
+    on features of geometries, physics, meshes and studies and on
+    materials, the call that lists the properties; objects
     with no property list (variables) or an empty one (a new material
     property group) do not check names. Invalid choices list the allowed
     values. If one property fails, the ones before it stay set.

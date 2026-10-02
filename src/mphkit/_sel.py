@@ -85,10 +85,11 @@ def _create(geom: Node, type: str, where: str | None, name: str | None,
 
 
 def _inputs(geom: Node, where: str | None, values, call: str,
-            entity: str) -> list[str]:
+            entity: str, output: str = 'boundary') -> list[str]:
     """
     Returns selection tags for the inputs of a set operation; `call` (e.g.
-    `'union'`) and `entity`, the kind of the inputs, are for messages.
+    `'union'`), `entity`, the kind of the inputs, and `output`, the kind
+    `sel.adjacent` returns, are for messages.
     """
     where = _where(geom, where)
     if _comsol.is_integer(values):
@@ -101,7 +102,9 @@ def _inputs(geom: Node, where: str | None, values, call: str,
                  and parent == 'geom' else '')
         example = f'mk.sel.box({parent}, {entity!r}, ...{extra})'
         if call == 'adjacent':
-            kind = '' if entity == 'domain' else f', input_entity={entity!r}'
+            kind = '' if output == 'boundary' else f', {output!r}'
+            if entity != 'domain':
+                kind += f', input_entity={entity!r}'
             example = f'mk.sel.adjacent({parent}, {example}{kind}{extra})'
         raise TypeError(f'sel.{call} takes selection nodes, not entity '
                         f'numbers ({", ".join(map(str, found))}): numbers '
@@ -417,7 +420,7 @@ def adjacent(geom: Node, /, input, entity: str = 'boundary', *,
     properties = {'entitydim': _comsol.entity_dim(geom, input_entity),
                   'outputdim': _comsol.entity_dim(geom, entity),
                   'input': _inputs(geom, where, input, 'adjacent',
-                                   input_entity),
+                                   input_entity, entity),
                   'exterior': exterior, 'interior': interior}
     return _create(geom, 'Adjacent', where, name, properties)
 

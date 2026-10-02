@@ -29,10 +29,11 @@ until 1.0, a minor release (0.2, 0.3, ...) may change the API. See
   picks a step by value, e.g. `{'t': 10}`, in each outer value. A number
   given as `step=` or `outer=` is a position; one that is also the value
   of another position, such as `step=10` on times 0, 1, ..., 10 (the
-  tenth step is t = 9), gives a warning. A sweep that changes the
-  geometry is read over selection nodes or all entities, evaluated on
-  each value's geometry; entity numbers, explicit selections and
-  selections that are empty for a value raise. Unknown names such as
+  tenth step is t = 9), gives a warning; pick by value to mean the time,
+  `step={'t': 10}`. A sweep that changes the geometry is read over
+  selection nodes or all entities, evaluated on each value's geometry;
+  entity numbers, explicit selections and selections that are empty for
+  a value raise. Unknown names such as
   `mk.time_values` or `mk.sweep_values` suggest them; `mk.sweep`,
   `mk.parametric_sweep` and `mk.solve` say how to make a sweep or solve
   with plain MPh.
@@ -114,8 +115,9 @@ until 1.0, a minor release (0.2, 0.3, ...) may change the API. See
   `ValueError` about the property `input` or COMSOL's "Unknown
   selection". `sel.entities`, `mk.image` and `mk.coordinate_system` say
   that a number given as a selection is an entity number.
-- An unknown property name given to `mk.set` or to the geometry helpers
-  ends with the call that lists the properties, e.g.
+- The error for an unknown property name given to the geometry helpers,
+  or to `mk.set` on a feature of a geometry, physics, mesh or study, or
+  on a material, ends with the call that lists the properties, e.g.
   `mk.properties(geom, 'Block', search=...)`, also when no close name is
   suggested.
 

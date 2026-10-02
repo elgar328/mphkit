@@ -55,10 +55,11 @@ Results are in SI units unless `unit` is given, also in an mm geometry
 `dataset=` picks one of several solutions, a dataset or its study.
 `step=` picks steps by position from 1 ('first', 'last', a number, a
 list, 'all') or by value: `step=10` is the tenth step, `step={'t': 10}`
-the one at t = 10 s (a warning tells when they differ). A sweep stored as an outer loop needs `outer=` in
-every call, in the same forms; `mk.outer_values(geom)` tells which kind
-a sweep is. MPh's `model.evaluate` reads only the last value of such a
-sweep unless given its dataset.
+the one at t = 10 s (a warning tells when another step has t = 10 s). A
+sweep stored as an outer loop needs `outer=` in every call, in the same
+forms; `mk.outer_values(geom)` tells which kind a sweep is. MPh's
+`model.evaluate` reads only the last value of such a sweep unless given
+its dataset.
 
 Rules:
 

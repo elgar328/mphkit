@@ -113,8 +113,9 @@ def feature(parent: Node, type: str, /, *, name: str | None = None,
     Every helper that creates a feature passes extra keyword arguments on
     to COMSOL, e.g. `contributeto=` to add the result to a cumulative
     selection (`sel.cumulative`). An unknown property name raises a
-    `ValueError` with close names and the call that lists the type's
-    properties, e.g. `mk.properties(geom, 'Block', search=...)`.
+    `ValueError` with close names if any and, for types `mk.properties`
+    knows (not selections), the call that lists the type's properties,
+    e.g. `mk.properties(geom, 'Block', search=...)`.
 
     If setting a property fails, the new feature is removed again and the
     error is raised. Returns the feature node.
