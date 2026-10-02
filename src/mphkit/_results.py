@@ -109,9 +109,11 @@ def integral(geom: Node, entity: str, expr: str, /, selection=None, *,
     in mm (a volume in m³, while `measure()` gives mm³).
 
     `dataset` is the solution to evaluate, by name as in
-    `model.datasets()`, by tag or node, or the study that made it; it is
-    needed when the geometry has several solutions. A study whose last
-    solve failed raises, until it is solved again.
+    `model.datasets()`, by tag or node, or the study that made it (if it
+    made one for the geometry; a dataset's name wins over a study's); it
+    is needed when the geometry has several solutions. A study whose last
+    solve failed raises, until it is solved again. An older sweep left
+    after its study changed is still read when passed as `dataset`.
 
     `step` picks steps of a time-dependent study, sweep or frequency list,
     counted from 1: `'first'`, `'last'`, a number, a list of numbers or
@@ -119,13 +121,24 @@ def integral(geom: Node, entity: str, expr: str, /, selection=None, *,
     Unlike MPh's `model.evaluate`, `None` means the only step and raises
     when there are several. `outer` picks, in the same forms, values of a
     parametric sweep that COMSOL stores as an outer loop: around a
-    time-dependent, frequency-domain or eigenvalue study, or over a
-    geometry, mesh, material or function; `mk.outer_values(geom)` gives
-    them. `step` then counts the steps of each value; several values at
-    once need the same steps (when a solver picks the time steps, each
-    value has its own: take `'first'`, `'last'` or one value at a time).
-    `outer=1` raises for a dataset without such a sweep, unlike `step=1`
-    for one with a single step.
+    time-dependent or eigenvalue study or a list of frequencies, or over
+    the geometry, the mesh, materials or functions;
+    `mk.outer_values(geom)` gives them. `outer=1` raises for a dataset
+    without such a sweep, unlike `step=1` for one with a single step.
+
+    `outer` also takes values by name, e.g. `{'Th': '200[degC]'}` (COMSOL
+    converts the unit; expressions use the parameters' current values)
+    or `{'Th': 473.15}` (a number is in SI units), or a list of them;
+    some of the swept parameters are enough if they pick one value. The
+    dictionaries of `mk.outer_values(geom)` work too.
+
+    `step` counts the steps of each value; several values at once need
+    the same steps (when a solver picks the time steps, each value has
+    its own: take `'first'`, `'last'` or one value at a time). With
+    eigenvalues, step k is the k-th eigenvalue of each value, whose mode
+    may change from value to value. `outer='all'` reads the values in one
+    call, faster than a loop over them, which checks the geometry each
+    time.
 
     One step (and value) gives a float; a list or `'all'` gives an array,
     with an axis for the outer values before the one for the steps, e.g.
@@ -139,16 +152,20 @@ def integral(geom: Node, entity: str, expr: str, /, selection=None, *,
     without solving again goes unnoticed too. An empty selection raises,
     while `measure()` gives 0.
 
-    Each value of a sweep is read from its own solution, and its geometry
-    is compared with the one built. A sweep that changes the geometry
-    (or whose mesh leaves part of it out, as with physics on some
-    domains and the default mesh) is read with a selection node or
-    `None` only, which COMSOL evaluates on each value's geometry: e.g.
-    `mk.sel.box(geom, 'boundary', x='W')`, whose range follows each
+    Each value of a sweep is read from its own solution, and the
+    geometry it was solved on is compared with the one built, more
+    strictly than for a solution without sweep, as COMSOL rebuilds the
+    geometry for each value. A sweep that changes the geometry (or whose
+    mesh leaves part of it out, as with physics on some domains and the
+    default mesh; material sweeps excepted) is read with a selection node
+    or `None` only, which COMSOL evaluates on each value's geometry:
+    e.g. `mk.sel.box(geom, 'boundary', x='W')`, whose range follows each
     value of W. Entity numbers, explicit selections and selections made
     in the geometry sequence raise, as does a selection that is empty
-    for a value. A box at fixed coordinates picks, in each value's
-    geometry, what lies there then.
+    for a value; `sel.result`, `sel.layer` and `sel.cumulative` must be
+    made before the solve. A box at fixed coordinates picks, in each
+    value's geometry, what lies there then. A change that keeps every
+    vertex but numbers the entities otherwise goes unnoticed.
     """
     return _over('integral', geom, entity, expr, selection, unit, dataset,
                  step, outer, False, properties)
@@ -344,7 +361,8 @@ def value(geom: Node, expr: str, points, /, *, unit: str | None = None,
     point outside the geometry, or where nothing was solved (no physics
     there), raises; `outside='nan'` gives nan there instead. `unit`,
     `dataset`, `step` and `outer` work as in `integral()`; the axes are
-    points, outer values, steps.
+    points, outer values, steps. In a sweep that changes the geometry,
+    each value is evaluated at the same coordinates in its own geometry.
     """
     name = 'value'
     check_expr(name, expr)
@@ -674,8 +692,9 @@ def steps(step, count: int | None, where: str, *,
     several (an array). With `count=None`, only checks its form.
     `where` names what has the steps in messages, e.g. `Dataset "s//Solution
     1"`, and `hint` follows the error for several steps, e.g. where to look
-    them up; a function gives it only then. `single` names a caller that takes one step only, such as
-    `'plot'`. `what` is the argument's name, `'step'` or `'outer'`.
+    them up; a function gives it only then. `single` names a caller that
+    takes one step only, such as `'plot'`. `what` is the argument's name,
+    `'step'` or `'outer'`.
     """
     nouns = 'steps' if what == 'step' else 'outer values'
     noun = 'step' if what == 'step' else 'outer value'

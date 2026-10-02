@@ -118,7 +118,9 @@ def plot(geom: Node, expr: str, filename, /, selection: Node | None = None,
     e.g. `mk.plot(geom, 'T', 'T_{outer}.png', outer='all', step='last')`
     (a plain string, not an f-string). The title shows the value, checked
     against the one asked for. A sweep that changes the geometry is not
-    drawn: every value must have been solved on the geometry as built.
+    drawn: every value must have been solved on the geometry as built,
+    which each call checks for all values, so `outer='all'` draws them
+    faster than a loop.
     A selection set on the solution dataset in the COMSOL Desktop also
     limits the picture. `size` and the file type work as in `mk.image`.
 

@@ -1,11 +1,12 @@
 """
 Parametric sweeps that COMSOL stores as an outer loop. Public as
-`mk.outer_values`.
+`mk.outer_values` and `mk.step_values`.
 
-COMSOL stores a sweep as an outer loop around a time-dependent,
-frequency-domain or eigenvalue study, over geometry or mesh parameters,
-materials and functions: one solution per value (a child), named by the
-sweep's solution, which `Solutions` in `_datasets` sorts out. Each child
+COMSOL stores a sweep as an outer loop around a time-dependent or
+eigenvalue study or a list of frequencies, over geometry or mesh
+parameters, materials and functions: one solution per value (a child),
+named by the sweep's solution, which `Solutions` in `_datasets` sorts
+out. Each child
 carries its parameter names and values in SI units. A stationary study
 swept over other parameters keeps them as steps instead.
 """
@@ -60,8 +61,18 @@ def outer_values(geom: Node, /, *, dataset=None) -> list[dict[str, float]]:
 
     `[]` means that the dataset has no outer sweep. A stationary study
     swept over parameters that change no geometry stores them as steps:
-    that raises, pointing to `step=`. `dataset` works as in
+    that raises, pointing to `step=` and `mk.step_values`. So this tells
+    which of `outer=` and `step=` a sweep takes. `dataset` works as in
     `mk.integral()`, also by study. Leaves nothing in the model.
+
+    A table of results by value, with pandas:
+
+    ```python
+    table = pd.DataFrame(mk.outer_values(geom)).assign(
+        Tmax=mk.maximum(geom, 'domain', 'T', unit='degC', outer='all',
+                        step='last'))
+    table.Th - 273.15      # Th is in K, as all values: SI units
+    ```
     """
     _results.check_geometry('outer_values', geom)
     model = geom.model.java
@@ -538,8 +549,9 @@ def _steps(sweep: Sweep, unique: list[int], step, single: str | None
             'steps).')
 
     def hint(k: int) -> Callable[[], str]:
+        child = sweep.children[k - 1]
         return lambda: (f' ({sweep.call("step_values", f"outer={k}")} '
-                        f'gives them: {_preview(model, sweep.children[k - 1])})')
+                        f'gives them: {_preview(model, child)})')
     return {k: _results.steps(step, sweep.count(k),
                               _capital(sweep.where(k)), single=single,
                               hint=hint(k))

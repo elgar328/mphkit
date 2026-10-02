@@ -172,7 +172,8 @@ which reads only the last value of a sweep stored as an outer loop
 unless given its dataset.
 
 Parametric sweeps that COMSOL stores as an outer loop (around a
-time-dependent study, or over the geometry, mesh or materials) take
+time-dependent or eigenvalue study or a list of frequencies, or over
+the geometry, mesh, materials or functions) take
 `outer=`, e.g. `mk.average(geom, 'domain', 'T', unit='degC',
 outer='all', step='last')` for one value per parameter value, or
 `outer={'Th': '200[degC]'}` for one; `mk.outer_values(geom)` and
@@ -256,8 +257,10 @@ a plate with a row of cooling holes, for one or more holes.
   nodes or all entities, each value in its own geometry, and not drawn;
   a box at fixed coordinates picks what lies there in each value. With
   physics on part of the geometry and the default mesh, the same holds
-  for any sweep stored as an outer loop. Batch and cluster sweeps and
-  optimization studies were not tried.
+  for any sweep stored as an outer loop except material sweeps. A
+  change that keeps every vertex but numbers the entities otherwise
+  goes unnoticed. Batch and cluster sweeps, optimization studies and
+  time-dependent studies ended by a stop condition were not tried.
 - `mk.progress` reads memory and CPU from macOS; on Linux and Windows
   some of them are `None` (not tried there).
 - No named helpers yet for geometry parts (`PartInstance`), sweeps, cones

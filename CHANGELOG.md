@@ -20,10 +20,10 @@ until 1.0, a minor release (0.2, 0.3, ...) may change the API. See
   results of a study whose last solve failed, and the copy of a
   parametric sweep's last value, pointing to the sweep's dataset.
   Parametric sweeps that COMSOL stores as an outer loop (around a
-  time-dependent, frequency-domain or eigenvalue study, or over the
-  geometry, mesh or materials) are read with `outer=`, in the forms of
-  `step=` or by value (`{'Th': '200[degC]'}`, or a number in SI units),
-  each value from its own solution; `mk.outer_values` gives
+  time-dependent or eigenvalue study or a list of frequencies, or over
+  the geometry, mesh, materials or functions) are read with `outer=`, in
+  the forms of `step=` or by value (`{'Th': '200[degC]'}`, or a number
+  in SI units), each value from its own solution; `mk.outer_values` gives
   their parameter values and `mk.step_values` the times, frequencies or
   parameter values of the steps by name, both in SI units. A sweep that
   changes the geometry is read over selection nodes or all entities,
