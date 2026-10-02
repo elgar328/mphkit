@@ -256,6 +256,17 @@ def material(geom: Node, material: str, /, selection=None, *,
     `model.reset()` it lists the properties instead. Only domains are
     supported, not boundaries (shells). Returns the node under
     `model/'materials'`.
+
+    A material with values of one's own, not from a library, is plain
+    MPh, with `mk.set` for the values; it takes all domains:
+
+    ```python
+    steel = (model/'materials').create('Common', name='steel')
+    mk.set(steel/'Basic', thermalconductivity='45', density='7850',
+           heatcapacity='475')
+    ```
+
+    MPh creates it in the model's last component.
     """
     if not isinstance(geom, Node) or len(geom.path) != 2 \
             or geom.path[0] != 'geometries':

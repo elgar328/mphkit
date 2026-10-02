@@ -508,7 +508,10 @@ def test_help_sweep_example(client, monkeypatch, tmp_path):
 
 
 def test_help_java_export(client, model, tmp_path):
-    # the route from an existing model that help(mphkit) describes
+    # the route from an existing model that help(mk.sel.find) describes
+    for part in ('client.load', 'reset()', "old.save('old.java')",
+                 'bounding_box', 'mk.sel.box', 'overwrite'):
+        assert part in mk.sel.find.__doc__
     geom = mk.geometry(model, 3)
     mk.block(geom, (1, 1, 1))
     mk.cylinder(geom, 0.1, 1, (2, 0, 0)).remove()   # history to compact

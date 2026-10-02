@@ -92,7 +92,7 @@ def measure(geom: Node, entity: str, /, selection=None) -> float:
     rendering mesh and are approximate (a cylinder about 0.3 % too small);
     planar ones are exact up to single precision: coordinates are rounded
     to about seven digits, so a 0.001 thick plate at z = 1000 measures
-    0.00098.
+    0.00098. Compare sizes with a tolerance.
     """
     _comsol.check_not_workplane(geom, 'measure')
     if _comsol.entity_dim(geom, entity) == 0:

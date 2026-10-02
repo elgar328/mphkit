@@ -2,6 +2,7 @@
 Checks the materials from COMSOL's libraries: the list, read from the
 library files without COMSOL, and inserting them into a model.
 """
+import inspect
 import os
 import re
 import zipfile
@@ -416,6 +417,20 @@ def documented(source):
     block = re.search(r"Materials from COMSOL's libraries.*?\n\n(.*?)\n\n",
                       mk.__doc__, re.S).group(1)
     return [line[4:] for line in block.splitlines()]
+
+
+def test_values_of_ones_own(model):
+    # the plain MPh material in help(mk.material)
+    code = re.findall(r'```python\n(.*?)```',
+                      inspect.getdoc(mk.material), re.S)[1]
+    geom = blocks(model)
+    (model/'physics').create('HeatTransfer', geom)
+    namespace = {'mk': mk, 'model': model}
+    exec(code, namespace)
+    assert domains(namespace['steel']) == [1, 2]
+    assert 'no_material' not in [p['kind'] for p in mk.check(model)]
+    group = model/'materials'/'steel'/'Basic'
+    assert group.property('thermalconductivity') == ['45']
 
 
 @pytest.mark.parametrize('source', ['README.md', 'mphkit'])

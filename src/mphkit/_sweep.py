@@ -60,11 +60,18 @@ def outer_values(geom: Node, /, *, dataset=None) -> list[dict[str, float]]:
     names. A sweep that keeps the last solution only gives one dictionary.
 
     `[]` means that the dataset has no outer sweep. A sweep stored as
-    steps (a stationary study swept over parameters that change neither
-    geometry nor mesh) raises a ValueError pointing to `step=` and
-    `mk.step_values`. So this tells which of `outer=` and `step=` a sweep
-    takes. `dataset` works as in `mk.integral()`, also by study. Leaves
-    nothing in the model.
+    steps raises a ValueError pointing to `step=` and `mk.step_values`.
+    So this tells which of `outer=` and `step=` a sweep takes; as a rule:
+
+    - steps: a stationary study swept over parameters that change neither
+      geometry nor mesh, also parameters used in material properties;
+    - an outer loop: a sweep around a time-dependent or eigenvalue study
+      or several frequencies, over geometry or mesh parameters, and
+      COMSOL's Material and Function Sweeps;
+    - a stationary study with two parametric sweeps gets one of each.
+
+    `dataset` works as in `mk.integral()`, also by study. Leaves nothing
+    in the model.
 
     A table of results by value, a row each:
 

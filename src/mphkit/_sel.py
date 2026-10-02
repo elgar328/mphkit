@@ -251,7 +251,8 @@ def ball(geom: Node, entity: str, /, center, r, *,
     Entities up to that margin outside (0.01 at 1e4 from the origin) may
     be picked too, and with `condition='intersects'` also entities that
     only touch the ball; for a strict bound give room the other way, e.g.
-    `0.999*r`.
+    `0.999*r`. COMSOL splits a sphere's surface into eight faces; a ball
+    around it picks all of them.
     """
     dim = _comsol.parent_dim(geom)
     if len(center) != dim:
@@ -285,6 +286,12 @@ def cylinder(geom: Node, entity: str, /, pos, r, *, axis=None, top=None,
     so give it about 1 % room. In a model some 1e5 times larger than the
     radius even that misses; there `condition='intersects'` with
     `rin=0.9*r, bottom=0.01*h, top=0.99*h` works too.
+
+    COMSOL splits the side of a cylinder or cone, the wall of a hole or of
+    an extruded circle, into four faces; the shell picks all of them. Give
+    it a `name`, e.g. `name='side'`: by default the selection would take
+    the label of the drawn cylinder, which `sel.result` of that cylinder
+    needs for its own selection.
 
     `condition` defaults to `'inside'`, see `box()`. In 2D use `disk()`.
     """
@@ -400,10 +407,17 @@ def result(geom: Node, feature: Node, entity: str, /, *,
 
     Turns on the feature's result selection (`selresult`) and returns a
     named component selection that physics can use, without relying on
-    COMSOL's tag convention. Calling it again returns the same selection
-    (a new `name` is ignored). Because it switches on `selresult`, a Java
-    export of the model shows that setting on the feature; the geometry
-    is not affected.
+    COMSOL's tag convention. It holds what the feature and its copies
+    leave in the finished geometry, curved faces included, and the faces
+    it cuts into other objects: e.g. the boundaries of a sphere
+    subtracted from a block are the spherical faces left in the block.
+    COMSOL splits curved surfaces into several faces, four for the side
+    of a cylinder and eight for a sphere; the selection holds them all.
+
+    Calling it again returns the same selection (a new `name` is
+    ignored). Because it switches on `selresult`, a Java export of the
+    model shows that setting on the feature; the geometry is not
+    affected.
     """
     if len(feature.path) != 3 or _comsol.geometry_of(feature) != geom:
         raise ValueError(f'"{feature}" is not a top-level feature of '
@@ -503,7 +517,8 @@ def entities(geom: Node, selection: Node, /) -> list[int]:
     change when the geometry changes, so use them to check or inspect a
     model, not to set up physics. The geometry must be built; a selection
     made with `where='geometry'` changes the geometry sequence, so build
-    again after creating one.
+    again after creating one. To move numbered selections of a model
+    built elsewhere to location-based ones, see `find()`.
     """
     _comsol.check_not_workplane(geom, 'sel.entities')
     _comsol.check_built(geom)
@@ -561,6 +576,21 @@ def find(geom: Node, entity: str, /, x=None, y=None, z=None, *,
     `box()`. For a lookup of another kind, create the selection, read it
     with `entities()` and `remove()` it; leave out `name` to avoid label
     clashes.
+
+    It also moves a model built elsewhere, e.g. in the COMSOL Desktop, to
+    location-based selections. Load it with `old = client.load('file.mph')`;
+    `old.reset()` compacts its history and `old.save('old.java')` writes
+    its current state as Java, with COMSOL's feature and property names
+    (`old.save()` without a path would overwrite the .mph). A plain
+    number there, as in `selection().set(4)`, counts entities of the
+    finished geometry: look it up in the loaded geometry,
+    `g = (old/'geometries').children()[0]` if it is the only one, check
+    that `mk.sel.find(g, 'boundary', **mk.bounding_box(g, 'boundary', 4))`
+    gives `[4]`, and pass the same ranges to `mk.sel.box(geom, 'boundary',
+    ...)` in the rebuilt geometry. Numbers after an object name, as in
+    `set("dif1(1)", 3)`, count that object's entities during the build,
+    not in the finished geometry: select them by location from the drawn
+    shapes, with `where='geometry'`, or in a work plane.
     """
     _comsol.check_not_workplane(geom, 'sel.find')
     with _comsol.history_off(geom.model.java):
