@@ -163,7 +163,8 @@ def step_values(geom: Node, /, *, dataset=None, outer=None
                 ) -> dict[str, Array]:
     """
     Returns the values of the steps of a solved study by name, in SI
-    units: element k-1 of each array belongs to `step=k`.
+    units: element k-1 of each array belongs to `step=k`. The results
+    helpers also pick a step by these values, e.g. `step={'t': 10}`.
 
     ```python
     mk.step_values(geom)              # {'t': array([0., 10., 20.])}
@@ -482,11 +483,18 @@ def _prepare(create, geom: Node, dataset, step, outer,
             raise no_outer(model, data, outer, caller, dataset)
         _results.check_current(geom)
         count = _datasets.step_count(model, data)
-        solnums, many = _results.steps(
-            step, count, f'Dataset {_datasets.describe(data)}',
-            single=caller,
-            hint=lambda: f' ({_call("step_values", dataset)} gives their '
-                         'times or parameter values)')
+        where = f'Dataset {_datasets.describe(data)}'
+        if _named_step(step):
+            solnums, many = steps_by_value(
+                model, _datasets.solution_of(model, data), step, where,
+                _call('step_values', dataset))
+        else:
+            solution = _datasets.solution_of(model, data)
+            solnums, many = _results.steps(
+                step, count, where, single=caller,
+                hint=lambda: f' ({_call("step_values", dataset)} gives their '
+                             'times or parameter values'
+                             f'{_by_value_hint(solution)})')
         return Plain(data, count, solnums, many)
     sweep = Sweep(model, str(data.getString('solution')), data, dataset)
     positions, many = pick(outer, sweep, step)
@@ -558,6 +566,12 @@ def _steps(sweep: Sweep, unique: list[int], step, single: str | None
     unless `step` is `'first'` or `'last'`.
     """
     model = sweep.model
+    if _named_step(step):
+        # by value: each outer value's own step, whatever the others have
+        return {k: steps_by_value(
+            model, model.sol(sweep.children[k - 1]), step,
+            _capital(sweep.where(k)),
+            sweep.call('step_values', f'outer={k}')) for k in unique}
     several = len(unique) > 1 and not (isinstance(step, str)
                                        and step in ('first', 'last'))
     if several and not same_steps(model, [sweep.children[k - 1]
@@ -566,14 +580,16 @@ def _steps(sweep: Sweep, unique: list[int], step, single: str | None
         raise ValueError(
             f'The outer values {_numbers(unique)} of {where} have different '
             f"steps ({_differences(sweep, unique)}); pass step='first' or "
-            f"'last', or one outer value at a time, e.g. outer={unique[0]} "
+            "'last', a step by value such as step={'t': ...} (found in each "
+            f'value), or one outer value at a time, e.g. outer={unique[0]} '
             f'({sweep.call("step_values", f"outer={unique[0]}")} gives its '
             'steps).')
 
     def hint(k: int) -> Callable[[], str]:
         child = sweep.children[k - 1]
         return lambda: (f' ({sweep.call("step_values", f"outer={k}")} '
-                        f'gives them: {_preview(model, child)})')
+                        f'gives them: {_preview(model, child)}'
+                        f'{_by_value_hint(model.sol(child))})')
     return {k: _results.steps(step, sweep.count(k),
                               _capital(sweep.where(k)), single=single,
                               hint=hint(k))
@@ -611,6 +627,8 @@ STEP_UNITS = {
              'THz': 1e12}}
 # Step names and the title items that show them
 STEP_ITEMS = {'t': 'Time', 'freq': 'freq'}
+# Step names that are no parameters, and their SI units
+STEP_SI = {'t': 's', 'freq': 'Hz'}
 
 
 def pictures(create, geom: Node, dataset, step, outer,
@@ -791,34 +809,142 @@ def check_outer(outer) -> bool:
     return _results.steps(outer, None, '', what='outer')[1]
 
 
-def _by_name(outer) -> bool:
+def _by_name(value, what: str = 'outer') -> bool:
     """
-    Tells whether `outer` is a list of values by name; raises for a list
-    that mixes them with numbers.
+    Tells whether `value` (of argument `what`) is a list of values by
+    name; raises for a list that mixes them with numbers.
     """
-    if not isinstance(outer, (list, tuple)) or not outer:
+    if not isinstance(value, (list, tuple)) or not value:
         return False
-    named = [isinstance(item, Mapping) for item in outer]
+    named = [isinstance(item, Mapping) for item in value]
     if any(named) and not all(named):
-        raise TypeError(f'outer mixes numbers and values by name: '
-                        f'{outer!r}; give either.')
+        raise TypeError(f'{what} mixes numbers and values by name: '
+                        f'{value!r}; give either.')
     return all(named)
 
 
-def _check_values(wanted):
-    """Checks one outer value by name, e.g. {'Th': '200[degC]'}."""
+def _check_values(wanted, what: str = 'outer'):
+    """Checks one value by name, e.g. {'Th': '200[degC]'}."""
+    example = ("{'t': 10} (SI) or {'t': '2[min]'}" if what == 'step' else
+               "{'Th': '200[degC]'} or {'Th': 473.15} (SI)")
     if not wanted:
-        raise TypeError("outer={} names no parameter; e.g. outer="
-                        "{'Th': '200[degC]'} or {'Th': 473.15} (SI).")
+        raise TypeError(f'{what}={{}} names nothing; e.g. {what}='
+                        f'{example}.')
     for name, given in wanted.items():
         if not isinstance(name, str):
-            raise TypeError(f'outer takes parameters by name, not '
-                            f'{name!r}.')
+            raise TypeError(f'{what} takes values by name, not {name!r}.')
         if (isinstance(given, (bool, numpy.bool_))
                 or not isinstance(given, (numbers.Real, str))):
-            raise TypeError(f'outer={{{name!r}: ...}} takes a number in SI '
+            raise TypeError(f'{what}={{{name!r}: ...}} takes a number in SI '
                             f"units or a value with its unit such as "
                             f"'200[degC]', not {given!r}.")
+
+
+def check_step(step, single: str | None):
+    """
+    Checks the form of `step`, before COMSOL is asked anything; `single`
+    names a caller that takes one step, such as `'plot'`.
+    """
+    if isinstance(step, Mapping):
+        _check_values(step, 'step')
+    elif _by_name(step, 'step'):
+        if single:
+            raise ValueError(f'{single}() draws one step; pass step= one '
+                             f'value by name, not a list.')
+        for wanted in step:
+            _check_values(wanted, 'step')
+    else:
+        _results.steps(step, None, '', single=single)
+
+
+def _named_step(step) -> bool:
+    """Tells whether `step` gives steps by value."""
+    return isinstance(step, Mapping) or _by_name(step, 'step')
+
+
+def steps_by_value(model, solution, step, where: str, call: str
+                   ) -> tuple[list[int], bool]:
+    """
+    Returns the steps (from 1) of a solution that `step` asks for by
+    value, e.g. {'t': 10}, and whether it asks for several. `where` and
+    `call` (a call of mk.step_values) are for messages.
+    """
+    table = named_steps(model, solution)
+    wanted = [step] if isinstance(step, Mapping) else list(step)
+    found = [_step_by_value(model, table, row, where, call)
+             for row in wanted]
+    return found, not isinstance(step, Mapping)
+
+
+def _step_by_value(model, table: dict[str, Array], wanted: Mapping,
+                   where: str, call: str) -> int:
+    """Returns the one step (from 1) that has the values `wanted`."""
+    if not table:
+        raise ValueError(f'{where} has one stationary step, without values; '
+                         'leave out step=.')
+    if 'lambda' in table:
+        raise ValueError(f'{where} holds eigenvalues: pick them by number, '
+                         f'step=k ({call} gives them).')
+    for name in wanted:
+        if name not in table:
+            raise ValueError(f'{where} has no steps by {name!r}; they go by '
+                             f'{", ".join(table)} ({call} gives them).')
+    targets = {name: _step_si(model, name, given)
+               for name, given in wanted.items()}
+    columns = {name: [float(v) for v in numpy.real(table[name])]
+               for name in wanted}
+    count = len(next(iter(columns.values())))
+    found = [k for k in range(1, count + 1)
+             if all(_close(columns[name][k - 1], target, columns[name])
+                    for name, target in targets.items())]
+    asked = ', '.join(f'{name}={given!r}' for name, given in wanted.items())
+    if len(found) == 1:
+        return found[0]
+    if not found:
+        name = next(iter(targets))
+        values = columns[name]
+        nearest = min(range(count),
+                      key=lambda i: abs(values[i] - targets[name]))
+        raise ValueError(f'{where} has no step with {asked}; the nearest is '
+                         f'step={nearest + 1} ({name}={values[nearest]:g}). '
+                         'Steps are picked by their exact values, not '
+                         f'interpolated ({call} gives them).')
+    raise ValueError(f'{asked} fits several steps of {_lower(where)} (step='
+                     f'{_numbers(found)}); give more names, or the number.')
+
+
+def _step_si(model, name: str, given) -> float:
+    """
+    Returns a step value given for `name` in SI units: times in s,
+    frequencies in Hz, parameters in their SI unit; strings with a unit
+    are converted by COMSOL.
+    """
+    if not isinstance(given, str):
+        return float(given)
+    unit = STEP_SI.get(name)
+    if unit is None:
+        return _si(model, name, given)
+    try:
+        with _comsol.history_off(model):
+            return float(model.param().evaluate(given, unit))
+    except Exception as error:
+        raise ValueError(f'COMSOL cannot read {given!r} as a value of {name} '
+                         f'in {unit}: {_comsol.reason(error)} Give the unit '
+                         "in brackets, e.g. '2[min]', or a number in SI "
+                         'units.') from error
+
+
+def _by_value_hint(solution) -> str:
+    """Says how to pick a step of a solution by value, if it can be."""
+    names = _names(solution)
+    if not names or names[0] in ('', 'lambda'):
+        return ''
+    return f"; step={{{names[0]!r}: ...}} picks one by value"
+
+
+def _lower(text: str) -> str:
+    """Starts a message part with a small letter."""
+    return text[:1].lower() + text[1:]
 
 
 def by_value(sweep: Sweep, wanted: Mapping) -> int:
@@ -834,9 +960,12 @@ def by_value(sweep: Sweep, wanted: Mapping) -> int:
     for name in wanted:
         if name not in sweep.names:
             if name in _names(model.sol(sweep.children[0])):
+                instead = (f'step={dict(wanted)!r}'
+                           if set(wanted) <= set(_names(model.sol(
+                               sweep.children[0]))) else 'step=')
                 raise ValueError(
                     f'{where} holds {name} as steps of each outer value, not '
-                    f'as an outer value: pass step= '
+                    f'as an outer value: pass {instead} '
                     f'({sweep.call("step_values", "outer=k")} gives them).')
             raise ValueError(f'{where} has no outer parameter {name!r}; its '
                              f'outer parameters are '
@@ -1000,7 +1129,8 @@ def restricted_selection(geom: Node, entity: str, level: int, selection,
             'of your own (not physics-controlled) and solve again.')
     matching = restriction.matching()
     if matching:
-        numbered = f'for {", ".join(matching)}, solved on the geometry as built'
+        numbered = (f'for {", ".join(matching)}, solved on the geometry as '
+                    'built')
     elif restriction.built():
         numbered = ('for a value solved on the geometry as built; none of '
                     'them matches it now')
@@ -1535,7 +1665,7 @@ def _call(name: str, dataset, extra: str = '') -> str:
 
 
 def _exact(number: float) -> str:
-    """Spells a number to paste back: short if that is exact, else all digits."""
+    """Spells a number to paste back: short if exact, else all digits."""
     short = f'{number:g}'
     return short if float(short) == number else repr(number)
 

@@ -362,7 +362,8 @@ def test_number_errors(swept):
     with pytest.raises(ValueError, match=r'at outer=2 \(Th=473.15 \(200 '
                        r"degC\)\) has 3 steps; pass step='last'.* "
                        r'\(mk.step_values\(geom, outer=2\) gives them: '
-                       r't = 0, 1, 2\)'):
+                       r"t = 0, 1, 2; step=\{'t': \.\.\.\} picks one by "
+                       r'value\)'):
         mk.average(geom, 'domain', 'T', outer=2)
     with pytest.raises(ValueError, match='has 3 steps, not 5'):
         mk.value(geom, 'T', (0, 0, 0), outer=2, step=5)
@@ -428,6 +429,10 @@ def test_free_time_steps(fresh):
                            r'have different steps \(outer=1: \d+ steps, '
                            r"outer=2: \d+ steps\); pass step='first'"):
             mk.average(geom, 'domain', 'T', outer='all', step=step)
+    # by value, each value's own step at that time
+    assert mk.average(geom, 'domain', 'T', outer='all', step={'t': 100}) \
+        == pytest.approx(mk.average(geom, 'domain', 'T', outer='all',
+                                    step='last'))
     with pytest.raises(ValueError, match=r"different steps .*; pass outer=k "
                                          r'for one value at a time\.'):
         step_values(geom)
@@ -470,6 +475,10 @@ def test_eigenfrequencies(client):
             pytest.approx(every)
         with pytest.raises(ValueError, match='different steps'):
             step_values(geom)
+        with pytest.raises(ValueError, match='holds eigenvalues: pick them '
+                                             'by number'):
+            mk.average(geom, 'domain', 'solid.freq', outer=1,
+                       step={'freq': found['freq'][0]})
     finally:
         client.remove(model)
 
@@ -1060,10 +1069,11 @@ def test_by_value(swept):
     with pytest.raises(ValueError, match=r"has no outer parameter 'T'; its "
                                          r'outer parameters are Th\.'):
         read({'T': 1})
-    with pytest.raises(ValueError, match='holds t as steps of each outer '
-                                         'value'):
+    with pytest.raises(ValueError, match=r"holds t as steps of each outer "
+                                         r"value, not as an outer value: "
+                                         r"pass step=\{'t': 1\}"):
         read({'t': 1})
-    with pytest.raises(TypeError, match='names no parameter'):
+    with pytest.raises(TypeError, match='names nothing'):
         read({})
     with pytest.raises(TypeError, match='mixes numbers and values by name'):
         read([1, {'Th': 373.15}])
@@ -1447,6 +1457,8 @@ def test_minutes(fresh):
     sweep(study, '100 200')
     model.solve()
     assert step_values(geom, outer=1)['t'] == pytest.approx([0, 60, 120])
+    assert mk.average(geom, 'domain', 'T', outer=1, step={'t': '1[min]'}) \
+        == pytest.approx(mk.average(geom, 'domain', 'T', outer=1, step=2))
 
 
 def acoustics(client, name, plist, unit):
@@ -1937,3 +1949,69 @@ def test_hints_in_messages(swept):
                        r'outer counts the values from 1; to pick one by '
                        r"value, pass e.g. outer=\{'Th': '200\[degC\]'\}"):
         mk.average(geom, 'domain', 'T', outer=200, step='last')
+
+
+
+##################
+# Steps by value #
+##################
+
+def test_steps_by_value(swept, tmp_path):
+    model, geom, study, faces = swept
+    hot = faces['hot']
+
+    def flux(step, outer='all'):
+        return mk.integral(geom, 'boundary', 'ht.ntflux', hot, unit='W',
+                           outer=outer, step=step)
+    every = flux('all')
+    assert flux({'t': 2}) == pytest.approx(every[:, 2])
+    assert flux({'t': '2[s]'}) == pytest.approx(every[:, 2])
+    assert flux({'t': '1000[ms]'}, outer=2) == pytest.approx(every[1, 1])
+    assert flux([{'t': 2}, {'t': 0}]) == pytest.approx(every[:, [2, 0]])
+    assert mk.value(geom, 'T', (0.002, 0.025, 0.005), outer=1,
+                    step={'t': 2}) == pytest.approx(
+        mk.value(geom, 'T', (0.002, 0.025, 0.005), outer=1, step='last'))
+    with pytest.raises(ValueError, match=r'at outer=1 .* has no step with '
+                       r"t=1.4; the nearest is step=2 \(t=1\)\. Steps are "
+                       r'picked by their exact values, not interpolated'):
+        flux({'t': 1.4})
+    with pytest.raises(ValueError, match=r"has no steps by 'x'; they go by "
+                                         r't'):
+        flux({'x': 1})
+    with pytest.raises(ValueError, match=r"Inconsistent unit"):
+        flux({'t': '2[m]'})
+    with pytest.raises(TypeError, match='step mixes numbers and values by '
+                                        'name'):
+        flux([1, {'t': 2}])
+    picture = plot(geom, 'T', tmp_path/'t2.png', outer=2, step={'t': 2})
+    assert picture.read_bytes() == plot(geom, 'T', tmp_path/'last.png',
+                                        outer=2, step='last').read_bytes()
+    with pytest.raises(ValueError, match='draws one step'):
+        plot(geom, 'T', tmp_path/'x.png', outer=2, step=[{'t': 2}])
+    # a step number that is no time: the hint says how to pick by value
+    with pytest.raises(ValueError, match=r"step=\{'t': \.\.\.\} picks one "
+                                         r'by value'):
+        flux(7)
+
+
+def test_steps_by_value_without_sweep(fresh):
+    model, geom = fresh()
+    study = (model/'studies').create(name='transient')
+    study.create('Transient').property('tlist', 'range(0,1,4)')
+    model.solve()
+    assert mk.average(geom, 'domain', 'T', step={'t': 3}) == \
+        pytest.approx(mk.average(geom, 'domain', 'T', step=4))
+    static = (model/'studies').create(name='static')
+    static.create('Stationary')
+    model.solve('static')
+    with pytest.raises(ValueError, match='one stationary step, without '
+                                         'values; leave out step='):
+        mk.average(geom, 'domain', 'T', dataset=static, step={'t': 0})
+    inner = (model/'studies').create(name='inner')
+    inner.create('Stationary')
+    sweep(inner, '100 200')
+    model.solve('inner')
+    assert mk.average(geom, 'domain', 'T', dataset=inner,
+                      step={'Th': '200[degC]'}) == \
+        pytest.approx(mk.average(geom, 'domain', 'T', dataset=inner,
+                                 step=2))

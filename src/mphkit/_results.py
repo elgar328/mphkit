@@ -47,15 +47,16 @@ STEPS = ('all', 'first', 'last')
 GUESSES = ('sweep', 'param', 'parameter', 'parameters', 'params', 'outers')
 
 Array = NDArray[Any]
-One = int | numpy.integer | Literal['first', 'last'] | None
-Many = Literal['all'] | Sequence[int] | NDArray[numpy.integer]
-Step = (int | numpy.integer | str | Sequence[int] | NDArray[numpy.integer]
-        | None)
-# outer values of a sweep: the same forms, or values by name
+# steps and outer values of a sweep: by number, or values by name
 Values = Mapping[str, float | str]
-OuterOne = One | Values
-OuterMany = Many | Sequence[Values]
-Outer = Step | Values | Sequence[Values]
+One = int | numpy.integer | Literal['first', 'last'] | Values | None
+Many = (Literal['all'] | Sequence[int] | NDArray[numpy.integer]
+        | Sequence[Values])
+Step = (int | numpy.integer | str | Sequence[int] | NDArray[numpy.integer]
+        | Values | Sequence[Values] | None)
+OuterOne = One
+OuterMany = Many
+Outer = Step
 
 
 ###########
@@ -118,13 +119,18 @@ def integral(geom: Node, entity: str, expr: str, /, selection=None, *,
     `step` picks steps of a time-dependent study, sweep or frequency list,
     counted from 1: `'first'`, `'last'`, a number, a list of numbers or
     `'all'`; `mk.step_values(geom)` gives their times or parameter values.
-    Unlike MPh's `model.evaluate`, `None` means the only step and raises
-    when there are several. `outer` picks, in the same forms, values of a
-    parametric sweep that COMSOL stores as an outer loop: around a
-    time-dependent or eigenvalue study or a list of frequencies, or over
-    the geometry, the mesh, materials or functions;
-    `mk.outer_values(geom)` gives them. `outer=1` raises for a dataset
-    without such a sweep, unlike `step=1` for one with a single step.
+    A number is a position: `step=10` is the tenth step, not t = 10 s.
+    By value, `step={'t': 10}` (SI units: s, Hz, K) or `{'t': '2[min]'}`
+    picks the step with exactly that value, not interpolated, and a list
+    of them several. Unlike MPh's `model.evaluate`, `None` means the only
+    step and raises when there are several.
+
+    `outer` picks, in the same forms, values of a parametric sweep that
+    COMSOL stores as an outer loop: around a time-dependent or eigenvalue
+    study or a list of frequencies, or over the geometry, the mesh,
+    materials or functions; `mk.outer_values(geom)` gives them.
+    `outer=1` raises for a dataset without such a sweep, unlike `step=1`
+    for one with a single step.
 
     `outer` also takes values by name, e.g. `{'Th': '200[degC]'}` (COMSOL
     converts the unit; expressions use the parameters' current values)
@@ -134,7 +140,8 @@ def integral(geom: Node, entity: str, expr: str, /, selection=None, *,
 
     `step` counts the steps of each value; several values at once need
     the same steps (when a solver picks the time steps, each value has
-    its own: take `'first'`, `'last'` or one value at a time). With
+    its own: take `'first'`, `'last'`, a step by value such as
+    `{'t': 10}`, found in each value, or one value at a time). With
     eigenvalues, step k is the k-th eigenvalue of each value, whose mode
     may change from value to value. `outer='all'` reads the values in one
     call, faster than a loop over them, which checks the geometry each
@@ -372,7 +379,7 @@ def value(geom: Node, expr: str, points, /, *, unit: str | None = None,
     check_geometry(name, geom)
     sdim = _comsol.sdim(geom)
     coordinates, single = _points(geom, points, sdim)
-    steps(step, None, '')
+    _sweep.check_step(step, None)
     _sweep.check_outer(outer)
     model = geom.model.java
     with _datasets.scratch(model) as create:
@@ -465,7 +472,7 @@ def _over(name: str, geom: Node, entity: str, expr: str, selection,
         raise ValueError(f'{name}() works on domains, boundaries and edges; '
                          'use mk.value(geom, expr, points) for values at '
                          'points.')
-    steps(step, None, '')
+    _sweep.check_step(step, None)
     _sweep.check_outer(outer)
     model = geom.model.java
     sdim = _comsol.sdim(geom)
@@ -711,11 +718,6 @@ def steps(step, count: int | None, where: str, *,
              "'first', 'last', 'all', a number or a list of numbers")
     if what == 'outer':
         forms += ", or values by name such as {'Th': 473.15}"
-    if what == 'step' and isinstance(step, Mapping):
-        raise TypeError('step takes numbers, not values by name: '
-                        'mk.step_values(geom) gives the values of the steps; '
-                        'outer= takes values by name, of a sweep stored as an '
-                        'outer loop.')
     if single and (step == 'all' if isinstance(step, str)
                    else numpy.ndim(step) > 0):
         raise ValueError(f"{single}() draws one {noun}; pass {what}='last' "

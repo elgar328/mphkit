@@ -25,10 +25,11 @@ until 1.0, a minor release (0.2, 0.3, ...) may change the API. See
   the forms of `step=` or by value (`{'Th': '200[degC]'}`, or a number
   in SI units), each value from its own solution; `mk.outer_values` gives
   their parameter values and `mk.step_values` the times, frequencies or
-  parameter values of the steps by name, both in SI units. A sweep that
-  changes the geometry is read over selection nodes or all entities,
-  evaluated on each value's geometry; entity numbers, explicit selections
-  and selections that are empty for a value raise. Unknown names such as
+  parameter values of the steps by name, both in SI units; `step=` also
+  picks a step by value, e.g. `{'t': 10}`, in each outer value. A sweep
+  that changes the geometry is read over selection nodes or all
+  entities, evaluated on each value's geometry; entity numbers, explicit
+  selections and selections that are empty for a value raise. Unknown names such as
   `mk.time_values` or `mk.sweep_values` suggest them.
 - Unknown names such as `mk.volume_integral`, `mk.mphint2` or `mk.probe`
   suggest the results helpers; `mk.evaluate` points to MPh's

@@ -114,7 +114,8 @@ def plot(geom: Node, expr: str, filename, /, selection: Node | None = None,
     shape. The undeformed outline stays in the picture.
 
     `unit`, `dataset`, `step` and `outer` work as in `mk.integral`, but a
-    picture shows one step: `'first'`, `'last'` or a number. Several
+    picture shows one step: `'first'`, `'last'`, a number or a value
+    such as `{'t': 10}`. Several
     outer values (`outer='all'` or a list) give a picture each, in a list
     of paths; `{outer}` in the file name stands for the value's number,
     e.g. `mk.plot(geom, 'T', 'T_{outer}.png', outer='all', step='last')`
@@ -140,7 +141,7 @@ def plot(geom: Node, expr: str, filename, /, selection: Node | None = None,
     _results.check_expr(name, expr)
     path = _image.picture_path(filename)
     pixels = _image.picture_size(size)
-    _results.steps(step, None, '', single=name)
+    _sweep.check_step(step, name)
     slices = _slices(x, y, z)
     if view is not None and (not isinstance(view, str) or view not in VIEWS):
         choices = ', '.join(repr(v) for v in VIEWS)

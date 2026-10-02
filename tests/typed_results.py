@@ -51,6 +51,10 @@ def check(geom: Node, flag: bool, step: int | str) -> None:
     assert_type(mk.maximum(geom, 'domain', 'T',
                            outer=mk.outer_values(geom)[1]), float)
     assert_type(mk.plot(geom, 'T', 'T.png', outer={'Th': 473.15}), Path)
+    assert_type(mk.average(geom, 'domain', 'T', step={'t': 10}), float)
+    assert_type(mk.average(geom, 'domain', 'T', step=[{'t': '2[min]'}]),
+                NDArray[Any])
+    assert_type(mk.plot(geom, 'T', 'T.png', step={'t': 10}), Path)
     assert_type(mk.outer_values(geom), list[dict[str, float]])
     assert_type(mk.step_values(geom, outer=2), dict[str, NDArray[Any]])
     assert_type(mk.plot(geom, 'T', 'T.png', view='top', step='last'), Path)
