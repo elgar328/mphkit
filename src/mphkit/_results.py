@@ -12,7 +12,7 @@ unit that does not fit the expression.
 from __future__ import annotations
 
 import numbers
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from typing import Any, Literal, overload
 
 import numpy
@@ -43,6 +43,8 @@ RESERVED_PREFIXES = {
 }
 
 STEPS = ('all', 'first', 'last')
+# Guessed keyword arguments for the values of a sweep
+GUESSES = ('sweep', 'param', 'parameter', 'parameters', 'params', 'outers')
 
 Array = NDArray[Any]
 One = int | numpy.integer | Literal['first', 'last'] | None
@@ -395,7 +397,7 @@ def _interpolate(create, model, target, expr: str, unit: str | None,
     Returns the values of `expr` at the points on one target, a row per
     point and a column per step, and which points have no value.
     """
-    unique, order = _unique(target.solnums)
+    unique, order = once(target.solnums)
     feature = create(model.result().numerical(), 'Interp')
     _comsol.set_properties(feature, {
         'data': target.data, 'expr': [expr, '1'],
@@ -482,7 +484,7 @@ def _over(name: str, geom: Node, entity: str, expr: str, selection,
 
         def evaluate(target, settings: dict
                      ) -> tuple[str, Array, Array | None]:
-            unique, order = _unique(target.solnums)
+            unique, order = once(target.solnums)
             feature = create(model.result().numerical(), ftype)
             table = create(model.result().table(), 'Table')
             feature.set('data', target.data)
@@ -562,8 +564,15 @@ def check_expr(name: str, expr):
 
 
 def _check_reserved(name: str, properties: dict):
-    """Raises for properties the helper sets itself."""
+    """
+    Raises for properties the helper sets itself, and guessed arguments
+    for sweeps.
+    """
     for key in properties:
+        if key in GUESSES:
+            raise TypeError(f'{name}() has no argument "{key}"; pick the '
+                            "values of a sweep with outer= or step= "
+                            '(mk.outer_values(geom), mk.step_values(geom)).')
         if key == 'position':
             raise ValueError(f'{name}() gives no position; mk.maximum and '
                              'mk.minimum do.')
@@ -658,14 +667,14 @@ def _check_point_unit(create, model, data: str, expr: str, unit: str,
 #########
 
 def steps(step, count: int | None, where: str, *,
-          single: str | None = None, what: str = 'step', hint: str = ''
-          ) -> tuple[list[int], bool]:
+          single: str | None = None, what: str = 'step',
+          hint: str | Callable[[], str] = '') -> tuple[list[int], bool]:
     """
     Returns the step numbers `step` stands for and whether it asks for
     several (an array). With `count=None`, only checks its form.
     `where` names what has the steps in messages, e.g. `Dataset "s//Solution
     1"`, and `hint` follows the error for several steps, e.g. where to look
-    them up. `single` names a caller that takes one step only, such as
+    them up; a function gives it only then. `single` names a caller that takes one step only, such as
     `'plot'`. `what` is the argument's name, `'step'` or `'outer'`.
     """
     nouns = 'steps' if what == 'step' else 'outer values'
@@ -674,6 +683,11 @@ def steps(step, count: int | None, where: str, *,
              "'first', 'last', 'all', a number or a list of numbers")
     if what == 'outer':
         forms += ", or values by name such as {'Th': 473.15}"
+    if what == 'step' and isinstance(step, Mapping):
+        raise TypeError('step takes numbers, not values by name: '
+                        'mk.step_values(geom) gives the values of the steps; '
+                        'outer= takes values by name, of a sweep stored as an '
+                        'outer loop.')
     if single and (step == 'all' if isinstance(step, str)
                    else numpy.ndim(step) > 0):
         raise ValueError(f"{single}() draws one {noun}; pass {what}='last' "
@@ -691,7 +705,7 @@ def steps(step, count: int | None, where: str, *,
         choices = (f' or a number from 1 to {count}' if single else
                    f", a number from 1 to {count}, a list of them or 'all'")
         raise ValueError(f"{where} has {count} {nouns}; pass {what}='last'"
-                         f'{choices}{hint}.')
+                         f'{choices}{_text(hint)}.')
     many = numpy.ndim(step) > 0
     items = list(step) if many else [step]
     if many and not items:
@@ -709,11 +723,16 @@ def steps(step, count: int | None, where: str, *,
         if wrong:
             raise ValueError(f'{where} has {count} '
                              f'{noun if count == 1 else nouns}, not '
-                             f'{wrong[0]}{hint}.')
+                             f'{wrong[0]}{_text(hint)}.')
     return found, many
 
 
-def _unique(steps: list[int]) -> tuple[list[int], list[int]]:
+def _text(hint: str | Callable[[], str]) -> str:
+    """Returns a hint for a message, made now if it is a function."""
+    return hint() if callable(hint) else hint
+
+
+def once(steps: list[int]) -> tuple[list[int], list[int]]:
     """
     Returns the steps once each, in increasing order, and for each
     requested step its position among those, so that a step asked twice

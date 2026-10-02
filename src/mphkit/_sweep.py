@@ -75,9 +75,10 @@ def outer_values(geom: Node, /, *, dataset=None) -> list[dict[str, float]]:
             raise ValueError(
                 f'Dataset {name} holds its sweep over {", ".join(names)} as '
                 'steps, not as outer values: pass step= to the results '
-                f'helpers (model.inner("{_name(data)}") gives the values).')
+                f'helpers ({_call("step_values", dataset)} gives the '
+                'values).')
         return []
-    return values(model, str(data.getString('solution')))
+    return Sweep(model, str(data.getString('solution'))).rows
 
 
 def values(model, sweep: str) -> list[dict[str, float]]:
@@ -85,54 +86,15 @@ def values(model, sweep: str) -> list[dict[str, float]]:
     Returns the outer parameter values of each child of the sweep in
     solution `sweep`, in SI units and in the children's order of names.
     """
-    outer = set(_outer_names(model.sol(sweep)))
-    found = []
-    for child in _datasets.stored(model.sol(sweep)):
-        solution = model.sol(child)
-        names = _datasets.param_names(solution)
-        missing = sorted(outer - set(names))
-        if missing:
-            raise RuntimeError(f'Solution {child} of the sweep in solution '
-                               f'{sweep} has no value of '
-                               f'{", ".join(missing)}.')
-        numbers = [float(value) for value in solution.getParamVals()]
-        found.append({name: number for name, number in zip(names, numbers)
-                      if name in outer})
-    return found
+    return Sweep(model, sweep).rows
 
 
 def labels(model, sweep: str) -> list[str]:
     """
     Returns, for each child of the sweep in solution `sweep`, its values
-    for messages: in SI units as given back, then as swept, e.g.
-    `Th=473.15 (200 degC)`. Material and function sweeps add the child's
-    label, e.g. `[Material Switch 1=Material 2]`.
+    for messages (see `Sweep.labels`).
     """
-    solution = model.sol(sweep)
-    info = solution.getSolutioninfo()
-    units = dict(zip(_outer_names(solution), _chars(info.getPUnitsOuter())))
-    found = []
-    for number, child, row in zip(
-            _datasets.outer_numbers(solution),
-            _datasets.stored(solution), values(model, sweep)):
-        try:
-            swept = [float(value) for value in info.getPvals([[number, 1]])[0]]
-        except Exception:
-            swept = []
-        names = [name for name in _datasets.param_names(model.sol(child))
-                 if name in row]
-        parts = []
-        for i, name in enumerate(names):
-            part = f'{name}={row[name]!r}'
-            unit = units.get(name)
-            if unit and i < len(swept):
-                part += f' ({swept[i]:g} {unit})'
-            parts.append(part)
-        text = ', '.join(parts)
-        if any(name.startswith(SWITCHES) for name in names):
-            text += f' [{model.sol(child).label()}]'
-        found.append(text)
-    return found
+    return Sweep(model, sweep).labels
 
 
 def label_of(model, solution: str) -> str:
@@ -179,11 +141,6 @@ def _chars(arrays) -> list[str | None]:
             for array in arrays]
 
 
-def _name(dataset) -> str:
-    """Returns the MPh name of a Java dataset."""
-    return _comsol.name_of(dataset)
-
-
 def step_values(geom: Node, /, *, dataset=None, outer=None
                 ) -> dict[str, Array]:
     """
@@ -226,12 +183,12 @@ def step_values(geom: Node, /, *, dataset=None, outer=None
     model = geom.model.java
     chosen = _datasets.select(geom, dataset)
     data = chosen.java
-    where = f'Dataset {_datasets.describe(data)}'
+    where = f'dataset {_datasets.describe(data)}'
     if chosen.kind == 'plain':
         if outer is not None:
             raise no_outer(model, data, outer, 'step_values', dataset)
         return named_steps(model, _datasets.solution_of(model, data))
-    sweep = Sweep(model, str(data.getString('solution')))
+    sweep = Sweep(model, str(data.getString('solution')), data, dataset)
     if outer is None:
         if len(sweep.children) == 1 or same_steps(model, sweep.children,
                                                   strict=True):
@@ -240,8 +197,8 @@ def step_values(geom: Node, /, *, dataset=None, outer=None
         rows = ("outer=k for one value, or outer='all' for a row per value"
                 if len(counts) == 1 else 'outer=k for one value at a time')
         raise ValueError(f'The outer values of {where} have different steps '
-                         f'({_differences(model, sweep)}); pass {rows}.')
-    positions, many = pick(outer, sweep, data, None)
+                         f'({_differences(sweep)}); pass {rows}.')
+    positions, many = pick(outer, sweep, None)
     tables = [named_steps(model, model.sol(sweep.children[k - 1]))
               for k in positions]
     if not many:
@@ -250,8 +207,8 @@ def step_values(geom: Node, /, *, dataset=None, outer=None
     lengths = {len(next(iter(table.values()), ())) for table in tables}
     if any(list(table) != names for table in tables) or len(lengths) > 1:
         raise ValueError(f'The outer values of {where} have different steps '
-                         f'({_differences(model, sweep)}); pass outer=k for '
-                         'one value at a time.')
+                         f'({_differences(sweep, positions)}); pass outer=k '
+                         'for one value at a time.')
     return {name: numpy.array([table[name] for table in tables])
             for name in names}
 
@@ -261,55 +218,148 @@ def step_values(geom: Node, /, *, dataset=None, outer=None
 #########
 
 class Sweep:
-    """An outer sweep's solution: its children, values and steps."""
+    """
+    An outer sweep's solution, read once: its children (a solution per
+    value), their values and steps. `data` and `dataset` are the Java
+    dataset and what was passed as `dataset=`, for messages.
+    """
 
-    def __init__(self, model, tag: str) -> None:
+    def __init__(self, model, tag: str, data=None, dataset=None) -> None:
         self.model = model
         self.tag = tag
+        self.data = data
+        self.dataset = dataset
         solution = model.sol(tag)
         self.numbers = _datasets.outer_numbers(solution)
         self.children = _datasets.stored(solution)
         self.names = _outer_names(solution)
+        self.units = dict(zip(self.names, _chars(
+            solution.getSolutioninfo().getPUnitsOuter())))
+        self._rows: list[dict[str, float]] | None = None
+        self._swept: list[dict[str, float]] | None = None
         self._labels: list[str] | None = None
+        self._counts: dict[int, int] = {}
+
+    @property
+    def rows(self) -> list[dict[str, float]]:
+        """
+        The outer values of each child in SI units, by name in the
+        child's order.
+        """
+        if self._rows is None:
+            outer = set(self.names)
+            self._rows = []
+            for child in self.children:
+                solution = self.model.sol(child)
+                names = _datasets.param_names(solution)
+                missing = sorted(outer - set(names))
+                if missing:
+                    raise RuntimeError(
+                        f'Solution {child} of the sweep in solution '
+                        f'{self.tag} has no value of {", ".join(missing)}.')
+                numbers = [float(value) for value in solution.getParamVals()]
+                self._rows.append({name: number for name, number
+                                   in zip(names, numbers) if name in outer})
+        return self._rows
+
+    @property
+    def swept(self) -> list[dict[str, float]]:
+        """
+        The outer values of each child as swept, e.g. in degC, by name:
+        COMSOL gives them in the order of the child's names.
+        """
+        if self._swept is None:
+            info = self.model.sol(self.tag).getSolutioninfo()
+            self._swept = []
+            for number, child in zip(self.numbers, self.children):
+                try:
+                    row = [float(v) for v in info.getPvals([[number, 1]])[0]]
+                except Exception:
+                    row = []
+                names = _datasets.param_names(self.model.sol(child))
+                self._swept.append({name: value for name, value
+                                    in zip(names, row) if name in self.names})
+        return self._swept
 
     @property
     def labels(self) -> list[str]:
-        """The values of each child for messages (see `labels()`)."""
+        """
+        The values of each child for messages: in SI units as given
+        back, and as swept if that differs, e.g. `Th=473.15 (200 degC)`
+        or `W=0.15 m`. Material and function sweeps add the child's
+        label, e.g. `[Material Switch 1=Material 2]`.
+        """
         if self._labels is None:
-            self._labels = labels(self.model, self.tag)
+            self._labels = []
+            for child, row, swept in zip(self.children, self.rows,
+                                         self.swept):
+                parts = []
+                for name, value in row.items():
+                    unit, given = self.units.get(name), swept.get(name)
+                    if not unit or given is None:
+                        parts.append(f'{name}={value!r}')
+                    elif math.isclose(given, value, rel_tol=1e-12):
+                        parts.append(f'{name}={value!r} {unit}')
+                    else:
+                        parts.append(f'{name}={value!r} ({given:g} {unit})')
+                text = ', '.join(parts)
+                if any(name.startswith(SWITCHES) for name in row):
+                    text += f' [{self.model.sol(child).label()}]'
+                self._labels.append(text)
         return self._labels
 
     def count(self, k: int) -> int:
         """Returns the number of steps of outer value `k` (from 1)."""
-        info = self.model.sol(self.children[k - 1]).getSolutioninfo()
-        return len(info.getSolnum(1, True))
+        if k not in self._counts:
+            self._counts[k] = _count(self.model.sol(self.children[k - 1]))
+        return self._counts[k]
 
-    def where(self, data, k: int) -> str:
-        """Names outer value `k` of dataset `data` in messages."""
-        return (f'Dataset {_datasets.describe(data)} at outer={k} '
+    def where(self, k: int) -> str:
+        """Names outer value `k` in messages."""
+        return (f'dataset {_datasets.describe(self.data)} at outer={k} '
                 f'({self.labels[k - 1]})')
+
+    def call(self, name: str, extra: str = '') -> str:
+        """Spells a call of `mk.<name>` with the dataset passed, if any."""
+        return _call(name, self.dataset, extra)
 
     def materials(self) -> bool:
         """Tells whether it sweeps materials only (no geometry change)."""
         return all(name.startswith('matsw.') for name in self.names)
 
-    def swept(self, k: int) -> dict[str, float]:
+    def setting(self, k: int) -> str:
         """
-        Returns the outer values of `k` (from 1) as swept, e.g. in degC,
-        by name; COMSOL gives them in the order of the child's names.
+        Spells how to set the parameters to outer value `k`, e.g.
+        `model.parameter('W', '0.15[m]')`; material and function sweeps
+        have none.
         """
-        info = self.model.sol(self.tag).getSolutioninfo()
-        row = [float(v) for v in info.getPvals([[self.numbers[k - 1], 1]])[0]]
-        names = _datasets.param_names(self.model.sol(self.children[k - 1]))
-        return {name: number for name, number in zip(names, row)
-                if name in self.names}
+        calls = []
+        for name, value in self.rows[k - 1].items():
+            if name.startswith(SWITCHES):
+                continue
+            unit, given = self.units.get(name), self.swept[k - 1].get(name)
+            text = (f'{given:g}[{unit}]' if unit and given is not None
+                    else repr(value))
+            calls.append(f'model.parameter({name!r}, {text!r})')
+        return '; '.join(calls)
 
-    def title(self, k: int, data, step: int | None) -> Title:
+    def example(self) -> str:
+        """An outer value by name for messages, e.g. {'Th': '200[degC]'}."""
+        k = min(2, len(self.children))
+        name = next((n for n in self.names if not n.startswith(SWITCHES)),
+                    self.names[0])
+        value, unit = self.rows[k - 1][name], self.units.get(name)
+        given = self.swept[k - 1].get(name)
+        if name.startswith(SWITCHES) or not unit or given is None:
+            return f'{{{name!r}: {value!r}}}'
+        return f"{{{name!r}: '{given:g}[{unit}]'}}"
+
+    def title(self, k: int, step: int | None) -> Title:
         """
         What the title of a picture of outer value `k` at `step` must
         show (`None` with one step).
         """
-        every = [self.swept(n) for n in range(1, len(self.children) + 1)]
+        every = self.swept
         plain = [name for name in every[k - 1]
                  if not name.startswith(SWITCHES)]
         label = str(self.model.sol(self.children[k - 1]).label())
@@ -331,7 +381,7 @@ class Sweep:
         return Title(self.numbers[k - 1],
                      {name: every[k - 1][name] for name in plain},
                      {name: [row[name] for row in every] for name in plain},
-                     switches, self.where(data, k), len(switches) >= wanted,
+                     switches, self.where(k), len(switches) >= wanted,
                      steps)
 
 
@@ -368,45 +418,91 @@ class Request(NamedTuple):
     restricted: Restriction | None = None
 
 
-def resolve(create, geom: Node, dataset, step, outer) -> Request:
+class Plain(NamedTuple):
+    """A dataset without outer sweep: its steps, and those to read."""
+    data: Any
+    total: int
+    solnums: list[int]
+    many: bool
+
+
+class Swept(NamedTuple):
     """
-    Returns the datasets and steps to evaluate for `dataset`, `step` and
-    `outer`: the dataset itself, or a temporary dataset per value of an
-    outer sweep, made with `create`, after checking the geometry.
+    An outer sweep: the values asked for (positions from 1), each once
+    and the position of each among those, whether `outer` asks for
+    several, the steps of each, its temporary datasets and the decision
+    on its geometry (see `decide()`).
+    """
+    sweep: Sweep
+    positions: list[int]
+    unique: list[int]
+    order: list[int]
+    many: bool
+    steps: dict[int, tuple[list[int], bool]]
+    children: Children
+    decision: str
+
+
+def _prepare(create, geom: Node, dataset, step, outer,
+             caller: str | None) -> Plain | Swept:
+    """
+    Picks the dataset and checks `step` and `outer` against it; of an
+    outer sweep, also the geometry of the values asked for, on temporary
+    datasets made with `create`. `caller` is `'plot'` for pictures, which
+    show one step and one picture per value.
     """
     model = geom.model.java
     chosen = _datasets.select(geom, dataset)
     data = chosen.java
     if chosen.kind == 'plain':
         if outer is not None:
-            raise no_outer(model, data, outer, None, dataset)
+            raise no_outer(model, data, outer, caller, dataset)
         _results.check_current(geom)
         count = _datasets.step_count(model, data)
         solnums, many = _results.steps(
             step, count, f'Dataset {_datasets.describe(data)}',
-            hint=f' ({_call("step_values", dataset)} gives their times or '
-                 'parameter values)')
-        return Request([Target(str(data.tag()), solnums, '')], [0], False,
-                       many)
-    sweep = Sweep(model, str(data.getString('solution')))
-    positions, many_outer = pick(outer, sweep, data, step)
-    unique, order = _results._unique(positions)
-    found = _steps(sweep, data, unique, step, dataset, None)
-    children = Children(create, geom, sweep, data)
-    decision = check(geom, sweep, children, unique, data)
+            single=caller,
+            hint=lambda: f' ({_call("step_values", dataset)} gives their '
+                         'times or parameter values)')
+        return Plain(data, count, solnums, many)
+    sweep = Sweep(model, str(data.getString('solution')), data, dataset)
+    positions, many = pick(outer, sweep, step)
+    unique, order = _results.once(positions)
+    if caller == 'plot' and len(unique) < len(positions):
+        twice = next(k for k in positions if positions.count(k) > 1)
+        raise ValueError(f'outer asks for value {twice} more than once; '
+                         'mk.plot draws one picture per value.')
+    found = _steps(sweep, unique, step, caller)
+    children = Children(create, geom, sweep)
+    decision = check(geom, sweep, children, unique)
+    return Swept(sweep, positions, unique, order, many, found, children,
+                 decision)
+
+
+def resolve(create, geom: Node, dataset, step, outer) -> Request:
+    """
+    Returns the datasets and steps to evaluate for `dataset`, `step` and
+    `outer`: the dataset itself, or a temporary dataset per value of an
+    outer sweep, made with `create`, after checking the geometry.
+    """
+    prepared = _prepare(create, geom, dataset, step, outer, None)
+    if isinstance(prepared, Plain):
+        return Request([Target(str(prepared.data.tag()), prepared.solnums,
+                               '')], [0], False, prepared.many)
+    sweep, children = prepared.sweep, prepared.children
     restricted = None
-    if decision in ('sweep', 'unknown'):
+    if prepared.decision in ('sweep', 'unknown'):
         restricted = Restriction(
-            decision, f'dataset {_datasets.describe(data)}',
-            lambda: _matching(geom, sweep, children, data))
-    targets = [Target(str(children.dataset(k).tag()), found[k][0],
-                      f'outer={k} ({sweep.labels[k - 1]})') for k in unique]
-    return Request(targets, order, many_outer, found[unique[0]][1],
-                   restricted)
+            prepared.decision, f'dataset {_datasets.describe(sweep.data)}',
+            lambda: _matching(geom, sweep, children))
+    targets = [Target(str(children.dataset(k).tag()), prepared.steps[k][0],
+                      f'outer={k} ({sweep.labels[k - 1]})')
+               for k in prepared.unique]
+    return Request(targets, prepared.order, prepared.many,
+                   prepared.steps[prepared.unique[0]][1], restricted)
 
 
-def _matching(geom: Node, sweep: Sweep, children: Children, data
-              ) -> list[str]:
+def _matching(geom: Node, sweep: Sweep, children: Children) -> list[str]:
     """Lists the outer values solved on the geometry as built."""
     try:
         _comsol.check_built(geom)
@@ -421,8 +517,8 @@ def _matching(geom: Node, sweep: Sweep, children: Children, data
     return found
 
 
-def _steps(sweep: Sweep, data, unique: list[int], step, dataset,
-           single: str | None) -> dict[int, tuple[list[int], bool]]:
+def _steps(sweep: Sweep, unique: list[int], step, single: str | None
+           ) -> dict[int, tuple[list[int], bool]]:
     """
     Returns, for each requested outer value, the steps `step` stands for
     and whether it asks for several. Several values need the same steps,
@@ -433,17 +529,20 @@ def _steps(sweep: Sweep, data, unique: list[int], step, dataset,
                                        and step in ('first', 'last'))
     if several and not same_steps(model, [sweep.children[k - 1]
                                           for k in unique]):
-        where = f'dataset {_datasets.describe(data)}'
+        where = f'dataset {_datasets.describe(sweep.data)}'
         raise ValueError(
             f'The outer values {_numbers(unique)} of {where} have different '
-            f"steps ({_differences(model, sweep, unique)}); pass step="
-            "'first' or 'last', or one outer value at a time, e.g. "
-            f'outer={unique[0]} ({_call("step_values", dataset)[:-1]}, '
-            f'outer={unique[0]}) gives its steps).')
-    return {k: _results.steps(
-        step, sweep.count(k), sweep.where(data, k), single=single,
-        hint=f' ({_call("step_values", dataset)[:-1]}, outer={k}) gives '
-             f'them: {_preview(model, sweep.children[k - 1])})')
+            f"steps ({_differences(sweep, unique)}); pass step='first' or "
+            f"'last', or one outer value at a time, e.g. outer={unique[0]} "
+            f'({sweep.call("step_values", f"outer={unique[0]}")} gives its '
+            'steps).')
+
+    def hint(k: int) -> Callable[[], str]:
+        return lambda: (f' ({sweep.call("step_values", f"outer={k}")} '
+                        f'gives them: {_preview(model, sweep.children[k - 1])})')
+    return {k: _results.steps(step, sweep.count(k),
+                              _capital(sweep.where(k)), single=single,
+                              hint=hint(k))
             for k in unique}
 
 
@@ -486,43 +585,27 @@ def pictures(create, geom: Node, dataset, step, outer
     Returns what to draw for `dataset`, `step` and `outer`, a picture per
     outer value, and whether `outer` asks for several. A sweep's pictures
     are drawn from its dataset, so every value must have been solved on
-    the geometry as built.
+    the geometry as built: drawing a loop of values one by one compares
+    them all each time, `outer='all'` once.
     """
-    model = geom.model.java
-    chosen = _datasets.select(geom, dataset)
-    data = chosen.java
-    if chosen.kind == 'plain':
-        if outer is not None:
-            raise no_outer(model, data, outer, None, dataset)
-        _results.check_current(geom)
-        count = _datasets.step_count(model, data)
-        solnums, _ = _results.steps(
-            step, count, f'Dataset {_datasets.describe(data)}',
-            single='plot',
-            hint=f' ({_call("step_values", dataset)} gives their times or '
-                 'parameter values)')
-        return [Picture(data, None, solnums[0] if count > 1 else None,
+    prepared = _prepare(create, geom, dataset, step, outer, 'plot')
+    if isinstance(prepared, Plain):
+        return [Picture(prepared.data, None,
+                        prepared.solnums[0] if prepared.total > 1 else None,
                         None, None)], False
-    sweep = Sweep(model, str(data.getString('solution')))
-    positions, many = pick(outer, sweep, data, step)
-    twice = sorted({k for k in positions if positions.count(k) > 1})
-    if twice:
-        raise ValueError(f'outer asks for value {twice[0]} more than once; '
-                         'mk.plot draws one picture per value.')
-    found = _steps(sweep, data, positions, step, dataset, 'plot')
-    children = Children(create, geom, sweep, data)
-    decision = check(geom, sweep, children, positions, data)
+    sweep, children = prepared.sweep, prepared.children
+    decision = prepared.decision
     if decision == 'full' and not sweep.materials():
-        current = vertices(geom)
+        current = children.current
         for k in range(1, len(sweep.children) + 1):
             points = children.points(k)
             if points is None:
                 decision = 'unknown'
                 break
-            if not same_points(points, current):
+            if current is None or not same_points(points, current):
                 decision = 'sweep'
                 break
-    where = f'dataset {_datasets.describe(data)}'
+    where = f'dataset {_datasets.describe(sweep.data)}'
     if decision == 'unknown':
         raise RuntimeError(
             f'The solution of {where} covers part of the geometry only (no '
@@ -530,15 +613,20 @@ def pictures(create, geom: Node, dataset, step, outer
             'geometry as built; for pictures, mesh all domains with a mesh '
             'of your own (not physics-controlled) and solve again.')
     if decision == 'sweep':
+        k = prepared.positions[0]
+        setting = sweep.setting(k)
         raise ValueError(
             f'The sweep of {where} changes the geometry, and mk.plot draws '
             'on the geometry as built. To draw one value, set its '
-            'parameters (mk.outer_values(geom)), run model.build(geom) and '
-            'model.mesh(), and solve a study without the sweep.')
-    drawn = {k: found[k][0][0] if sweep.count(k) > 1 else None
-             for k in positions}
-    return [Picture(data, sweep.numbers[k - 1], drawn[k], k,
-                    sweep.title(k, data, drawn[k])) for k in positions], many
+            f'parameters{f" ({setting} for outer={k})" if setting else ""}, '
+            'run model.build(geom) and model.mesh(), and solve a study '
+            'without the sweep. The results helpers read every value over '
+            'selection nodes.')
+    drawn = {k: prepared.steps[k][0][0] if sweep.count(k) > 1 else None
+             for k in prepared.positions}
+    return [Picture(sweep.data, sweep.numbers[k - 1], drawn[k], k,
+                    sweep.title(k, drawn[k])) for k in prepared.positions], \
+        prepared.many
 
 
 def title_problem(indicator: str, title: Title) -> str | None:
@@ -615,20 +703,21 @@ def _printed_as(text: str, value: float, candidates: list[float]) -> bool:
                if d <= best*(1 + 1e-9))
 
 
-def pick(outer, sweep: Sweep, data, step) -> tuple[list[int], bool]:
+def pick(outer, sweep: Sweep, step) -> tuple[list[int], bool]:
     """
     Returns the outer values (positions from 1) `outer` stands for and
     whether it asks for several.
     """
     count = len(sweep.children)
-    where = f'Dataset {_datasets.describe(data)}'
+    where = f'Dataset {_datasets.describe(sweep.data)}'
     if outer is None:
         if count == 1:
             return [1], False
         message = (f'{where} holds a parametric sweep over {count} values '
                    f'({listed(sweep.labels)}); pass outer= a number, a list '
-                   "of them, 'all', 'first' or 'last' (mk.outer_values(geom) "
-                   'gives the values).')
+                   "of them, 'all', 'first', 'last' or values by name such "
+                   f'as outer={sweep.example()} '
+                   f'({sweep.call("outer_values")} gives the values).')
         if step is not None and all(sweep.count(k) == 1
                                     for k in range(1, count + 1)):
             message += (' Each value has one step: the sweep is stored as '
@@ -636,9 +725,9 @@ def pick(outer, sweep: Sweep, data, step) -> tuple[list[int], bool]:
                         'step=.')
         raise ValueError(message)
     if isinstance(outer, Mapping):
-        return [by_value(sweep, outer, where)], False
+        return [by_value(sweep, outer)], False
     if _by_name(outer):
-        return [by_value(sweep, wanted, where) for wanted in outer], True
+        return [by_value(sweep, wanted) for wanted in outer], True
     return _results.steps(outer, count, where, what='outer')
 
 
@@ -646,15 +735,19 @@ def pick(outer, sweep: Sweep, data, step) -> tuple[list[int], bool]:
 # Picking value #
 #################
 
-def check_outer(outer):
-    """Checks the form of `outer`, before COMSOL is asked anything."""
+def check_outer(outer) -> bool:
+    """
+    Checks the form of `outer`, before COMSOL is asked anything, and
+    tells whether it asks for several values.
+    """
     if isinstance(outer, Mapping):
         _check_values(outer)
-    elif _by_name(outer):
+        return False
+    if _by_name(outer):
         for wanted in outer:
             _check_values(wanted)
-    else:
-        _results.steps(outer, None, '', what='outer')
+        return True
+    return _results.steps(outer, None, '', what='outer')[1]
 
 
 def _by_name(outer) -> bool:
@@ -687,7 +780,7 @@ def _check_values(wanted):
                             f"'200[degC]', not {given!r}.")
 
 
-def by_value(sweep: Sweep, wanted: Mapping, where: str) -> int:
+def by_value(sweep: Sweep, wanted: Mapping) -> int:
     """
     Returns the outer value (counted from 1) that has the values
     `wanted`, by name: numbers in SI units, or strings with a unit that
@@ -695,16 +788,15 @@ def by_value(sweep: Sweep, wanted: Mapping, where: str) -> int:
     pick one value.
     """
     model = sweep.model
-    rows = values(model, sweep.tag)
-    swept = [sweep.swept(k) for k in range(1, len(rows) + 1)]
+    where = f'Dataset {_datasets.describe(sweep.data)}'
+    rows = sweep.rows
     for name in wanted:
         if name not in sweep.names:
-            steps = _names(model.sol(sweep.children[0]))
-            if name in steps:
+            if name in _names(model.sol(sweep.children[0])):
                 raise ValueError(
                     f'{where} holds {name} as steps of each outer value, not '
-                    f"as an outer value: pass step= (mk.step_values(geom, "
-                    'outer=k) gives them).')
+                    f'as an outer value: pass step= '
+                    f'({sweep.call("step_values", "outer=k")} gives them).')
             raise ValueError(f'{where} has no outer parameter {name!r}; its '
                              f'outer parameters are '
                              f'{", ".join(sweep.names)}.')
@@ -716,21 +808,23 @@ def by_value(sweep: Sweep, wanted: Mapping, where: str) -> int:
     asked = ', '.join(f'{name}={given!r}' for name, given in wanted.items())
     if len(found) == 1:
         return found[0]
+    where = f'dataset {_datasets.describe(sweep.data)}'
     if not found:
-        message = (f'{where} has no value with {asked}; it has '
+        message = (f'No value of {where} has {asked}; it has '
                    f'{listed(sweep.labels)}.')
         numbers_given = {name: float(given) for name, given in wanted.items()
                          if not isinstance(given, str)}
+        swept = sweep.swept
         if numbers_given and any(
                 all(_close(row.get(name, math.nan), number,
                            [r.get(name, math.nan) for r in swept])
                     for name, number in numbers_given.items())
                 for row in swept):
             message += (' Numbers are in SI units; give the unit as a '
-                        "string instead, e.g. '200[degC]'.")
+                        f'string instead, e.g. outer={sweep.example()}.')
         raise ValueError(message)
     if all(rows[k - 1] == rows[found[0] - 1] for k in found):
-        raise ValueError(f'{where} has {asked} more than once (outer='
+        raise ValueError(f'The values of {where} repeat {asked} (outer='
                          f'{_numbers(found)}); pass outer= one of these '
                          'numbers.')
     raise ValueError(f'{asked} fits several values of {where}: '
@@ -790,28 +884,33 @@ def no_outer(model, data, outer, caller: str | None, dataset
              ) -> ValueError:
     """
     The error for `outer` given with a dataset without outer sweep;
-    `caller` is `'step_values'` for that one.
+    `caller` is `'step_values'` or `'plot'` for those.
     """
     where = f'Dataset {_datasets.describe(data)}'
-    names = stepped(model, _datasets.solution_of(model, data))
-    if names and caller == 'step_values':
-        return ValueError(
-            f'{where} holds its sweep over {", ".join(names)} as steps, not '
-            'as outer values; leave out outer= to get them.')
-    if names:
-        instead = (f'step={outer!r}' if not isinstance(outer, (Mapping, list,
-                                                              tuple))
-                   else 'step=')
-        if isinstance(outer, Mapping) and set(outer) <= set(names):
-            found = _step_of(model, _datasets.solution_of(model, data),
-                             outer)
-            if found is not None:
-                instead = f'step={found}'
-        return ValueError(
-            f'{where} holds its sweep over {", ".join(names)} as steps, not '
-            f'as outer values: pass {instead} instead of outer= '
-            f'({_call("step_values", dataset)} gives the values).')
-    return ValueError(f'{where} has no outer sweep; leave out outer=.')
+    solution = _datasets.solution_of(model, data)
+    names = stepped(model, solution)
+    if not names:
+        return ValueError(f'{where} has no outer sweep; leave out outer=.')
+    sweep = f'{where} holds its sweep over {", ".join(names)} as steps'
+    if caller == 'step_values':
+        return ValueError(f'{sweep}, not as outer values; leave out outer= '
+                          'to get them.')
+    values = f'({_call("step_values", dataset)} gives the values)'
+    step: Any
+    if isinstance(outer, Mapping):
+        step = (_step_of(model, solution, outer)
+                if set(outer) <= set(names) else None)
+    elif _by_name(outer) or not isinstance(outer, (str, numbers.Integral)):
+        step = None if _by_name(outer) else [int(k) for k in outer]
+    else:
+        step = int(outer) if isinstance(outer, numbers.Integral) else outer
+    if caller == 'plot' and (step == 'all' or isinstance(step, list)):
+        return ValueError(f'{sweep}, not as outer values, and a picture shows '
+                          'one step: pass step=k instead of outer=, one call '
+                          f'per picture {values}.')
+    instead = 'step=' if step is None else f'step={step!r}'
+    return ValueError(f'{sweep}, not as outer values: pass {instead} instead '
+                      f'of outer= {values}.')
 
 
 ##############
@@ -846,7 +945,9 @@ def restricted_selection(geom: Node, entity: str, level: int, selection,
         if why:
             raise ValueError(
                 f'Selection "{selection}" may pick other entities for some '
-                f'values of {restriction.where}: {why}. {_instead(entity)}')
+                f'values of {restriction.where}: {why}. Pass a selection '
+                "that COMSOL evaluates in each value's geometry instead, or "
+                f'None for all: {_followers(entity)}')
         return tag
     if restriction.kind == 'unknown':
         raise ValueError(
@@ -862,21 +963,19 @@ def restricted_selection(geom: Node, entity: str, level: int, selection,
                 'for a value solved on the geometry as built (none is now)')
     raise ValueError(
         f'The sweep of {restriction.where} changes the geometry, so entity '
-        f'numbers stand for other entities in some values. '
-        f'{_instead(entity)} Numbers work one value at a time, {numbered}. '
-        'For pictures of one value, set its parameters, run '
-        'model.build(geom) and model.mesh(), and solve a study without the '
-        'sweep.')
+        'numbers stand for other entities in some values. Pass a selection '
+        f'node or None instead of numbers: {_followers(entity)} Numbers '
+        f'work one value at a time, {numbered}.')
 
 
-def _instead(entity: str) -> str:
+def _followers(entity: str) -> str:
     """Says which selections follow each value of a geometry sweep."""
-    return (f'Pass a selection node or None: e.g. mk.sel.box(geom, '
-            f"{entity!r}, x='W') follows each value of W when its range is "
-            'given by parameters; boxes, balls, cylinders and disks, their '
-            'unions, intersections, differences, complements and adjacent '
-            'selections, and sel.result, sel.layer and sel.cumulative of '
-            'features that are no selections do too.')
+    return (f"e.g. mk.sel.box(geom, {entity!r}, x='W') follows each value "
+            'of W when its range is given by parameters; so do balls, '
+            'cylinders and disks, their unions, intersections, '
+            'differences, complements and adjacent selections, and '
+            'sel.result, sel.layer and sel.cumulative of features that are '
+            'no selections, made before the solve.')
 
 
 def blocked(geom: Node, tag: str, seen: tuple[str, ...] = ()) -> str | None:
@@ -1024,13 +1123,15 @@ class Children:
     vertices of the geometry each was solved on.
     """
 
-    def __init__(self, create, geom: Node, sweep: Sweep, data) -> None:
+    def __init__(self, create, geom: Node, sweep: Sweep) -> None:
         self.create = create
         self.geom = geom
         self.sweep = sweep
-        self.frame = _string(data, 'frametype')
+        self.frame = _string(sweep.data, 'frametype')
         self._datasets: dict[int, Any] = {}
         self._points: dict[int, Array | None] = {}
+        # the vertices of the geometry as built, once `check()` read them
+        self.current: Array | None = None
 
     def dataset(self, k: int):
         """Returns the temporary dataset of outer value `k`."""
@@ -1179,8 +1280,8 @@ def decide(built: bool, requested: list[str], others: Callable[[], str]
     return 'unbuilt' if kind == 'same' else 'unbuilt-single'
 
 
-def check(geom: Node, sweep: Sweep, children: Children, unique: list[int],
-          data) -> str:
+def check(geom: Node, sweep: Sweep, children: Children, unique: list[int]
+          ) -> str:
     """
     Checks that the requested outer values were solved on the geometry
     as built, and returns the decision (see `decide()`): `'full'`,
@@ -1195,6 +1296,7 @@ def check(geom: Node, sweep: Sweep, children: Children, unique: list[int],
     except RuntimeError:
         built = False
     current = vertices(geom) if built else None
+    children.current = current
     verdicts = []
     for k in unique:
         points = children.points(k)
@@ -1207,7 +1309,7 @@ def check(geom: Node, sweep: Sweep, children: Children, unique: list[int],
     decision = decide(built, verdicts, children.others)
     if decision == 'full':
         return decision
-    where = f'dataset {_datasets.describe(data)}'
+    where = f'dataset {_datasets.describe(sweep.data)}'
     if decision in ('stale', 'stale-single'):
         k = unique[verdicts.index(DIFFERENT)]
         points = children.points(k)
@@ -1230,10 +1332,12 @@ def check(geom: Node, sweep: Sweep, children: Children, unique: list[int],
                            'model.build(geom), and if it changed since the '
                            'solve, model.mesh() and model.solve() too.')
     if decision == 'unbuilt-single':
+        setting = sweep.setting(len(sweep.children))
         raise RuntimeError(
             f'Geometry "{geom}" is not built; set the parameters to the '
-            f"sweep's value ({sweep.labels[-1]}, see mk.outer_values(geom)) "
-            'and run model.build(geom).')
+            f"sweep's value ({sweep.labels[-1]}"
+            f'{f": {setting}" if setting else ""}) and run '
+            'model.build(geom).')
     return decision
 
 
@@ -1332,8 +1436,7 @@ def _count(solution) -> int:
     return len(solution.getSolutioninfo().getSolnum(1, True))
 
 
-def _differences(model, sweep: Sweep, unique: list[int] | None = None
-                 ) -> str:
+def _differences(sweep: Sweep, unique: list[int] | None = None) -> str:
     """Says how the steps of the outer values differ, for messages."""
     unique = unique or list(range(1, len(sweep.children) + 1))
     counts = [sweep.count(k) for k in unique]
@@ -1369,13 +1472,24 @@ def _numbers(values: list[int]) -> str:
         f'{", ".join(shown[:-1])} and {shown[-1]}'
 
 
-def _call(name: str, dataset) -> str:
-    """Spells a call of `mk.<name>` with the dataset passed, if any."""
-    if dataset is None:
-        return f'mk.{name}(geom)'
+def _call(name: str, dataset, extra: str = '') -> str:
+    """
+    Spells a call of `mk.<name>` with the dataset passed, if any, and
+    `extra` arguments.
+    """
+    arguments = ['geom']
     if isinstance(dataset, Node):
-        return f'mk.{name}(geom, dataset={_comsol.tag_of(dataset)!r})'
-    return f'mk.{name}(geom, dataset={dataset!r})'
+        arguments.append(f'dataset={_comsol.tag_of(dataset)!r}')
+    elif dataset is not None:
+        arguments.append(f'dataset={dataset!r}')
+    if extra:
+        arguments.append(extra)
+    return f'mk.{name}({", ".join(arguments)})'
+
+
+def _capital(text: str) -> str:
+    """Starts a message part with a capital letter."""
+    return text[:1].upper() + text[1:]
 
 
 def _string(java, name: str) -> str | None:

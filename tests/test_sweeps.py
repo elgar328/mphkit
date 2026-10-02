@@ -774,7 +774,7 @@ def test_geometry_sweep(widths):
     assert numpy.isnan(found[0])
     assert found[1] == pytest.approx(100 - 80*0.12/0.15, abs=0.5)
     with pytest.raises(ValueError, match=r'Point 1 of 1 is outside .* at '
-                                         r'outer=1 \(W=0.1 \(0.1 m\)\)'):
+                                         r'outer=1 \(W=0.1 m\)'):
         mk.value(geom, 'T', (0.12, 0.025, 0.005), outer='all')
 
 
@@ -782,12 +782,13 @@ def test_geometry_sweep_refusals(widths, tmp_path):
     model, geom, block, faces = widths
     with pytest.raises(ValueError, match=r'changes the geometry, so entity '
                        r'numbers stand for other entities in some values\. '
-                       r"Pass a selection node or None: e.g. mk.sel.box\("
-                       r"geom, 'boundary', x='W'\).* \(none is now\)"):
+                       r'Pass a selection node or None instead of numbers: '
+                       r"e.g. mk.sel.box\(geom, 'boundary', x='W'\).* "
+                       r'\(none is now\)'):
         mk.average(geom, 'boundary', 'T', 1, outer='all')
     fixed = mk.sel.box(geom, 'boundary', x=0.1, name='fixed')
     with pytest.raises(ValueError, match=r'"selections/fixed" is empty at '
-                       r'outer=2 \(W=0.15 \(0.15 m\)\): .* fixed '
+                       r'outer=2 \(W=0.15 m\): .* fixed '
                        r"coordinates .* x='W'"):
         mk.average(geom, 'boundary', 'T', fixed, outer='all')
     assert mk.average(geom, 'boundary', 'T', fixed, unit='degC',
@@ -825,8 +826,8 @@ def test_geometry_sweep_rebuilt(widths):
     assert mk.average(geom, 'boundary', 'T', hot, unit='degC', outer=1) == \
         pytest.approx(100)
     with pytest.raises(ValueError, match=r'Numbers work one value at a '
-                       r'time, for outer=1 \(W=0.1 \(0.1 m\)\), solved on '
-                       r'the geometry as built\.'):
+                       r'time, for outer=1 \(W=0.1 m\), solved on the '
+                       r'geometry as built\.'):
         mk.average(geom, 'boundary', 'T', hot, outer='all')
     model.mesh()
     assert mk.average(geom, 'boundary', 'T', hot, unit='degC', outer=1) == \
@@ -975,10 +976,10 @@ def test_by_value(swept):
             ('473.15', r"cannot read '473.15'.* Give the unit in brackets")):
         with pytest.raises(ValueError, match=message):
             read({'Th': given})
-    with pytest.raises(ValueError, match=r"has no value with Th=200; it has "
-                       r'1: Th=373.15 \(100 degC\);.* Numbers are in SI '
-                       r"units; give the unit as a string instead, e.g. "
-                       r"'200\[degC\]'"):
+    with pytest.raises(ValueError, match=r'No value of dataset .* has '
+                       r'Th=200; it has 1: Th=373.15 \(100 degC\);.* Numbers '
+                       r'are in SI units; give the unit as a string instead, '
+                       r"e.g. outer=\{'Th': '200\[degC\]'\}"):
         read({'Th': 200})
     with pytest.raises(ValueError, match=r"has no outer parameter 'T'; its "
                                          r'outer parameters are Th\.'):
@@ -1027,9 +1028,9 @@ def test_two_parameters_by_value(fresh):
 def test_repeated_value(fresh):
     model, geom = fresh()
     transient(model, values='100 100')
-    with pytest.raises(ValueError, match=r'has Th=373.15 more than once '
-                                         r'\(outer=1 and 2\); pass outer= '
-                                         r'one of these numbers'):
+    with pytest.raises(ValueError, match=r'repeat Th=373.15 \(outer=1 and '
+                                         r'2\); pass outer= one of these '
+                                         r'numbers'):
         mk.average(geom, 'domain', 'T', outer={'Th': 373.15}, step='last')
 
 
@@ -1066,8 +1067,9 @@ def test_last_value_kept_of_geometry(fresh):
     sweep(study, '0.1 0.15', 'W', 'm').java.set('keepsol', 'last')
     model.solve()
     with pytest.raises(RuntimeError, match=r'is not built; set the '
-                       r"parameters to the sweep's value \(W=0.15 \(0.15 "
-                       r'm\), see mk.outer_values\(geom\)\)'):
+                       r"parameters to the sweep's value \(W=0.15 m: "
+                       r"model.parameter\('W', '0.15\[m\]'\)\) and run "
+                       r'model.build\(geom\)'):
         mk.average(geom, 'domain', 'T', 1)
     model.build(geom)
     with pytest.raises(RuntimeError, match='differs from the one dataset .* '

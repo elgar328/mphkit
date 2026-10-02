@@ -153,11 +153,11 @@ def plot(geom: Node, expr: str, filename, /, selection: Node | None = None,
         raise ValueError('Slices and views are for 3D geometries.')
     if slices is not None and scale is not None:
         raise ValueError('deform= draws on surfaces; leave out x/y/z.')
-    _sweep.check_outer(outer)
+    _check_name(filename, path, _sweep.check_outer(outer))
     model = geom.model.java
     with _datasets.scratch(model) as create:
         pictures, many = _sweep.pictures(create, geom, dataset, step, outer)
-        files = _files(filename, path, pictures, many)
+        files = _files(path, pictures)
         level, entities = None, None
         if selection is not None:
             level, _, entities = _image.drawn_selection(geom, selection)
@@ -236,36 +236,45 @@ def _check_title(group, title):
     indicator = str(group.getString('evaluatedparamindicator'))
     problem = _sweep.title_problem(indicator, title)
     if problem == 'missing':
-        raise RuntimeError(f'COMSOL drew {title.where} without its values in '
-                           f'the title ("{indicator}"), so which value it '
-                           'drew cannot be checked.')
+        raise RuntimeError(
+            f'COMSOL drew {title.where} without its values in the title '
+            f'("{indicator}"), so which value it drew cannot be checked; no '
+            'file was written. Please report it, with this message, at '
+            'https://github.com/elgar328/mphkit/issues.')
     if problem == 'wrong':
         raise RuntimeError(f'COMSOL drew another value than {title.where}: '
                            f'its title says "{indicator}".')
 
 
-def _files(filename, path: Path, pictures: list, many: bool) -> list[Path]:
+def _check_name(filename, path: Path, many: bool):
     """
-    Returns the file of each picture: `{outer}` in the file name stands
-    for the outer value's number.
+    Checks `{outer}` in the file name: needed for several pictures, and
+    not in the folder.
     """
     folder, name = os.path.split(os.fspath(filename))
     if PLACEHOLDER in folder:
         raise ValueError(f'{PLACEHOLDER} goes in the file name, not in the '
                          f'folder: "{filename}".')
-    if PLACEHOLDER not in name:
-        if many:
-            example = os.path.join(folder, f'{path.stem}_{PLACEHOLDER}'
-                                           f'{path.suffix}')
-            raise ValueError(f'mk.plot draws a picture per outer value; put '
-                             f'{PLACEHOLDER} in the file name, e.g. '
-                             f'{example!r} (a plain string, not an '
-                             'f-string).')
+    if many and PLACEHOLDER not in name:
+        example = os.path.join(folder, f'{path.stem}_{PLACEHOLDER}'
+                                       f'{path.suffix}')
+        raise ValueError(f'mk.plot draws a picture per outer value; put '
+                         f'{PLACEHOLDER} in the file name, e.g. {example!r} '
+                         '(a plain string, not an f-string).')
+
+
+def _files(path: Path, pictures: list) -> list[Path]:
+    """
+    Returns the file of each picture: `{outer}` in the file name stands
+    for the outer value's number.
+    """
+    if PLACEHOLDER not in path.name:
         return [path]
     if pictures[0].number is None:
-        raise ValueError(f'"{name}" has {PLACEHOLDER} for the outer value, '
-                         f'but dataset {_datasets.describe(pictures[0].data)}'
-                         ' has no outer sweep.')
+        raise ValueError(f'"{path.name}" has {PLACEHOLDER} for the outer '
+                         f'value, but dataset '
+                         f'{_datasets.describe(pictures[0].data)} has no '
+                         'outer sweep.')
     return [path.with_name(path.name.replace(PLACEHOLDER,
                                              str(picture.number)))
             for picture in pictures]

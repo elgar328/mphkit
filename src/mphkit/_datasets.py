@@ -18,10 +18,9 @@ from . import _comsol, _sweep
 
 
 class Chosen(NamedTuple):
-    """A dataset to evaluate, its kind and the model's sorted solutions."""
+    """A dataset to evaluate and its kind."""
     java: Any
     kind: str  # 'sweep' (an outer loop) or 'plain'
-    solutions: Solutions
 
 
 def select(geom: Node, dataset) -> Chosen:
@@ -144,14 +143,14 @@ def _only(geom: Node, solutions: Solutions, own: list, study) -> Chosen:
                     f'{_study_name(model, studies[0])!r}')
     message += '.'
     if len(set(studies)) < len(studies):
-        sweeps = [str(java.getString('solution')) for java in usable
-                  if solutions.kind(str(java.getString('solution')))
-                  == 'sweep']
-        example = repr(sweeps[0]) if sweeps else 'tag'
+        old = next((java for java in usable
+                    if solutions.kind(str(java.getString('solution')))
+                    == 'sweep'), usable[-1])
         message += (' Some come from the same study, solved again after '
-                    'its steps changed; to drop the old results, remove '
-                    f'their solution, e.g. model.java.sol().remove('
-                    f'{example}).')
+                    'its steps changed; to drop results you no longer need, '
+                    "remove their solution, e.g. model.java.sol().remove("
+                    f"{str(old.getString('solution'))!r}) for "
+                    f'{describe(old)}.')
     raise ValueError(message)
 
 
@@ -179,7 +178,7 @@ def _usable(geom: Node, solutions: Solutions, java, error: type) -> Chosen:
                                f'unfinished sweep ({len(held)} solutions '
                                f'for {len(values)} values); run '
                                f'model.solve({study!r}) again.')
-    return Chosen(java, kind, solutions)
+    return Chosen(java, kind)
 
 
 def _child_message(geom: Node, solutions: Solutions, java, tag: str) -> str:
