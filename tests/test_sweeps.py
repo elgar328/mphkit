@@ -1023,3 +1023,38 @@ def test_width_by_value(widths):
         pytest.approx(7.5e-5)
     assert mk.integral(geom, 'domain', '1', outer={'W': 0.1}) == \
         pytest.approx(5e-5)
+
+
+def test_last_value_kept(fresh, tmp_path):
+    model, geom = fresh()
+    study = (model/'studies').create(name='last')
+    study.create('Transient').property('tlist', '0 1')
+    sweep(study, '100 200 300').java.set('keepsol', 'last')
+    model.solve()
+    assert outer_values(geom) == pytest.approx([{'Th': 300 + KELVIN}])
+    hot = mk.sel.box(geom, 'boundary', x=0)
+    # one value: outer may be left out
+    assert mk.average(geom, 'boundary', 'T', hot, unit='degC',
+                      step='last') == pytest.approx(300)
+    assert mk.plot(geom, 'T', tmp_path/'T.png', outer='last',
+                   step='last').exists()
+
+
+def test_last_value_kept_of_geometry(fresh):
+    model, geom = fresh()
+    model.parameter('W', '0.1[m]')
+    (geom/'Block 1').property('size', ['W', '0.05', '0.01'])
+    model.build(geom)
+    study = (model/'studies').create(name='last')
+    study.create('Stationary')
+    sweep(study, '0.1 0.15', 'W', 'm').java.set('keepsol', 'last')
+    model.solve()
+    with pytest.raises(RuntimeError, match=r'is not built; set the '
+                       r"parameters to the sweep's value \(W=0.15 \(0.15 "
+                       r'm\), see mk.outer_values\(geom\)\)'):
+        mk.average(geom, 'domain', 'T', 1)
+    model.build(geom)
+    with pytest.raises(RuntimeError, match='differs from the one dataset .* '
+                                           'was solved on.* must keep all '
+                                           'solutions to be read'):
+        mk.average(geom, 'domain', 'T', 1)
