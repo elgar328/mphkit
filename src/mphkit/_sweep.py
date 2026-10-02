@@ -76,6 +76,13 @@ def outer_values(geom: Node, /, *, dataset=None) -> list[dict[str, float]]:
     """
     _results.check_geometry('outer_values', geom)
     model = geom.model.java
+    # COMSOL records some reading calls, e.g. getPVals(), in the history
+    with _comsol.history_off(model):
+        return _outer_values(model, geom, dataset)
+
+
+def _outer_values(model, geom: Node, dataset) -> list[dict[str, float]]:
+    """Works as `outer_values()`, with the history switched off."""
     chosen = _datasets.select(geom, dataset)
     data = chosen.java
     if chosen.kind == 'plain':
@@ -192,6 +199,13 @@ def step_values(geom: Node, /, *, dataset=None, outer=None
     _results.check_geometry('step_values', geom)
     check_outer(outer)
     model = geom.model.java
+    # COMSOL records reading the step values in the history
+    with _comsol.history_off(model):
+        return _step_values(model, geom, dataset, outer)
+
+
+def _step_values(model, geom: Node, dataset, outer) -> dict[str, Array]:
+    """Works as `step_values()`, with the history switched off."""
     chosen = _datasets.select(geom, dataset)
     data = chosen.java
     where = f'dataset {_datasets.describe(data)}'
@@ -1165,7 +1179,7 @@ class Children:
         if k not in self._points:
             self._points[k] = fingerprint(
                 self.create, self.geom, self.dataset(k), self.sweep.count(k),
-                self.sweep.labels[k - 1])
+                f'outer={k} ({self.sweep.labels[k - 1]})')
         return self._points[k]
 
     def others(self) -> str:

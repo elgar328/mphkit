@@ -14,6 +14,8 @@ import numpy
 import pytest
 
 import mphkit as mk
+from conftest import java_export
+from test_plot import leftovers as picture_leftovers
 from test_results import leftovers, leaves_nothing, plate  # noqa: F401
 
 KELVIN = 273.15
@@ -37,6 +39,14 @@ def transient(model, name='sweep', values='100 200 300'):
     return study
 
 
+def approx_rows(rows):
+    """
+    Compares a list of values by name approximately: pytest.approx takes
+    no list of dictionaries.
+    """
+    return [pytest.approx(row) for row in rows]
+
+
 def outer_values(geom, **options):
     """mk.outer_values, checked to leave nothing in the model."""
     before = leftovers(geom.model)
@@ -44,6 +54,15 @@ def outer_values(geom, **options):
         return mk.outer_values(geom, **options)
     finally:
         assert leftovers(geom.model) == before
+
+
+def plot(geom, *args, **options):
+    """mk.plot, checked to leave nothing in the model."""
+    before = picture_leftovers(geom.model)
+    try:
+        return mk.plot(geom, *args, **options)
+    finally:
+        assert picture_leftovers(geom.model) == before
 
 
 def step_values(geom, **options):
@@ -97,7 +116,7 @@ def test_outer_values(swept):
                 {'Th': 300 + KELVIN}]
     for dataset in (None, 'dset2', study, 'sweep'):
         assert outer_values(geom, dataset=dataset) == \
-            pytest.approx(expected)
+            approx_rows(expected)
 
 
 def test_plain_and_inner_sweep(fresh):
@@ -174,7 +193,7 @@ def test_store_of_two_steps(fresh):
     with pytest.raises(ValueError, match=r'holds the first study step of the '
                        r"sweep's last value only.* pass dataset='dset\d', "):
         outer_values(geom, dataset=store)
-    assert outer_values(geom) == pytest.approx([{'Th': 100 + KELVIN},
+    assert outer_values(geom) == approx_rows([{'Th': 100 + KELVIN},
                                                 {'Th': 200 + KELVIN}])
 
 
@@ -193,7 +212,7 @@ def test_sweep_removed(fresh):
     ds = mk.set((model/'datasets').create('Solution').java, solution=sweep,
                 geom=geom.tag())
     assert outer_values(geom, dataset=str(ds.tag())) == \
-        pytest.approx([{'Th': 100 + KELVIN}, {'Th': 200 + KELVIN}])
+        approx_rows([{'Th': 100 + KELVIN}, {'Th': 200 + KELVIN}])
     java.result().dataset().remove(str(ds.tag()))
     java.sol().remove(sweep)
     with pytest.raises(RuntimeError, match=r'holds one value of a parametric '
@@ -282,7 +301,7 @@ def test_failed_then_fixed(fresh):
                                                 ['45'])
     model.solve('s')
     assert outer_values(geom, dataset='s') == \
-        pytest.approx([{'kk': 45}, {'kk': 50}, {'kk': 60}])
+        approx_rows([{'kk': 45}, {'kk': 50}, {'kk': 60}])
 
 
 ###########
@@ -393,9 +412,17 @@ def test_free_time_steps(fresh):
     assert first[-1] == second[-1] == pytest.approx(100)
     assert mk.average(geom, 'domain', 'T', outer='all',
                       step='last').shape == (2,)
-    assert mk.average(geom, 'domain', 'T', outer=2,
-                      step=len(second)) == pytest.approx(
-        mk.average(geom, 'domain', 'T', outer=2, step='last'))
+    # steps count per value: the last of the longer one is no step of the
+    # shorter one
+    longer, shorter = (1, 2) if len(first) > len(second) else (2, 1)
+    count = max(len(first), len(second))
+    assert mk.average(geom, 'domain', 'T', outer=longer, step=count) == \
+        pytest.approx(mk.average(geom, 'domain', 'T', outer=longer,
+                                 step='last'))
+    with pytest.raises(ValueError, match=rf'at outer={shorter} .* has '
+                                         rf'{min(len(first), len(second))} '
+                                         rf'steps, not {count}'):
+        mk.average(geom, 'domain', 'T', outer=shorter, step=count)
     for step in ('all', 2, [1, 2]):
         with pytest.raises(ValueError, match=r'outer values 1 and 2 of .* '
                            r'have different steps \(outer=1: \d+ steps, '
@@ -507,10 +534,13 @@ def test_mesh_sweep(fresh):
     study.create('Stationary')
     sweep(study, '0.02 0.01', 'hm', 'm')
     model.solve()
-    assert outer_values(geom) == pytest.approx([{'hm': 0.02}, {'hm': 0.01}])
+    assert outer_values(geom) == approx_rows([{'hm': 0.02}, {'hm': 0.01}])
     hot = mk.sel.box(geom, 'boundary', x=0)
     assert mk.average(geom, 'boundary', 'T', hot, unit='degC',
                       outer='all') == pytest.approx([100, 100])
+    # each value's own mesh: COMSOL's element size h
+    coarse, fine = mk.maximum(geom, 'domain', 'h', outer='all')
+    assert coarse > fine * 1.3
 
 
 def test_stale(fresh):
@@ -542,7 +572,11 @@ def test_stale(fresh):
     (True, ['different'], 'single', 'stale-single'),
     (False, ['different'], 'differ', 'sweep'),
     (False, ['different'], 'same', 'unbuilt'),
-    (False, ['different'], 'single', 'unbuilt-single')])
+    (False, ['different'], 'single', 'unbuilt-single'),
+    (True, ['same'], 'single', 'full'),
+    (True, ['different', 'unknown'], 'differ', 'unknown'),
+    (True, ['same', 'different'], 'same', 'stale'),
+    (True, [], 'same', 'stale')])
 def test_decide(built, requested, others, expected):
     asked = []
 
@@ -713,14 +747,13 @@ def test_title(indicator, number, expected, candidates, switches, problem):
 # Sweeps of the geometry #
 ##########################
 
-@pytest.fixture(scope='module')
-def widths(client):
+def width_model(client, name):
     """
     The heat plate swept over its width W = 0.1 and 0.15 m, stationary:
     T = 100 degC at x = 0 and 20 degC at x = W, so the heat through it
-    is 18 and 12 W.
+    is 18 and 12 W. Returns the model, geometry, block and selections.
     """
-    model = client.create('widths')
+    model = client.create(name)
     model.parameter('W', '0.1[m]')
     model.parameter('Th', '100[degC]')
     geom = mk.geometry(model, 3)
@@ -744,13 +777,20 @@ def widths(client):
     study.create('Stationary')
     sweep(study, '0.1 0.15', 'W', 'm')
     model.solve()
+    return model, geom, block, faces
+
+
+@pytest.fixture(scope='module')
+def widths(client):
+    """The width sweep, as solved: its geometry is left unbuilt."""
+    model, geom, block, faces = width_model(client, 'widths')
     yield model, geom, block, faces
     client.remove(model)
 
 
 def test_geometry_sweep(widths):
     model, geom, block, faces = widths
-    assert outer_values(geom) == pytest.approx([{'W': 0.1}, {'W': 0.15}])
+    assert outer_values(geom) == approx_rows([{'W': 0.1}, {'W': 0.15}])
     assert mk.integral(geom, 'boundary', 'ht.ntflux', faces['hot'],
                        unit='W', outer='all') == pytest.approx([-18, -12])
     assert mk.integral(geom, 'boundary', 'ht.ntflux', faces['cold'],
@@ -780,6 +820,19 @@ def test_geometry_sweep(widths):
 
 def test_geometry_sweep_refusals(widths, tmp_path):
     model, geom, block, faces = widths
+    before = sorted(str(tag) for tag in model.java.selection().tags())
+    try:
+        refusals(model, geom, block, faces, tmp_path)
+    finally:
+        # the component's own; COMSOL derives the others
+        component = mk.component_of(geom).java.selection()
+        for tag in sorted(str(tag) for tag in component.tags()):
+            if tag not in before and not tag.startswith(f'{geom.tag()}_'):
+                component.remove(tag)
+
+
+def refusals(model, geom, block, faces, tmp_path):
+    """The checks of test_geometry_sweep_refusals."""
     with pytest.raises(ValueError, match=r'changes the geometry, so entity '
                        r'numbers stand for other entities in some values\. '
                        r'Pass a selection node or None instead of numbers: '
@@ -815,11 +868,19 @@ def test_geometry_sweep_refusals(widths, tmp_path):
                                          r'explicit selection'):
         mk.average(geom, 'boundary', 'T', on_explicit, outer='all')
     with pytest.raises(ValueError, match='changes the geometry, and mk.plot'):
-        mk.plot(geom, 'T', tmp_path/'T.png', outer=1)
+        plot(geom, 'T', tmp_path/'T.png', outer=1)
 
 
-def test_geometry_sweep_rebuilt(widths):
-    model, geom, block, faces = widths
+def test_geometry_sweep_rebuilt(client):
+    model, geom, block, faces = width_model(client, 'rebuilt widths')
+    try:
+        rebuilt(model, geom, faces)
+    finally:
+        client.remove(model)
+
+
+def rebuilt(model, geom, faces):
+    """The checks of test_geometry_sweep_rebuilt."""
     model.build(geom)
     hot = mk.sel.entities(geom, faces['hot'])
     # the geometry as built is that of W = 0.1, the first value
@@ -834,9 +895,14 @@ def test_geometry_sweep_rebuilt(widths):
         pytest.approx(100)
     assert mk.average(geom, 'boundary', 'T', faces['hot'], unit='degC',
                       outer='all') == pytest.approx([100, 100])
+    # outer=1 has the geometry as built, outer=2 not: no pictures
+    with pytest.raises(ValueError, match=r"changes the geometry, and mk.plot "
+                       r".* \(model.parameter\('W', '0.1\[m\]'\) for "
+                       r'outer=1\)'):
+        plot(geom, 'T', 'never.png', outer=1)
 
 
-def test_part_without_physics(client):
+def test_part_without_physics(client, monkeypatch):
     model = client.create('part')
     try:
         model.parameter('Th', '100[degC]')
@@ -867,6 +933,15 @@ def test_part_without_physics(client):
             pytest.approx([100, 200])
         with pytest.raises(RuntimeError, match='no solution at outer=1'):
             mk.average(geom, 'domain', 'T', outer='all', step='last')
+        with pytest.raises(RuntimeError, match='covers part of the geometry '
+                                               'only .* for pictures, mesh '
+                                               'all domains'):
+            plot(geom, 'T', 'never.png', outer=1, step='last')
+        # an error other than a missing mesh is not taken for one
+        monkeypatch.setattr(mk._results, 'unmeshed', lambda error: False)
+        with pytest.raises(RuntimeError, match='could not read the geometry '
+                                               'of the solution at outer=1'):
+            mk.average(geom, 'domain', 'T', solved, outer=1, step='last')
     finally:
         client.remove(model)
 
@@ -934,7 +1009,7 @@ def test_cumulative_and_geometry_selections(client):
         study.create('Stationary')
         sweep(study, '100 150', 'W', 'mm')
         model.solve()
-        assert outer_values(geom) == pytest.approx([{'W': 0.1},
+        assert outer_values(geom) == approx_rows([{'W': 0.1},
                                                     {'W': 0.15}])
         assert mk.integral(geom, 'boundary', 'ht.ntflux', cold, unit='W',
                            outer='all') == pytest.approx([18, 12])
@@ -1012,13 +1087,25 @@ def test_two_parameters_by_value(fresh):
     model.solve()
     found = outer_values(geom)
     assert len(found) == 4
-    second = {'Th': '100[degC]', 'k': 90}
-    k = found.index(next(row for row in found
-                         if row['k'] == pytest.approx(90)
-                         and row['Th'] == pytest.approx(373.15))) + 1
-    assert mk.integral(geom, 'domain', '1', outer=second, step='last') == \
-        pytest.approx(mk.integral(geom, 'domain', '1', outer=k,
-                                  step='last'))
+
+    def number(Th, k):
+        """The outer value of Th (degC) and k."""
+        return next(n for n, row in enumerate(found, 1)
+                    if row['k'] == pytest.approx(k)
+                    and row['Th'] == pytest.approx(Th + KELVIN))
+    hot = mk.sel.box(geom, 'boundary', x=0)
+
+    def flux(outer):
+        return mk.integral(geom, 'boundary', 'ht.ntflux', hot, unit='W',
+                           outer=outer, step='last')
+    # the heat flowing in after 1 s differs for each of the four values
+    every = {(Th, k): flux(number(Th, k)) for Th in (100, 200)
+             for k in (10, 90)}
+    assert len({round(v, 6) for v in every.values()}) == 4
+    assert flux({'Th': '100[degC]', 'k': 90}) == \
+        pytest.approx(every[100, 90])
+    assert flux([{'k': 10, 'Th': 473.15}, {'Th': '100[degC]', 'k': 10}]) \
+        == pytest.approx([every[200, 10], every[100, 10]])
     with pytest.raises(ValueError, match=r"Th='100\[degC\]' fits several "
                                          r'values of .*give more parameters'):
         mk.integral(geom, 'domain', '1', outer={'Th': '100[degC]'},
@@ -1048,12 +1135,12 @@ def test_last_value_kept(fresh, tmp_path):
     study.create('Transient').property('tlist', '0 1')
     sweep(study, '100 200 300').java.set('keepsol', 'last')
     model.solve()
-    assert outer_values(geom) == pytest.approx([{'Th': 300 + KELVIN}])
+    assert outer_values(geom) == approx_rows([{'Th': 300 + KELVIN}])
     hot = mk.sel.box(geom, 'boundary', x=0)
     # one value: outer may be left out
     assert mk.average(geom, 'boundary', 'T', hot, unit='degC',
                       step='last') == pytest.approx(300)
-    assert mk.plot(geom, 'T', tmp_path/'T.png', outer='last',
+    assert plot(geom, 'T', tmp_path/'T.png', outer='last',
                    step='last').exists()
 
 
@@ -1133,3 +1220,678 @@ def test_settle(tmp_path):
     os.umask(mask)
     settle(drawn, tmp_path/'new.png')
     assert drawn.stat().st_mode & 0o777 == 0o666 & ~mask
+
+
+def test_file_names(tmp_path):
+    check, files = mk._plot._check_name, mk._plot._files
+    path = tmp_path/'T_{outer}.png'
+    pictures = [mk._sweep.Picture(None, number, None, number, None)
+                for number in (3, 1)]
+    check(str(path), path, True)
+    assert files(path, pictures) == [tmp_path/'T_3.png', tmp_path/'T_1.png']
+    assert files(tmp_path/'T.png', pictures[:1]) == [tmp_path/'T.png']
+    with pytest.raises(ValueError, match=r"e.g. '.*T_\{outer\}.png' \(a "
+                                         r'plain string, not an f-string\)'):
+        check(str(tmp_path/'T.png'), tmp_path/'T.png', True)
+    check(str(tmp_path/'T.png'), tmp_path/'T.png', False)
+    with pytest.raises(ValueError, match='not in the folder'):
+        check(str(tmp_path/'{outer}'/'T.png'), tmp_path/'{outer}'/'T.png',
+              False)
+    # other braces stay
+    braces = tmp_path/'T_{x}_{outer}.png'
+    assert files(braces, pictures[1:]) == [tmp_path/'T_{x}_1.png']
+
+
+def test_close():
+    close = mk._sweep._close
+    assert close(373.15, 373.15 + 1e-8, [373.15, 473.15])
+    assert not close(373.15, 373.16, [373.15, 473.15])
+    assert close(0.0, 0.0, [0.0, 0.0])
+    assert not close(0.0, 1e-300, [0.0, 0.0])
+
+
+######################################
+# More kinds of sweeps and of models #
+######################################
+
+def heat(model, geom, faces, material=True):
+    """Heat transfer with Th at `faces['hot']` and steel, if asked."""
+    if material:
+        steel = (model/'materials').create('Common', name='steel')
+        for key, value in (('thermalconductivity', '45'),
+                           ('density', '7850'), ('heatcapacity', '475')):
+            (steel/'Basic').property(key, [value])
+    physics = (model/'physics').create('HeatTransfer', geom)
+    boundary = physics.create('TemperatureBoundary', 2)
+    boundary.select(faces['hot'])
+    boundary.property('T0', 'Th')
+    return physics
+
+
+def user_mesh(model, geom, size=None):
+    """A mesh of one's own, on all domains."""
+    mesh = (model/'meshes').create(geom)
+    if size is not None:
+        sizes = mesh.create('Size')
+        sizes.property('custom', 'on')
+        sizes.property('hmaxactive', True)
+        sizes.property('hmax', size)
+    mesh.create('FreeTet')
+    return mesh
+
+
+def test_history_unchanged(fresh, tmp_path):
+    model, geom = fresh()
+    transient(model, values='100 200')
+    # the same file twice: the export names it
+    before = java_export(model, tmp_path/'model.java')
+    outer_values(geom)
+    step_values(geom, outer='all')
+    mk.average(geom, 'domain', 'T', outer='all', step='last')
+    mk.value(geom, 'T', (0.01, 0.025, 0.005), unit='degC', step='last',
+             outer={'Th': '200[degC]'})
+    plot(geom, 'T', tmp_path/'T_{outer}.png', outer='all', step='last',
+         unit='degC')
+    assert java_export(model, tmp_path/'model.java') == before
+
+
+def test_failed_but_continued(fresh):
+    model, geom, study = failing(fresh, '45 50 60')
+    java = model.java
+    jobs = [str(tag) for tag in java.batch().tags()
+            if str(java.batch(tag).getType()) == 'Parametric']
+    java.batch(jobs[0]).set('errignore', 'on')
+    try:
+        model.solve('s')
+    except Exception:
+        pass
+    with pytest.raises(RuntimeError, match='The last solve of study "s" '
+                                           'failed'):
+        outer_values(geom)
+
+
+def test_failed_geometry(fresh):
+    model, geom = fresh()
+    model.parameter('W', '0.1')
+    (geom/'Block 1').property('size', ['W', '0.05', '0.01'])
+    model.build(geom)
+    study = (model/'studies').create(name='s')
+    study.create('Stationary')
+    sweep(study, '0.1 0 0.2', 'W', 'm')
+    with pytest.raises(Exception):
+        model.solve('s')
+    with pytest.raises(RuntimeError, match='The last solve of study "s" '
+                                           'failed'):
+        mk.integral(geom, 'domain', '1', outer=1)
+
+
+def test_failed_saved(fresh, client, tmp_path):
+    model, geom, study = failing(fresh, '45 50 60')
+    model.save(tmp_path/'failed.mph')
+    loaded = client.load(tmp_path/'failed.mph')
+    try:
+        with pytest.raises(RuntimeError, match='The last solve of study "s" '
+                                               'failed'):
+            outer_values((loaded/'geometries').children()[0])
+    finally:
+        client.remove(loaded)
+
+
+def test_failed_then_switched_off(fresh):
+    model, geom, study = failing(fresh, '45 50 60')
+    (study/'Parametric Sweep').toggle('off')
+    model.parameter('kk', '45')
+    model.solve('s')
+    with pytest.raises(ValueError, match='several solved datasets'):
+        outer_values(geom)
+    # the new solution, and what the failed sweep left: its first value
+    assert outer_values(geom, dataset='dset1') == []
+    old = dataset_named(model, 'Parametric Solutions')
+    assert outer_values(geom, dataset=old) == approx_rows([{'kk': 45}])
+
+
+def test_geometry_sweep_saved(client, tmp_path):
+    model, geom, block, faces = width_model(client, 'saved widths')
+    model.save(tmp_path/'widths.mph')
+    client.remove(model)
+    loaded = client.load(tmp_path/'widths.mph')
+    try:
+        geom = (loaded/'geometries').children()[0]
+        assert mk.integral(geom, 'boundary', 'ht.ntflux',
+                           loaded/'selections'/'hot', unit='W',
+                           outer='all') == pytest.approx([-18, -12])
+    finally:
+        client.remove(loaded)
+
+
+def test_only_the_copy_left(fresh):
+    model, geom = fresh()
+    study = transient(model, values='100 200')
+    (model/'datasets'/'sweep//Parametric Solutions 1').remove()
+    with pytest.raises(RuntimeError, match='holds only the last value'):
+        outer_values(geom, dataset=study)
+
+
+def test_damped_eigenfrequencies(client):
+    model = client.create('damped beam')
+    try:
+        model.parameter('E0', '200[GPa]')
+        geom = mk.geometry(model, 3)
+        mk.block(geom, (0.1, 0.01, 0.01))
+        model.build(geom)
+        steel = (model/'materials').create('Common')
+        for key, value in (('youngsmodulus', 'E0'), ('poissonsratio', '0.3'),
+                           ('density', '7850')):
+            (steel/'Basic').property(key, [value])
+        solid = (model/'physics').create('SolidMechanics', geom)
+        solid.create('Fixed', 2).select(mk.sel.box(geom, 'boundary', x=0))
+        elastic = next(tag for tag in solid.java.feature().tags()
+                       if str(solid.java.feature(tag).getType())
+                       == 'LinearElasticModel')
+        damping = solid.java.feature(elastic).create('dmp1', 'Damping', 3)
+        damping.set('DampingType', 'IsotropicLossFactor')
+        damping.set('eta_s_mat', 'userdef')
+        damping.set('eta_s', '0.05')
+        (model/'meshes').create(geom)
+        study = (model/'studies').create(name='eigen')
+        steps = study.create('Eigenfrequency')
+        steps.property('neigs', 2)
+        steps.property('shift', '100')
+        sweep(study, '100[GPa] 200[GPa]', 'E0', 'Pa')
+        model.solve()
+        found = step_values(geom, outer=1)
+        assert numpy.iscomplexobj(found['freq'])
+        assert numpy.all(found['freq'].imag != 0)
+        assert mk.average(geom, 'domain', 'solid.freq', outer=1,
+                          step='all') == pytest.approx(found['freq'])
+    finally:
+        client.remove(model)
+
+
+def test_eigenvalues(client):
+    model = client.create('pde eigen')
+    try:
+        model.parameter('a', '1')
+        geom = mk.geometry(model, 2)
+        mk.feature(geom, 'Rectangle', size=[1, 0.5])
+        model.build(geom)
+        pde = (model/'physics').create('CoefficientFormPDE', geom)
+        pde.java.create('dir1', 'DirichletBoundary', 1).selection().all()
+        pde.java.feature('cfeq1').set('da', 'a')
+        (model/'meshes').create(geom)
+        study = (model/'studies').create(name='eigen')
+        steps = study.create('Eigenvalue')
+        steps.property('neigs', 2)
+        steps.property('shift', '0')
+        sweep(study, '1 2', 'a', '')
+        model.solve()
+        first, second = (step_values(geom, outer=k) for k in (1, 2))
+        assert list(first) == ['lambda']
+        assert first['lambda'].dtype == float
+        # da scales the eigenvalues: lambda/a
+        assert second['lambda'] == pytest.approx(first['lambda']/2)
+    finally:
+        client.remove(model)
+
+
+def test_minutes(fresh):
+    model, geom = fresh()
+    study = (model/'studies').create(name='minutes')
+    steps = study.create('Transient')
+    steps.property('tunit', 'min')
+    steps.property('tlist', '0 1 2')
+    sweep(study, '100 200')
+    model.solve()
+    assert step_values(geom, outer=1)['t'] == pytest.approx([0, 60, 120])
+
+
+def acoustics(client, name, plist, unit):
+    """A duct of air driven at x = 0 by p0, swept over p0 = 1 and 2 Pa."""
+    model = client.create(name)
+    model.parameter('p0', '1[Pa]')
+    geom = mk.geometry(model, 3)
+    mk.block(geom, (1, 0.2, 0.2))
+    model.build(geom)
+    air = (model/'materials').create('Common')
+    for key, value in (('density', '1.2'), ('soundspeed', '343')):
+        (air/'Basic').property(key, [value])
+    physics = (model/'physics').create('PressureAcoustics', geom)
+    pressure = physics.create('Pressure', 2)
+    pressure.select(mk.sel.box(geom, 'boundary', x=0))
+    pressure.property('p0', 'p0')
+    (model/'meshes').create(geom)
+    study = (model/'studies').create(name='duct')
+    frequencies = study.create('Frequency')
+    frequencies.property('plist', plist)
+    frequencies.property('punit', unit)
+    sweep(study, '1 2', 'p0', 'Pa')
+    model.solve()
+    return model, geom
+
+
+def test_one_frequency(client):
+    # one frequency and a parametric sweep: steps
+    model, geom = acoustics(client, 'one frequency', '100', 'Hz')
+    try:
+        with pytest.raises(ValueError, match='holds its sweep over p0 as '
+                                             'steps'):
+            outer_values(geom)
+        with pytest.raises(ValueError, match='pass step=2 instead of outer='):
+            mk.average(geom, 'domain', 'abs(p)', outer=2)
+        assert step_values(geom)['p0'] == pytest.approx([1, 2])
+    finally:
+        client.remove(model)
+
+
+def test_frequencies_in_khz(client):
+    # several frequencies and a parametric sweep: an outer loop
+    model, geom = acoustics(client, 'kHz', '0.1 0.2', 'kHz')
+    try:
+        assert outer_values(geom) == approx_rows([{'p0': 1}, {'p0': 2}])
+        assert step_values(geom)['freq'] == pytest.approx([100, 200])
+        found = mk.average(geom, 'domain', 'abs(p)', outer='all',
+                           step='all')
+        assert found.shape == (2, 2)
+        # linear: twice the pressure for p0 = 2 Pa
+        assert found[1] == pytest.approx(2*found[0])
+    finally:
+        client.remove(model)
+
+
+def test_wave_frequencies(client, tmp_path):
+    model = client.create('waves')
+    try:
+        model.parameter('er', '1')
+        geom = mk.geometry(model, 3)
+        mk.block(geom, (0.3, 0.1, 0.1))
+        model.build(geom)
+        air = (model/'materials').create('Common')
+        for key, value in (('relpermittivity', 'er'),
+                           ('relpermeability', '1'),
+                           ('electricconductivity', '0')):
+            (air/'Basic').property(key, [value])
+        waves = (model/'physics').create('ElectromagneticWaves', geom)
+        field = waves.create('ElectricField', 2)
+        field.select(mk.sel.box(geom, 'boundary', x=0))
+        field.property('E0', ['0', '0', '1'])
+        user_mesh(model, geom, '0.05')
+        study = (model/'studies').create(name='waves')
+        frequencies = study.create('Frequency')
+        frequencies.property('plist', '1e8 1.2e8')
+        frequencies.property('punit', 'Hz')
+        sweep(study, '1 2', 'er', '')
+        model.solve()
+        assert outer_values(geom) == approx_rows([{'er': 1}, {'er': 2}])
+        assert step_values(geom)['freq'] == pytest.approx([1e8, 1.2e8])
+        assert len(plot(geom, 'emw.normE', tmp_path/'E_{outer}.png',
+                        outer='all', step=2)) == 2
+    finally:
+        client.remove(model)
+
+
+def test_inner_two_parameters(fresh):
+    model, geom = fresh()
+    model.parameter('k', '45[W/(m*K)]')
+    study = (model/'studies').create(name='inner')
+    study.create('Stationary')
+    both = study.create('Parametric')
+    both.property('pname', ['Th', 'k'])
+    both.property('plistarr', ['100 200', '10 90'])
+    both.property('punit', ['degC', 'W/(m*K)'])
+    both.java.set('sweeptype', 'filled')
+    model.solve()
+    found = step_values(geom)
+    assert sorted(found) == ['Th', 'k']
+    pairs = sorted(zip(found['Th'], found['k']))
+    assert pairs == pytest.approx([(373.15, 10), (373.15, 90),
+                                   (473.15, 10), (473.15, 90)])
+
+
+def auxiliary(study):
+    """A stationary step swept over k by itself (an auxiliary sweep)."""
+    stationary = study.create('Stationary')
+    stationary.property('useparam', True)
+    stationary.property('pname', ['k'])
+    stationary.property('plistarr', ['10 90'])
+    stationary.property('punit', ['W/(m*K)'])
+
+
+def test_auxiliary_sweeps(fresh):
+    model, geom = fresh()
+    model.parameter('k', '45[W/(m*K)]')
+    (model/'materials'/'steel'/'Basic').property('thermalconductivity',
+                                                ['k'])
+    alone = (model/'studies').create(name='alone')
+    auxiliary(alone)
+    model.solve('alone')
+    assert step_values(geom)['k'] == pytest.approx([10, 90])
+    with pytest.raises(ValueError, match='holds its sweep over k as steps'):
+        outer_values(geom, dataset=alone)
+    with pytest.raises(ValueError, match='as steps'):
+        mk.average(geom, 'domain', 'T', outer=1)
+    inside = (model/'studies').create(name='inside')
+    auxiliary(inside)
+    sweep(inside, '100 200')
+    model.solve('inside')
+    assert outer_values(geom, dataset=inside) == \
+        approx_rows([{'Th': 100 + KELVIN}, {'Th': 200 + KELVIN}])
+    assert step_values(geom, dataset=inside)['k'] == pytest.approx([10, 90])
+    hot = mk.sel.box(geom, 'boundary', x=0)
+    flux = mk.integral(geom, 'boundary', 'ht.ntflux', hot, unit='W',
+                       dataset=inside, outer='all', step='all')
+    # k*A*dT/L for k = 10, 90 and Th = 100, 200 degC
+    assert flux == pytest.approx(-numpy.outer([80, 180], [10, 90])
+                                 * 5e-4/0.1)
+
+
+def test_stationary_with_two_sweeps(fresh):
+    model, geom = fresh()
+    model.parameter('k', '45[W/(m*K)]')
+    (model/'materials'/'steel'/'Basic').property('thermalconductivity',
+                                                ['k'])
+    study = (model/'studies').create(name='two sweeps')
+    study.create('Stationary')
+    sweep(study, '100 200')
+    sweep(study, '10 90', 'k', 'W/(m*K)')
+    model.solve()
+    assert outer_values(geom) == approx_rows([{'k': 10}, {'k': 90}])
+    assert step_values(geom)['Th'] == pytest.approx([373.15, 473.15])
+    hot = mk.sel.box(geom, 'boundary', x=0)
+    assert mk.integral(geom, 'boundary', 'ht.ntflux', hot, unit='W',
+                       outer={'k': 90}, step=2) == \
+        pytest.approx(-90*180*5e-4/0.1)
+
+
+def test_steps_at_other_times(fresh):
+    model, geom = fresh()
+    model.parameter('tt', '1')
+    study = (model/'studies').create(name='times')
+    study.create('Transient').property('tlist', '0 tt')
+    sweep(study, '1 2', 'tt', '')
+    model.solve()
+    assert step_values(geom, outer='all')['t'].tolist() == \
+        [[0, 1], [0, 2]]
+    with pytest.raises(ValueError, match=r'2 steps each, at other times or '
+                                         r'values'):
+        mk.average(geom, 'domain', 'T', outer='all', step=2)
+    assert mk.average(geom, 'domain', 'T', outer='all',
+                      step='last').shape == (2,)
+    with pytest.raises(ValueError, match='different steps'):
+        step_values(geom)
+
+
+def test_three_parameters(fresh):
+    model, geom = fresh()
+    model.parameter('k', '45[W/(m*K)]')
+    model.parameter('Tc', '20[degC]')
+    study = (model/'studies').create(name='three')
+    study.create('Transient').property('tlist', '0 1')
+    three = study.create('Parametric')
+    three.property('pname', ['Th', 'k', 'Tc'])
+    three.property('plistarr', ['100 200', '10 90', '0 10'])
+    three.property('punit', ['degC', 'W/(m*K)', 'degC'])
+    model.solve()
+    assert outer_values(geom) == approx_rows([
+        {'Th': 373.15, 'k': 10, 'Tc': 273.15},
+        {'Th': 473.15, 'k': 90, 'Tc': 283.15}])
+
+
+def test_function_sweep(fresh, tmp_path):
+    model, geom = fresh()
+    switch = model.java.func().create('fsw1', 'FunctionSwitch')
+    switch.set('funcname', 'kfun')
+    for tag, value in (('an1', '10'), ('an2', '90')):
+        switch.feature().create(tag, 'Analytic').set('expr', value)
+    (model/'materials'/'steel'/'Basic').property('thermalconductivity',
+                                                ['kfun(1)'])
+    study = (model/'studies').create(name='functions')
+    study.create('Transient').property('tlist', '0 1')
+    functions = study.java.create('funsw', 'FunctionSweep')
+    functions.set('pname', ['funsw.kfun'])
+    functions.set('plistarr', ['1 2'])
+    model.solve()
+    assert outer_values(geom) == [{'funsw.kfun': 1.0}, {'funsw.kfun': 2.0}]
+    hot = mk.sel.box(geom, 'boundary', x=0)
+    low, high = mk.integral(geom, 'boundary', 'ht.ntflux', hot, outer='all',
+                            step='last')
+    assert high < low < 0
+    assert len(plot(geom, 'T', tmp_path/'T_{outer}.png', outer='all',
+                    step='last')) == 2
+
+
+def test_two_components(client):
+    model = client.create('two components')
+    try:
+        model.parameter('Th', '100[degC]')
+        geoms = [mk.geometry(model, 3) for _ in range(2)]
+        temperatures = []
+        for geom in geoms:
+            mk.block(geom, (0.1, 0.05, 0.01))
+            model.build(geom)
+            physics = heat(model, geom,
+                           {'hot': mk.sel.box(geom, 'boundary', x=0)},
+                           material=False)
+            # T, then T2: COMSOL names the second field otherwise
+            temperatures.append(
+                str(physics.java.field('temperature').field()))
+            (model/'meshes').create(geom)
+            # MPh puts new materials in the last component
+            steel = mk.component_of(geom).java.material().create(
+                f'steel{geom.tag()}', 'Common')
+            for key, value in (('thermalconductivity', '45'),
+                               ('density', '7850'), ('heatcapacity', '475')):
+                steel.propertyGroup('def').set(key, value)
+        study = (model/'studies').create(name='both')
+        study.create('Transient').property('tlist', '0 1')
+        sweep(study, '100 200')
+        model.solve()
+        for geom, temperature in zip(geoms, temperatures):
+            hot = mk.sel.box(geom, 'boundary', x=0)
+            assert mk.average(geom, 'boundary', temperature, hot,
+                              unit='degC', outer='all', step='last') == \
+                pytest.approx([100, 200])
+    finally:
+        client.remove(model)
+
+
+def test_frame_copied(swept, monkeypatch):
+    model, geom, study, faces = swept
+    data = model.java.result().dataset('dset2')
+    seen = []
+    original = mk._sweep.Children.dataset
+
+    def dataset(self, k):
+        java = original(self, k)
+        seen.append(str(java.getString('frametype')))
+        return java
+    monkeypatch.setattr(mk._sweep.Children, 'dataset', dataset)
+    frame = str(data.getString('frametype'))
+    data.set('frametype', 'geometry')
+    try:
+        mk.average(geom, 'domain', 'T', outer=1, step='last')
+    finally:
+        data.set('frametype', frame)
+    assert seen and set(seen) == {'geometry'}
+
+
+def test_boundary_physics(client):
+    model = client.create('boundary physics')
+    try:
+        model.parameter('ff', '1')
+        geom = mk.geometry(model, 3)
+        mk.block(geom, (0.1, 0.05, 0.01))
+        model.build(geom)
+        pde = (model/'physics').create('CoefficientFormBoundaryPDE', geom)
+        pde.java.feature('cfeq1').set('a', '1')
+        pde.java.feature('cfeq1').set('f', 'ff')
+        (model/'meshes').create(geom)
+        study = (model/'studies').create(name='boundary')
+        study.create('Transient').property('tlist', '0 1')
+        sweep(study, '1 2', 'ff', '')
+        model.solve()
+        # physics on boundaries only, read by entity numbers
+        low, high = mk.average(geom, 'boundary', 'u', 1, outer='all',
+                               step='last')
+        assert high == pytest.approx(2*low)
+        assert mk.average(geom, 'boundary', 'u', outer='all',
+                          step='last') == pytest.approx([low, high])
+    finally:
+        client.remove(model)
+
+
+def two_blocks(client, name, moved=False):
+    """
+    Two blocks, heat transfer in the first only; the second at x = xb,
+    swept from 0.2 to 0.3 if `moved`, else Th from 100 to 200 degC.
+    """
+    model = client.create(name)
+    model.parameter('Th', '100[degC]')
+    model.parameter('xb', '0.2')
+    geom = mk.geometry(model, 3)
+    first = mk.block(geom, (0.1, 0.05, 0.01))
+    mk.block(geom, (0.1, 0.05, 0.01), ('xb', 0, 0))
+    model.build(geom)
+    physics = heat(model, geom, {'hot': mk.sel.box(geom, 'boundary', x=0)})
+    physics.java.selection().set([1])
+    solved = mk.sel.result(geom, first, 'domain')
+    study = (model/'studies').create(name='two')
+    if moved:
+        study.create('Stationary')
+        sweep(study, '0.2 0.3', 'xb', 'm')
+    else:
+        study.create('Transient').property('tlist', '0 1')
+        sweep(study, '100 200')
+    return model, geom, solved
+
+
+def test_part_without_physics_meshed(client):
+    model, geom, solved = two_blocks(client, 'meshed parts')
+    try:
+        user_mesh(model, geom)
+        model.solve()
+        # all of it meshed: entity numbers work
+        assert mk.maximum(geom, 'domain', 'T', 1, unit='degC', outer='all',
+                          step='last') == pytest.approx([100, 200])
+    finally:
+        client.remove(model)
+
+
+@pytest.mark.parametrize('meshed', [True, False])
+def test_block_without_physics_moved(client, meshed):
+    model, geom, solved = two_blocks(client, 'moved block', moved=True)
+    try:
+        if meshed:
+            user_mesh(model, geom)
+        else:
+            (model/'meshes').create(geom)
+        model.solve()
+        message = ('changes the geometry' if meshed
+                   else 'covers part of the geometry')
+        with pytest.raises(ValueError, match=message):
+            mk.maximum(geom, 'domain', 'T', 1, outer='all')
+        assert mk.maximum(geom, 'domain', 'T', solved, unit='degC',
+                          outer='all') == pytest.approx([100, 100])
+    finally:
+        client.remove(model)
+
+
+def test_layer_of_a_geometry_sweep(client):
+    model = client.create('layers')
+    try:
+        model.parameter('W', '0.1')
+        model.parameter('Th', '100[degC]')
+        geom = mk.geometry(model, 3)
+        block = mk.block(geom, ('W', 0.05, 0.01), layername=['skin'],
+                         layer=['0.01'], layerleft=True, layerbottom=False)
+        model.build(geom)
+        skin = mk.sel.layer(geom, block, 1)
+        heat(model, geom, {'hot': mk.sel.box(geom, 'boundary', x=0)})
+        (model/'meshes').create(geom)
+        study = (model/'studies').create(name='widths')
+        study.create('Stationary')
+        sweep(study, '0.1 0.15', 'W', 'm')
+        model.solve()
+        assert mk.integral(geom, 'domain', '1', skin, outer='all') == \
+            pytest.approx([5e-6, 5e-6])
+        assert mk.integral(geom, 'domain', '1', outer='all') == \
+            pytest.approx([5e-5, 7.5e-5])
+    finally:
+        client.remove(model)
+
+
+def test_count_of_blocks(client):
+    model = client.create('count')
+    try:
+        model.parameter('n', '1')
+        geom = mk.geometry(model, 3)
+        block = mk.block(geom, (0.05, 0.05, 0.01))
+        mk.array(geom, block, size=('n', 1, 1), displ=(0.1, 0, 0))
+        model.build(geom)
+        heat(model, geom, {'hot': mk.sel.box(geom, 'boundary', x=0)})
+        (model/'meshes').create(geom)
+        model.parameter('Th', '100[degC]')
+        study = (model/'studies').create(name='count')
+        study.create('Stationary')
+        sweep(study, '1 2', 'n', '')
+        model.solve()
+        assert mk.integral(geom, 'domain', '1', outer='all') == \
+            pytest.approx([2.5e-5, 5e-5])
+        with pytest.raises(ValueError, match='entity numbers stand for'):
+            mk.integral(geom, 'domain', '1', 1, outer='all')
+    finally:
+        client.remove(model)
+
+
+def test_composite_domains(client):
+    model = client.create('composite')
+    try:
+        model.parameter('Th', '100[degC]')
+        geom = mk.geometry(model, 3)
+        mk.block(geom, (0.05, 0.05, 0.01))
+        mk.block(geom, (0.05, 0.05, 0.01), (0.05, 0, 0))
+        model.build(geom)
+        composite = geom.java.create('cmd1', 'CompositeDomains')
+        composite.selection('input').set('fin', [1, 2])
+        model.build(geom)
+        assert mk.summary(geom)['domains'] == 1
+        heat(model, geom, {'hot': mk.sel.box(geom, 'boundary', x=0)})
+        (model/'meshes').create(geom)
+        study = (model/'studies').create(name='composite')
+        study.create('Transient').property('tlist', '0 1')
+        sweep(study, '100 200')
+        model.solve()
+        assert mk.maximum(geom, 'domain', 'T', 1, unit='degC', outer='all',
+                          step='last') == pytest.approx([100, 200])
+    finally:
+        client.remove(model)
+
+
+def test_micrometres(client):
+    model = client.create('micrometres')
+    try:
+        model.parameter('W', '100[um]')
+        model.parameter('Th', '100[degC]')
+        geom = mk.geometry(model, 3, length_unit='um')
+        mk.block(geom, ('W', 50, 10))
+        model.build(geom)
+        faces = {'hot': mk.sel.box(geom, 'boundary', x=0)}
+        physics = heat(model, geom, faces)
+        cold = mk.sel.box(geom, 'boundary', x='W')
+        boundary = physics.create('TemperatureBoundary', 2)
+        boundary.select(cold)
+        boundary.property('T0', '20[degC]')
+        (model/'meshes').create(geom)
+        study = (model/'studies').create(name='widths')
+        study.create('Stationary')
+        sweep(study, '100 150', 'W', 'um')
+        model.solve()
+        assert outer_values(geom) == approx_rows([{'W': 1e-4},
+                                                    {'W': 1.5e-4}])
+        # k*A*dT/W with A = 50 x 10 um
+        assert mk.integral(geom, 'boundary', 'ht.ntflux', cold, unit='W',
+                           outer='all') == \
+            pytest.approx([45*5e-10*80/1e-4, 45*5e-10*80/1.5e-4])
+        assert mk.integral(geom, 'domain', '1', outer={'W': '150[um]'}) == \
+            pytest.approx(7.5e-13)
+    finally:
+        client.remove(model)
