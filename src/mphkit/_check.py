@@ -165,7 +165,7 @@ def _interfaces(model: Model) -> list[Physics]:
             try:
                 if not java.isActive():
                     continue
-                dims = [int(d) for d in java.selection().dimension()]
+                dims = _comsol.selection_dims(java.selection())
             except Exception:
                 continue
             geometry = _catalog._geometry_of_physics(model, java)
@@ -175,7 +175,7 @@ def _interfaces(model: Model) -> list[Physics]:
             if key not in checked:
                 checked.add(key)
                 _comsol.check_geometry_built(
-                    geometry, 'geometries/' + escape(str(geometry.label())))
+                    geometry, 'geometries/' + _comsol.name_of(geometry))
             found.append(Physics(java, component, geometry,
                                  int(geometry.getSDim()), dims[0]))
     return found
@@ -201,7 +201,7 @@ def _features(model: Model, physics) -> list[Feature]:
             if not feature.isActive() or feature.hasProperty('pairs'):
                 continue
             selection = feature.selection()
-            dims = [int(d) for d in selection.dimension()]
+            dims = _comsol.selection_dims(selection)
             selected = [int(e) for e in selection.inputEntities()]
             applied = [int(e) for e in selection.entities()]
         except Exception:
@@ -429,7 +429,7 @@ def _no_material(physics: Physics, features: list[Feature], found):
             if not coupling.isActive():
                 continue
             selection = coupling.selection()
-            if [int(d) for d in selection.dimension()] == [sdim]:
+            if _comsol.selection_dims(selection) == [sdim]:
                 coupled.update(int(e) for e in selection.entities())
         except Exception:
             continue

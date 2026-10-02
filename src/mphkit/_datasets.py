@@ -422,6 +422,11 @@ def step_count(model, dataset) -> int:
     if solution is None:
         raise LookupError(f'Dataset "{_comsol.name_of(dataset)}" has no '
                           'solution.')
+    return solution_steps(solution)
+
+
+def solution_steps(solution) -> int:
+    """Returns the number of steps (inner solutions) of a solution."""
     return len(solution.getSolutioninfo().getSolnum(1, True))
 
 

@@ -259,6 +259,24 @@ def check_mesh_built(sequence):
                            'it was built; run model.mesh().')
 
 
+def selection_at(geom: Node, selection: Node, entity: str, dim: int):
+    """
+    Returns the Java selection behind a selection node of `geom` (see
+    `check_selection`) that holds entities of level `dim`, the kind
+    `entity`.
+    """
+    java = check_selection(geom, selection)
+    if selection_dims(java) != [dim]:
+        raise ValueError(f'Selection "{selection}" is not a {entity} '
+                         'selection.')
+    return java
+
+
+def selection_dims(selection) -> list[int]:
+    """Returns the entity levels of a Java selection; `[]` for objects."""
+    return [int(d) for d in selection.dimension()]
+
+
 def is_integer(value) -> bool:
     """Tells whether `value` is an entity number: an int, not a bool."""
     if isinstance(value, (bool, numpy.bool_)):
@@ -458,7 +476,7 @@ class WorkPlaneNode(Node):
         container = workplane.geom().feature()
         for tag in container.tags():
             member = container.get(tag)
-            if self.name() == escape(member.label()):
+            if self.name() == name_of(member):
                 return member
         return None
 
@@ -466,7 +484,7 @@ class WorkPlaneNode(Node):
         java = self.java
         if java is not None and is_workplane(java):
             container = java.geom().feature()
-            return [self/escape(container.get(tag).label())
+            return [self/name_of(container.get(tag))
                     for tag in container.tags()]
         return super().children()
 
@@ -502,14 +520,6 @@ def check_tag(node: Node, tag: str):
 ##############
 # Properties #
 ##############
-
-def is_selection_input(java, name: str) -> bool:
-    """Tells whether a feature property is an input selection."""
-    try:
-        return str(java.getValueType(name)) == 'Selection'
-    except Exception:
-        return False
-
 
 def convert(value):
     """Converts a Python value into something MPh's `cast()` accepts."""
@@ -680,7 +690,7 @@ def set_properties(java, properties: dict, owner: Node | None = None,
                                  'contribute to a cumulative selection.')
             set_property(java, key, cumulative_tag(geometry_of(owner), value),
                          listing)
-        elif owner is not None and is_selection_input(java, key):
+        elif owner is not None and value_type(java, key) == 'Selection':
             set_input(owner, container, java, key, value)
         else:
             set_property(java, key, value, listing)
@@ -815,12 +825,12 @@ def sequence_level(parent: Node, ftag: str) -> int:
         if ftag not in [str(t) for t in selections.tags()]:
             raise LookupError(f'Work plane "{parent}" lists no selection '
                               f'"{ftag}".')
-        levels = [int(d) for d in selections.get(ftag).dimension()]
+        levels = selection_dims(selections.get(ftag))
         return levels[0] if levels else -1
     selections = parent.model.java.selection()
     derived = f'{parent.tag()}_{ftag}'
     if derived in [str(t) for t in selections.tags()]:
-        levels = [int(d) for d in selections.get(derived).dimension()]
+        levels = selection_dims(selections.get(derived))
         if levels:
             return levels[0]
     return -1
@@ -839,7 +849,7 @@ def set_input(owner: Node, container, java, key: str, value):
     """
     selection = java.selection(key)
     mode = INPUT_MODES.get((type_name(java), key))
-    levels = [int(d) for d in selection.dimension()]
+    levels = selection_dims(selection)
     dim = levels[0] if levels else None
     found = entity_numbers(value)
     if found:

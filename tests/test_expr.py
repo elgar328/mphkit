@@ -27,12 +27,6 @@ def test_vector_mixed():
     assert vector([0, 'x1', 2.5]) == ['0', 'x1', '2.5']
 
 
-def test_vector_length():
-    assert vector((1, 2, 3), length=3) == ['1', '2', '3']
-    with pytest.raises(ValueError):
-        vector((1, 2), length=3)
-
-
 def test_vector_rejects_string():
     with pytest.raises(TypeError):
         vector('abc')

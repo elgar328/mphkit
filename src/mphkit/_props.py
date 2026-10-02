@@ -56,7 +56,8 @@ def set_(target, /, **properties):
     elif hasattr(target, 'set'):
         java = target
         for key, value in properties.items():
-            if value is not None and _comsol.is_selection_input(java, key):
+            if (value is not None
+                    and _comsol.value_type(java, key) == 'Selection'):
                 raise TypeError(
                     f'"{key}" is an input selection; use '
                     f'java.selection("{key}"), or pass a geometry feature '

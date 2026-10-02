@@ -91,7 +91,7 @@ def _read(path: Path) -> tuple[Item, ...]:
     return _parse(str(path), path.stat().st_mtime)
 
 
-@functools.lru_cache(maxsize=None)
+@functools.cache
 def _parse(path: str, mtime: float) -> tuple[Item, ...]:
     def fail(reason: str) -> RuntimeError:
         return RuntimeError(
@@ -420,7 +420,7 @@ def _held(component, dim: int) -> list[tuple[str, list[int]]]:
             if not member.isActive():
                 continue
             chosen = member.selection()
-            if [int(d) for d in chosen.dimension()] != [dim]:
+            if _comsol.selection_dims(chosen) != [dim]:
                 continue
             entities = [int(e) for e in chosen.entities()]
         except Exception:

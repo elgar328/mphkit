@@ -733,7 +733,7 @@ def _wrap(geom: Node, derived: str, entity: str, name: str | None,
         if (str(member.getType()) == 'Union'
                 and [str(t) for t in member.getStringArray('input')]
                 == [derived]):
-            return geom.model/'selections'/escape(member.label())
+            return geom.model/'selections'/_comsol.name_of(member)
     properties = {'entitydim': _comsol.entity_dim(geom, entity),
                   'input': [derived]}
     return _create(geom, 'Union', 'component', name, properties,

@@ -125,11 +125,7 @@ def image(geom: Node, filename, /, selection: Node | None = None, *,
                 'imagetype': imagetype, name_key: str(path)}
     model = geom.model.java
     container = _comsol.component_of(geom).selection()
-    history = model.hist()
-    # disable() and enable() nest: a history the user switched off stays
-    # off afterwards.
-    history.disable()
-    try:
+    with _comsol.history_off(model):
         tag = str(model.selection().uniquetag('img'))
         shown = None if view is None else str(view.getString('showlabels'))
         try:
@@ -153,8 +149,6 @@ def image(geom: Node, filename, /, selection: Node | None = None, *,
             finally:
                 if view is not None and shown is not None:
                     view.set('showlabels', shown)
-    finally:
-        history.enable()
     return path
 
 
@@ -236,7 +230,7 @@ def drawn_selection(geom: Node, selection: Node) -> tuple[int, str, list]:
                             'sequence; pass the selection it makes, '
                             f"model/'selections'/'{selection.name()}'.")
     java = _comsol.check_selection(geom, selection)
-    level = [int(d) for d in java.dimension()]
+    level = _comsol.selection_dims(java)
     if len(level) != 1:
         raise ValueError(f'Selection "{selection}" has no single level.')
     entities = [int(e) for e in java.entities()]

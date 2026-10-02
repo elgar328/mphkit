@@ -14,7 +14,6 @@ geometry itself is not affected.
 """
 from __future__ import annotations
 
-import numbers
 
 import numpy
 from mph.node import Node
@@ -41,11 +40,7 @@ def numbers_of(geom: Node, entity: str, selection,
     if selection is None:
         return list(range(1, count + 1))
     if isinstance(selection, Node):
-        java = _comsol.check_selection(geom, selection)
-        level = [int(d) for d in java.dimension()]
-        if level != [dim]:
-            raise ValueError(f'Selection "{selection}" is not a {entity} '
-                             'selection.')
+        java = _comsol.selection_at(geom, selection, entity, dim)
         return [int(e) for e in java.entities()]
     many = (isinstance(selection, (list, tuple))
             or isinstance(selection, numpy.ndarray) and selection.ndim > 0)

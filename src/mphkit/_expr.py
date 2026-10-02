@@ -26,7 +26,7 @@ def expr(value: Expr) -> str:
     raise TypeError(f'Expected a number or expression, got {value!r}.')
 
 
-def vector(values: Vector, length: int | None = None) -> list[str]:
+def vector(values: Vector) -> list[str]:
     """Return a sequence of numbers/expressions as a list of strings.
 
     MPh casts a list based on its first item, so a mixed list such as
@@ -34,7 +34,4 @@ def vector(values: Vector, length: int | None = None) -> list[str]:
     """
     if isinstance(values, str):
         raise TypeError(f'Expected a sequence, got the string {values!r}.')
-    items = [expr(v) for v in values]
-    if length is not None and len(items) != length:
-        raise ValueError(f'Expected {length} components, got {len(items)}.')
-    return items
+    return [expr(v) for v in values]

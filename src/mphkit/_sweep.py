@@ -112,14 +112,6 @@ def _outer_values(model, geom: Node, dataset) -> list[dict[str, float]]:
     return Sweep(model, str(data.getString('solution'))).rows
 
 
-def values(model, sweep: str) -> list[dict[str, float]]:
-    """
-    Returns the outer parameter values of each child of the sweep in
-    solution `sweep`, in SI units and in the children's order of names.
-    """
-    return Sweep(model, sweep).rows
-
-
 def labels(model, sweep: str) -> list[str]:
     """
     Returns, for each child of the sweep in solution `sweep`, its values
@@ -139,11 +131,16 @@ def label_of(model, solution: str) -> str:
 
 def listed(labels: list[str]) -> str:
     """Lists values for messages, counted from 1, shortened when long."""
-    lines = [f'{n}: {label}' for n, label in enumerate(labels, 1)]
+    return '; '.join(_shortened([f'{n}: {label}'
+                                 for n, label in enumerate(labels, 1)]))
+
+
+def _shortened(items: list[str]) -> list[str]:
+    """Keeps the first and last of a long list, `'...'` between them."""
     first, last = SHOWN
-    if len(lines) > first + last + 1:
-        lines = lines[:first] + ['...'] + lines[-last:]
-    return '; '.join(lines)
+    if len(items) > first + last + 1:
+        return items[:first] + ['...'] + items[-last:]
+    return items
 
 
 def stepped(model, solution) -> list[str]:
@@ -351,7 +348,8 @@ class Sweep:
     def count(self, k: int) -> int:
         """Returns the number of steps of outer value `k` (from 1)."""
         if k not in self._counts:
-            self._counts[k] = _count(self.model.sol(self.children[k - 1]))
+            self._counts[k] = _datasets.solution_steps(
+                self.model.sol(self.children[k - 1]))
         return self._counts[k]
 
     def where(self, k: int) -> str:
@@ -636,10 +634,10 @@ class Title(NamedTuple):
     switches: list[tuple[str, str]]  # e.g. ('Material Switch 1', 'Steel')
     where: str
     # whether every outer parameter has an item above to check
-    complete: bool = True
+    complete: bool
     # the step drawn, by title item ('Time', 'freq'), in SI units: checked
     # where the title shows it in a known unit
-    steps: dict[str, float] = {}
+    steps: dict[str, float]
 
 
 # Units COMSOL prints the step items of titles in, to SI
@@ -813,19 +811,16 @@ def pick(outer, sweep: Sweep, step) -> tuple[list[int], bool]:
 # Picking value #
 #################
 
-def check_outer(outer) -> bool:
-    """
-    Checks the form of `outer`, before COMSOL is asked anything, and
-    tells whether it asks for several values.
-    """
+def check_outer(outer):
+    """Checks the form of `outer`, before COMSOL is asked anything."""
     if isinstance(outer, Mapping):
         _check_values(outer)
-        return False
+        return
     if _by_name(outer):
         for wanted in outer:
             _check_values(wanted)
-        return True
-    return _results.steps(outer, None, '', what='outer')[1]
+        return
+    _results.steps(outer, None, '', what='outer')
 
 
 def _by_name(value, what: str = 'outer') -> bool:
@@ -1266,10 +1261,7 @@ def restricted_selection(geom: Node, entity: str, level: int, selection,
     if selection is None:
         return None
     if isinstance(selection, Node):
-        java = _comsol.check_selection(geom, selection)
-        if [int(d) for d in java.dimension()] != [level]:
-            raise ValueError(f'Selection "{selection}" is not a {entity} '
-                             'selection.')
+        java = _comsol.selection_at(geom, selection, entity, level)
         tag = str(java.tag())
         why = blocked(geom, tag)
         if why:
@@ -1627,11 +1619,7 @@ def check(geom: Node, sweep: Sweep, children: Children, unique: list[int]
     if sweep.materials():
         _results.check_current(geom)
         return 'full'
-    try:
-        _comsol.check_built(geom)
-        built = True
-    except RuntimeError:
-        built = False
+    built = _built(geom)
     current = vertices(geom) if built else None
     children.current = current
     verdicts = []
@@ -1703,7 +1691,8 @@ def same_steps(model, children: list[str], strict: bool = False) -> bool:
     tables = []
     for child in children:
         solution = model.sol(child)
-        tables.append((_names(solution), _count(solution), solution))
+        tables.append((_names(solution), _datasets.solution_steps(solution),
+                       solution))
     names, count, _ = tables[0]
     if any(other[:2] != (names, count) for other in tables[1:]):
         return False
@@ -1728,7 +1717,7 @@ def _step_table(solution) -> dict[str, Array]:
     names = _names(solution)
     if names == ['']:
         return {}
-    count = _count(solution)
+    count = _datasets.solution_steps(solution)
     real = numpy.array(solution.getPVals() or [], dtype=float)
     try:
         imag = numpy.array(solution.getPValsImag() or [], dtype=float)
@@ -1768,22 +1757,13 @@ def _names(solution) -> list[str]:
     return [str(name) for name in solution.getPNames()]
 
 
-def _count(solution) -> int:
-    """Returns the number of steps of a solution."""
-    return len(solution.getSolutioninfo().getSolnum(1, True))
-
-
 def _differences(sweep: Sweep, unique: list[int] | None = None) -> str:
     """Says how the steps of the outer values differ, for messages."""
     unique = unique or list(range(1, len(sweep.children) + 1))
     counts = [sweep.count(k) for k in unique]
     if len(set(counts)) > 1:
-        shown = [f'outer={k}: {count} steps'
-                 for k, count in zip(unique, counts)]
-        first, last = SHOWN
-        if len(shown) > first + last + 1:
-            shown = shown[:first] + ['...'] + shown[-last:]
-        return ', '.join(shown)
+        return ', '.join(_shortened([f'outer={k}: {count} steps'
+                                     for k, count in zip(unique, counts)]))
     return f'{counts[0]} steps each, at other times or values'
 
 
@@ -1794,10 +1774,7 @@ def _preview(model, child: str) -> str:
         return 'one stationary step'
     parts = []
     for name, values in table.items():
-        shown = [f'{value:g}' for value in values]
-        first, last = SHOWN
-        if len(shown) > first + last + 1:
-            shown = shown[:first] + ['...'] + shown[-last:]
+        shown = _shortened([f'{value:g}' for value in values])
         parts.append(f'{name} = {", ".join(shown)}')
     return '; '.join(parts)
 

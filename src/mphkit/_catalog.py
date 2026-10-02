@@ -107,7 +107,7 @@ def catalogue(kind: str) -> tuple[Any, dict[str, Any]]:
     return _load(kind, _root())
 
 
-@functools.lru_cache(maxsize=None)
+@functools.cache
 def _load(kind: str, root: str) -> tuple[Any, dict[str, Any]]:
     path = Path(root)/'data'/'completion'/f'{kind}.xml'
     if not path.is_file():
@@ -205,7 +205,7 @@ def _physics_links(top) -> str | None:
     return None
 
 
-@functools.lru_cache(maxsize=None)
+@functools.cache
 def _features(root: str) -> dict[str, Any]:
     """Returns the physics features by code."""
     top, _ = _load('physics', root)
@@ -588,7 +588,7 @@ def _creates(container, type: str, level: int | None) -> list[int] | None:
         except Exception:
             return None
         try:
-            return [int(d) for d in feature.selection().dimension()]
+            return _comsol.selection_dims(feature.selection())
         except Exception:
             return []
     finally:

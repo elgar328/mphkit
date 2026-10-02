@@ -356,7 +356,7 @@ def _problem(problem, node: str, sdim: int) -> dict:
             try:
                 if item.hasSelection():
                     chosen = item.selection()
-                    dims = [int(d) for d in chosen.dimension()]
+                    dims = _comsol.selection_dims(chosen)
                     if len(dims) == 1:
                         level = _comsol.entity_level_name(dims[0], sdim)
                         entities = [int(e) for e in chosen.entities()]

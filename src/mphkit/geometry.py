@@ -46,7 +46,7 @@ def component_of(geom: Node) -> Node:
     `coordinate_system()`.
     """
     java = _comsol.component_of(geom)
-    node = geom.model/'components'/escape(str(java.label()))
+    node = geom.model/'components'/_comsol.name_of(java)
     _comsol.check_tag(node, str(java.tag()))
     return node
 
@@ -86,7 +86,8 @@ def coordinate_system(geom: Node, type: str, /, *, selection: Node | None = None
                 raise ValueError(f'A "{type}" coordinate system has no '
                                  'selection.') from None
             chosen = _comsol.check_selection(geom, selection)
-            if list(chosen.dimension()) != list(target.dimension()):
+            if (_comsol.selection_dims(chosen)
+                    != _comsol.selection_dims(target)):
                 raise ValueError(f'Selection "{selection}" is not at the '
                                  f'level a "{type}" coordinate system '
                                  'takes.')
