@@ -16,7 +16,7 @@ from typing import Any
 
 from mph.node import Node
 
-from . import _comsol, _results
+from . import _comsol, _datasets
 
 # Suffix → COMSOL image type and the property holding its file name.
 FORMATS = {'.png': ('png', 'pngfilename'), '.jpg': ('jpeg', 'jpegfilename'),
@@ -187,7 +187,7 @@ def export(create, model, group, path: Path, size: tuple[int, int],
            sdim: int):
     """
     Writes the plot group `group` to `path` with a temporary image export
-    made with `create` (see `_results.scratch`). The export draws the
+    made with `create` (see `_datasets.scratch`). The export draws the
     group: running it before (`group.run()`) would also open a window of
     the COMSOL server, one per picture on Windows. Title and colour legend
     are on. Every setting must exist, so that a renamed property raises
@@ -300,7 +300,7 @@ def _mesh_picture(geom: Node, path: Path, selection, mesh,
                              f'"{selection}" selects {kind} entities.')
     model = geom.model.java
     view = geometry_view(geom)
-    with _results.scratch(model) as create:
+    with _datasets.scratch(model) as create:
         data = create(model.result().dataset(), 'Mesh')
         _comsol.set_property(data, 'mesh', str(sequence.tag()))
         if entities is not None:
@@ -357,9 +357,9 @@ def _mesh(geom: Node, mesh, check: bool = True) -> Any:
         try:
             # the geometry's own meshes first: labels repeat across
             # components
-            sequence = _results.find(meshes, mesh, 'mesh', 'meshes', wrong)
+            sequence = _datasets.find(meshes, mesh, 'mesh', 'meshes', wrong)
         except LookupError:
-            sequence = _results.find(geom.model.java.mesh(), mesh, 'mesh',
+            sequence = _datasets.find(geom.model.java.mesh(), mesh, 'mesh',
                                      'meshes', wrong)
             raise ValueError(f'Mesh "{_comsol.name_of(sequence)}" does not '
                              f'belong to geometry "{geom}".') from None

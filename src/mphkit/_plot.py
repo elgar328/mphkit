@@ -22,7 +22,7 @@ from typing import Literal
 import numpy
 from mph.node import Node
 
-from . import _comsol, _image, _results
+from . import _comsol, _datasets, _image, _results
 from ._measure import bounding_box, summary
 
 # Where the camera sits, seen from the centre, and which way is up.
@@ -119,16 +119,16 @@ def plot(geom: Node, expr: str, filename, /, selection: Node | None = None,
     if slices is not None and scale is not None:
         raise ValueError('deform= draws on surfaces; leave out x/y/z.')
     model = geom.model.java
-    data = _results.solved_dataset(geom, dataset)
+    data = _datasets.solved_dataset(geom, dataset)
     _results.check_current(geom)
-    count = _results.step_count(model, data)
+    count = _datasets.step_count(model, data)
     solnums, _ = _results.steps(step, count, _comsol.name_of(data),
                                 single=name)
     level, entities = None, None
     if selection is not None:
         level, _, entities = _image.drawn_selection(geom, selection)
         _check_level(selection, level, sdim, slices is not None)
-    with _results.scratch(model) as create:
+    with _datasets.scratch(model) as create:
         # measuring the domains goes into the history otherwise
         facts = summary(geom)
         if slices is not None:

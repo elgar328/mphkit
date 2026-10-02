@@ -26,7 +26,7 @@ from typing import Any, overload
 
 from mph.model import Model
 
-from . import _check, _comsol, _results
+from . import _check, _comsol, _datasets
 
 # Tag prefix of the temporary solver sequence; its blocks in a progress
 # log are skipped
@@ -167,7 +167,7 @@ def _study(model: Model, study) -> Any:
                 '(model.solve() without a name solves them all).')
         return active[0]
     wrong = f'study must be a study node or name, not {study!r}.'
-    found = _results.find(studies, study, 'study', 'studies', wrong)
+    found = _datasets.find(studies, study, 'study', 'studies', wrong)
     if not any(str(s.tag()) == str(found.tag()) for s in active):
         raise ValueError(f'Study "{_comsol.name_of(found)}" is disabled.')
     return found

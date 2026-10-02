@@ -15,7 +15,7 @@ from typing import Any
 import numpy
 from mph.node import Node
 
-from . import _comsol, _image, _measure, _results
+from . import _comsol, _datasets, _image, _measure
 
 # Quality measures, by COMSOL's names, and their mesh variables
 MEASURES = {'skewness': 'qualskewness', 'maxangle': 'qualmaxangle',
@@ -241,7 +241,7 @@ def _evaluate(geom: Node, sequence, level: int, variable: str, points,
     read again with only its own boundary selected.
     """
     model = geom.model.java
-    with _results.scratch(model) as create:
+    with _datasets.scratch(model) as create:
         data = create(model.result().dataset(), 'Mesh')
         data.set('mesh', str(sequence.tag()))
         data.set('sorder', 'linear')
