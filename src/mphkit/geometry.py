@@ -6,7 +6,7 @@ from mph.model import Model
 from mph.node import Node
 from mph.node import escape
 
-from . import _comsol
+from . import _catalog, _comsol
 from ._comsol import WorkPlaneNode
 
 
@@ -112,7 +112,9 @@ def feature(parent: Node, type: str, /, *, name: str | None = None,
 
     Every helper that creates a feature passes extra keyword arguments on
     to COMSOL, e.g. `contributeto=` to add the result to a cumulative
-    selection (`sel.cumulative`).
+    selection (`sel.cumulative`). An unknown property name raises a
+    `ValueError` with close names and the call that lists the type's
+    properties, e.g. `mk.properties(geom, 'Block', search=...)`.
 
     If setting a property fails, the new feature is removed again and the
     error is raised. Returns the feature node.
@@ -130,11 +132,25 @@ def feature(parent: Node, type: str, /, *, name: str | None = None,
     try:
         _comsol.check_tag(node, tag)
         java = container.get(tag)
-        _comsol.set_properties(java, properties, parent, container)
+        _comsol.set_properties(java, properties, parent, container,
+                               lambda: _listing(parent, type, workplane))
     except Exception:
         container.remove(tag)
         raise
     return node
+
+
+def _listing(parent: Node, type: str, workplane: bool) -> str | None:
+    """
+    Says how to list the properties of a feature type, if `mk.properties`
+    knows it; selections in the sequence are left out, as on the
+    component, where `sel.*` takes the same keywords.
+    """
+    if type.endswith('Selection'):
+        return None
+    _catalog.properties(parent, type)    # raises if it cannot list them
+    name = 'plane' if workplane else 'geom'
+    return f'mk.properties({name}, {type!r}, search=...) lists them'
 
 
 #############################

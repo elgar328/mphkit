@@ -542,11 +542,13 @@ def type_name(java) -> str:
         return name
 
 
-def set_property(java, name: str, value):
+def set_property(java, name: str, value, listing=None):
     """
     Sets a property.
 
-    Unknown names raise `ValueError` with a suggestion. Some switches are
+    Unknown names raise `ValueError` with a suggestion, and with `listing`
+    (e.g. "mk.properties(node, search=...) lists them"), or a function
+    that gives it or raises, if there is one. Some switches are
     stored as the strings `'on'`/`'off'` and reject a boolean (`sellayer`),
     while others accept one (`selresult`), so a boolean that COMSOL refuses
     is retried as `'on'`/`'off'`. Objects without a property list, such as
@@ -568,7 +570,9 @@ def set_property(java, name: str, value):
             close = property_suggestions(java, name, known)
             if close:
                 message += f' Did you mean {", ".join(close)}?'
-            message += ' Extra keyword arguments are COMSOL property names.'
+            message += ' Extra keyword arguments are COMSOL property names'
+            hint = _listing(listing)
+            message += f'; {hint}.' if hint else '.'
             raise ValueError(message) from error
         if isinstance(value, bool) and value_type(java, name) == 'String':
             try:
@@ -583,6 +587,17 @@ def set_property(java, name: str, value):
                 f'{", ".join(repr(v) for v in allowed)}, not {value!r}.'
             ) from error
         raise
+
+
+def _listing(listing) -> str | None:
+    """Returns how to list the properties, made now if it is a function."""
+    if not callable(listing):
+        return listing
+    try:
+        return listing()
+    except Exception:
+        # e.g. no catalogue: the unknown name is the error to show
+        return None
 
 
 def property_suggestions(java, name: str, known: list[str]) -> list[str]:
@@ -622,9 +637,10 @@ def center_hint(java, kind: str) -> str:
 
 
 def set_properties(java, properties: dict, owner: Node | None = None,
-                   container=None):
+                   container=None, listing=None):
     """
-    Sets properties in the given order, skipping `None` values.
+    Sets properties in the given order, skipping `None` values; `listing`
+    works as in `set_property()`.
 
     With `owner` (the geometry or work plane of a geometry feature) and its
     Java feature list `container`, input selections such as `input2` are
@@ -638,11 +654,12 @@ def set_properties(java, properties: dict, owner: Node | None = None,
             if is_workplane(owner.java):
                 raise ValueError('Features inside a work plane cannot '
                                  'contribute to a cumulative selection.')
-            set_property(java, key, cumulative_tag(geometry_of(owner), value))
+            set_property(java, key, cumulative_tag(geometry_of(owner), value),
+                         listing)
         elif owner is not None and is_selection_input(java, key):
             set_input(owner, container, java, key, value)
         else:
-            set_property(java, key, value)
+            set_property(java, key, value, listing)
 
 
 ####################

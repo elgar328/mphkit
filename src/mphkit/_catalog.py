@@ -859,6 +859,18 @@ def _type_item(entry: Entry, found_levels, match) -> dict:
             'tag': entry.tag, 'levels': found_levels, 'match': match}
 
 
+def lists_properties(node) -> bool:
+    """
+    Tells whether `mk.properties(node)` lists properties that are set on
+    the node itself: not those of a physics interface (`'group/name'`),
+    nor of a geometry, mesh or study, which have none of their own.
+    """
+    return (isinstance(node, Node) and len(node.path) >= 2
+            and node.path[0] in GROUPS
+            and not (len(node.path) == 2 and node.path[0] in
+                     ('geometries', 'meshes', 'studies', 'physics')))
+
+
 def properties(node: Node, type: str | None = None, /, *,
                search: str | None = None) -> dict[str, dict]:
     """

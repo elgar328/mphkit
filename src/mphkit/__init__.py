@@ -74,7 +74,8 @@ Rules:
 - Build the geometry (`model.build(geom)`) before querying it, and again
   after adding a `where='geometry'` selection.
 - Extra keyword arguments are COMSOL property names; an unknown one
-  raises an error that often suggests the right one.
+  raises an error that often suggests the right one or the
+  `mk.properties` call that lists them.
 - Objects that touch or overlap stay separate domains, also after
   `mk.union`; `mk.union(geom, [a, b], intbnd=False)` merges them.
 

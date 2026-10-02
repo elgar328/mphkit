@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from mph.node import Node, join
 
-from . import _comsol
+from . import _catalog, _comsol
 from ._comsol import WorkPlaneNode
 
 
@@ -27,7 +27,8 @@ def set_(target, /, **properties):
 
     Ints, numpy arrays and lists mixing numbers and expressions are
     converted for COMSOL; lists of numbers become string arrays. Unknown
-    names raise `ValueError`, with a suggestion where one is close; objects
+    names raise `ValueError`, with a suggestion where one is close and,
+    for nodes `mk.properties` reads, the call that lists them; objects
     with no property list (variables) or an empty one (a new material
     property group) do not check names. Invalid choices list the allowed
     values. If one property fails, the ones before it stay set.
@@ -39,8 +40,10 @@ def set_(target, /, **properties):
     (`component.variable()`) any value is taken as an expression, and
     `True` becomes 1.
     """
-    owner = container = None
+    owner = container = listing = None
     if isinstance(target, Node):
+        if _catalog.lists_properties(target):
+            listing = 'mk.properties(node, search=...) lists them'
         if (len(target.path) >= 4 and target.path[0] == 'geometries'
                 and not isinstance(target, WorkPlaneNode)):
             # A plain node cannot resolve features inside a work plane.
@@ -60,5 +63,5 @@ def set_(target, /, **properties):
     else:
         raise TypeError(f'Cannot set properties of {target!r}; expected an '
                         'MPh node or a COMSOL Java object.')
-    _comsol.set_properties(java, properties, owner, container)
+    _comsol.set_properties(java, properties, owner, container, listing)
     return target

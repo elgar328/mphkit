@@ -1,5 +1,6 @@
 """Tests for geometry creation and the generic feature() helper."""
 import math
+import re
 
 import numpy
 import pytest
@@ -706,8 +707,58 @@ def test_property_suggestion(geom, make, meant):
         make(geom)
     text = str(error.value)
     assert f'Did you mean {meant}' in text
-    assert text.endswith('Extra keyword arguments are COMSOL property names.')
+    assert re.search(r"Extra keyword arguments are COMSOL property names; "
+                     r"mk\.properties\((geom|plane), '\w+', search=\.\.\.\) "
+                     r"lists them\.$", text)
     assert "'axis'" not in text
+
+
+def test_property_listing(model, geom):
+    # without a close name, the call that lists the properties
+    names = 'Extra keyword arguments are COMSOL property names'
+    with pytest.raises(ValueError, match=f"{names}; "
+                       r"mk\.properties\(geom, 'Block', search=\.\.\.\) "
+                       r"lists them\.$"):
+        mk.block(geom, (1, 1, 1), bogus=1)
+    plane = mk.workplane(geom)
+    with pytest.raises(ValueError, match=r"^\"Circle\" has no property "
+                       f'"rad". {names}; '
+                       r"mk\.properties\(plane, 'Circle', search=\.\.\.\)"):
+        mk.circle(plane, 1, rad=1)
+    block = mk.block(geom, (1, 1, 1))
+    model.build(geom)
+    node = r'mk\.properties\(node, search=\.\.\.\) lists them\.$'
+    with pytest.raises(ValueError, match=f'{names}; {node}'):
+        mk.set(block, bogus=1)
+    physics = (model/'physics').create('HeatTransfer', geom)
+    flux = physics.create('HeatFluxBoundary', 2)
+    with pytest.raises(ValueError, match=r'^"HeatFluxBoundary" has no '
+                       f'property "h_coef". {names}; {node}'):
+        mk.set(flux, h_coef=50)
+    assert 'h' in mk.properties(flux, search='coefficient')
+    # no hint where mk.properties does not list the node's own properties
+    for target in (flux.java, mk.sel.box(geom, 'boundary', x=0)):
+        with pytest.raises(ValueError, match=f'{names}\\.$'):
+            mk.set(target, bogus=1)
+    with pytest.raises(ValueError, match=f'{names}\\.$'):
+        mk.sel.box(geom, 'boundary', x=0, where='geometry', bogus=1)
+
+
+@pytest.mark.parametrize('dim, types', [
+    (3, ['Block', 'Cylinder', 'Sphere', 'Point', 'Union', 'Difference',
+         'RigidTransform', 'Intersection', 'Delete', 'Array', 'Move',
+         'Rotate', 'Mirror', 'Revolve', 'Partition', 'Fillet3D', 'Chamfer3D',
+         'LineSegment', 'WorkPlane', 'Extrude', 'Import']),
+    ('plane', ['Square', 'Rectangle', 'Circle', 'Polygon', 'Fillet',
+               'Chamfer', 'LineSegment', 'Union', 'Point']),
+    (1, ['Interval']),
+])
+def test_property_listing_types(model, dim, types):
+    # every type the helpers create can be listed, as the hint says
+    geom = mk.geometry(model, 3 if dim == 'plane' else dim)
+    parent = mk.workplane(geom) if dim == 'plane' else geom
+    for type in types:
+        assert mk.properties(parent, type), type
 
 
 def test_property_suggestion_by_type(geom):

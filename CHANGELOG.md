@@ -110,6 +110,10 @@ until 1.0, a minor release (0.2, 0.3, ...) may change the API. See
   `ValueError` about the property `input` or COMSOL's "Unknown
   selection". `sel.entities`, `mk.image` and `mk.coordinate_system` say
   that a number given as a selection is an entity number.
+- An unknown property name given to `mk.set` or to the geometry helpers
+  ends with the call that lists the properties, e.g.
+  `mk.properties(geom, 'Block', search=...)`, also when no close name is
+  suggested.
 
 ### Fixed
 

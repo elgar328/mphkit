@@ -188,8 +188,8 @@ def test_errors(solved):
     with pytest.raises(ValueError, match='Entity must be one of'):
         mk.average(geom, 'face', 'T')
     with pytest.raises(ValueError, match='has no property "intordr".*'
-                                         "'intorder'"):
-        mk.integral(geom, 'domain', 'T', intordr=4)
+                                         "'intorder'.* names\\.$"):
+        mk.integral(geom, 'domain', 'T', intordr=4)   # no node to list
     assert mk.integral(geom, 'domain', 'T', intorder=4) == \
         pytest.approx(333.15*5e-5)
 
