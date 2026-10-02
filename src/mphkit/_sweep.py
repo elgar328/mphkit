@@ -35,7 +35,9 @@ SHOWN = (5, 2)
 TOLERANCE = 1e-9
 COORDINATES = 1e-12
 
-# a number as COMSOL prints it in plot titles, e.g. 133.33 or 5.5511E-17
+# a number as COMSOL prints it in plot titles, e.g. 133.33 or 5.5511E-17,
+# with this many significant digits
+SIGNIFICANT = 5
 NUMBER = r'([-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?)'
 
 Array = NDArray[Any]
@@ -302,8 +304,11 @@ class Sweep:
         return {name: number for name, number in zip(names, row)
                 if name in self.names}
 
-    def title(self, k: int, data) -> Title:
-        """What the title of a picture of outer value `k` must show."""
+    def title(self, k: int, data, step: int | None) -> Title:
+        """
+        What the title of a picture of outer value `k` at `step` must
+        show (`None` with one step).
+        """
         every = [self.swept(n) for n in range(1, len(self.children) + 1)]
         plain = [name for name in every[k - 1]
                  if not name.startswith(SWITCHES)]
@@ -313,10 +318,21 @@ class Sweep:
             left, _, right = part.partition('=')
             if left not in plain and right:
                 switches.append((left, right))
+        wanted = sum(name.startswith(SWITCHES) for name in self.names)
+        steps = {}
+        if step is not None:
+            table = named_steps(self.model, self.model.sol(
+                self.children[k - 1]))
+            uniform = same_steps(self.model, self.children)
+            for name, item in STEP_ITEMS.items():
+                if name in table and numpy.isrealobj(table[name]):
+                    steps[item] = (float(table[name][step - 1]),
+                                   not uniform)
         return Title(self.numbers[k - 1],
                      {name: every[k - 1][name] for name in plain},
                      {name: [row[name] for row in every] for name in plain},
-                     switches, self.where(data, k))
+                     switches, self.where(data, k), len(switches) >= wanted,
+                     steps)
 
 
 class Target(NamedTuple):
@@ -447,6 +463,21 @@ class Title(NamedTuple):
     candidates: dict[str, list[float]]  # those of all values, by name
     switches: list[tuple[str, str]]  # e.g. ('Material Switch 1', 'Steel')
     where: str
+    # whether every outer parameter has an item above to check
+    complete: bool = True
+    # the step drawn, by title item ('Time', 'freq'), in SI units, and
+    # whether it must show: when the values have different steps
+    steps: dict[str, tuple[float, bool]] = {}
+
+
+# Units COMSOL prints the step items of titles in, to SI
+STEP_UNITS = {
+    'Time': {'s': 1.0, 'ms': 1e-3, 'us': 1e-6, '\u00b5s': 1e-6,
+             'min': 60.0, 'h': 3600.0, 'd': 86400.0},
+    'freq': {'Hz': 1.0, 'mHz': 1e-3, 'kHz': 1e3, 'MHz': 1e6, 'GHz': 1e9,
+             'THz': 1e12}}
+# Step names and the title items that show them
+STEP_ITEMS = {'t': 'Time', 'freq': 'freq'}
 
 
 def pictures(create, geom: Node, dataset, step, outer
@@ -504,9 +535,10 @@ def pictures(create, geom: Node, dataset, step, outer
             'on the geometry as built. To draw one value, set its '
             'parameters (mk.outer_values(geom)), run model.build(geom) and '
             'model.mesh(), and solve a study without the sweep.')
-    return [Picture(data, sweep.numbers[k - 1],
-                    found[k][0][0] if sweep.count(k) > 1 else None, k,
-                    sweep.title(k, data)) for k in positions], many
+    drawn = {k: found[k][0][0] if sweep.count(k) > 1 else None
+             for k in positions}
+    return [Picture(data, sweep.numbers[k - 1], drawn[k], k,
+                    sweep.title(k, data, drawn[k])) for k in positions], many
 
 
 def title_problem(indicator: str, title: Title) -> str | None:
@@ -517,6 +549,8 @@ def title_problem(indicator: str, title: Title) -> str | None:
     the values as swept, rounded, e.g. "Th(2)=200 degC Time=10 s"; the
     number in parentheses is its outer solution number.
     """
+    if not title.complete or not (title.expected or title.switches):
+        return 'missing'
     for name, value in title.expected.items():
         found = list(re.finditer(rf'(?<![\w.]){re.escape(name)}'
                                  rf'(?:\((\d+)\))?=\s*{NUMBER}', indicator))
@@ -542,6 +576,17 @@ def title_problem(indicator: str, title: Title) -> str | None:
             if not re.match(rf'{re.escape(right)}(?=$|,|\s+[^\s=,]+=)',
                             indicator[match.end():]):
                 return 'wrong'
+    for item, (value, required) in title.steps.items():
+        shown = re.search(rf'(?<![\w.]){item}(?:\(\d+\))?=\s*{NUMBER}'
+                          r'\s*([^\s,]*)', indicator)
+        factor = None if shown is None else \
+            STEP_UNITS[item].get(shown.group(2))
+        if shown is None or factor is None:
+            if required:
+                return 'missing'
+            continue
+        if not _printed_as(shown.group(1), value/factor, [value/factor]):
+            return 'wrong'
     return None
 
 
@@ -554,6 +599,11 @@ def _printed_as(text: str, value: float, candidates: list[float]) -> bool:
     mantissa, _, exponent = text.lower().partition('e')
     decimals = len(mantissa.partition('.')[2])
     half = 0.5 * 10.0**(int(exponent or 0) - decimals)
+    if printed:
+        # COMSOL prints 5 significant digits and drops trailing zeros:
+        # "0.1" is 0.10000, not anything from 0.05 to 0.15
+        half = min(half, 0.5 * 10.0**(math.floor(math.log10(abs(printed)))
+                                      - SIGNIFICANT + 1))
     if abs(printed - value) <= half*(1 + 1e-9):
         return True
     if len(candidates) < 2:
@@ -772,6 +822,9 @@ def no_outer(model, data, outer, caller: str | None, dataset
 # alone or from their inputs
 POSITIONS = ('Box', 'Ball', 'Cylinder', 'Disk')
 COMBINED = ('Union', 'Intersection', 'Difference', 'Complement', 'Adjacent')
+# The endings of the selections COMSOL derives from a geometry feature: by
+# level (`sel.result`, `sel.cumulative`) or layer (`sel.layer`)
+DERIVED = r'dom|bnd|edg|pnt|core|layer\d+'
 
 
 def restricted_selection(geom: Node, entity: str, level: int, selection,
@@ -875,14 +928,19 @@ def _derived(geom: Node, tag: str) -> str | None:
     features = _comsol.java_of(geom).feature()
     ftags = [str(t) for t in features.tags()]
     rest = tag[len(gtag) + 1:] if tag.startswith(f'{gtag}_') else ''
-    owner = rest.rsplit('_', 1)[0] if '_' in rest else rest
+    unknown = f'{name} is a selection mphkit cannot check'
     geometry_side = (f'{name} is made in the geometry sequence; make it in '
                      'the component instead (where=None)')
-    if rest in ftags or (owner in ftags and _comsol.is_selection_feature(
-            features.get(owner))):
-        return geometry_side
+    if rest in ftags:
+        # a selection feature of the sequence, e.g. geom1_boxsel1
+        return (geometry_side if _comsol.is_selection_feature(
+            features.get(rest)) else unknown)
+    owner, _, suffix = rest.rpartition('_')
+    if not owner or not re.fullmatch(DERIVED, suffix):
+        return unknown
     if owner in ftags:
-        return None
+        return (geometry_side if _comsol.is_selection_feature(
+            features.get(owner)) else None)
     cumulative = _comsol.cumulative_tags(geom).values()
     if owner in cumulative:
         for ftag in ftags:
@@ -894,7 +952,7 @@ def _derived(geom: Node, tag: str) -> str | None:
                         'make that one in the component instead '
                         '(where=None)')
         return None
-    return f'{name} is a selection mphkit cannot check'
+    return unknown
 
 
 def check_not_empty(create, geom: Node, level: int, tag: str | None,
@@ -920,7 +978,7 @@ def check_not_empty(create, geom: Node, level: int, tag: str | None,
         try:
             feature.setResult()
         except Exception as error:
-            if 'meshed' in _comsol.reason(error):
+            if _results.unmeshed(error):
                 raise RuntimeError(
                     f'Some entities of "{selection}" have no solution at '
                     f'{target.where} (no physics or mesh there); pass a '
@@ -1006,13 +1064,17 @@ class Children:
         count = len(self.sweep.children)
         if count == 1:
             return 'single'
-        first = self.points(1)
-        if first is None:
-            return 'differ'
-        for k in range(2, count + 1):
-            points = self.points(k)
-            if points is None or not same_points(first, points):
+        try:
+            first = self.points(1)
+            if first is None:
                 return 'differ'
+            for k in range(2, count + 1):
+                points = self.points(k)
+                if points is None or not same_points(first, points):
+                    return 'differ'
+        except RuntimeError:
+            # COMSOL could not read a value's geometry: not the same
+            return 'differ'
         return 'same'
 
 
@@ -1045,8 +1107,7 @@ def fingerprint(create, geom: Node, dataset, count: int, label: str
     try:
         feature.setResult()
     except Exception as error:
-        # "Not all selected domains are meshed"
-        if 'are meshed' in _comsol.reason(error):
+        if _results.unmeshed(error):
             return None
         raise RuntimeError(f'COMSOL could not read the geometry of the '
                            f'solution at {label}: '
@@ -1081,8 +1142,15 @@ def same_points(a: Array, b: Array) -> bool:
     second = b[numpy.lexsort(b.T[::-1])]
     if numpy.all(numpy.abs(first - second) <= tolerance):
         return True
-    return all(numpy.any(numpy.all(numpy.abs(b - row) <= tolerance, axis=1))
-               for row in a)
+    # one to one: a point matched once cannot match again
+    free = numpy.ones(len(b), dtype=bool)
+    for row in a:
+        near = numpy.flatnonzero(free & numpy.all(numpy.abs(b - row)
+                                                  <= tolerance, axis=1))
+        if not len(near):
+            return False
+        free[near[0]] = False
+    return True
 
 
 def decide(built: bool, requested: list[str], others: Callable[[], str]

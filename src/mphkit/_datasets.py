@@ -24,21 +24,6 @@ class Chosen(NamedTuple):
     solutions: Solutions
 
 
-def solved_dataset(geom: Node, dataset):
-    """
-    Returns the Java solution dataset to evaluate (see `select()`), and
-    raises for an outer sweep, which the helpers do not read yet.
-    """
-    chosen = select(geom, dataset)
-    if chosen.kind == 'sweep':
-        model = geom.model.java
-        study = study_of(solution_of(model, chosen.java))
-        raise NotImplementedError(f'Parametric sweeps with an outer loop '
-                                  f'are not supported yet ("'
-                                  f'{_study_name(model, study)}").')
-    return chosen.java
-
-
 def select(geom: Node, dataset) -> Chosen:
     """
     Returns the solution dataset to evaluate: `dataset` (a dataset, or a
@@ -400,7 +385,8 @@ def error_of(solution) -> str | None:
         message = solution.getErrorMessage()
     except Exception:
         return None
-    return None if message is None else str(message)
+    return str(message) if message is not None and str(message).strip() \
+        else None
 
 
 def study_of(solution) -> str:

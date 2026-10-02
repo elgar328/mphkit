@@ -494,7 +494,7 @@ def _over(name: str, geom: Node, entity: str, expr: str, selection,
             try:
                 feature.setResult()
             except Exception as error:
-                if 'not meshed' in _comsol.reason(error):
+                if unmeshed(error):
                     at = f' at {target.where}' if target.where else ''
                     raise RuntimeError(
                         f'Some of these entities have no solution{at} (no '
@@ -788,6 +788,15 @@ def _unit_of(header: str) -> str:
         if depth == 0:
             return header[i + 1:-1]
     return header
+
+
+def unmeshed(error: Exception) -> bool:
+    """
+    Tells whether COMSOL failed for entities without mesh: "Not all
+    selected domains are meshed", "Source selection not meshed".
+    """
+    reason = _comsol.reason(error)
+    return 'not meshed' in reason or 'are meshed' in reason
 
 
 def failed(expr: str, error: Exception) -> RuntimeError:

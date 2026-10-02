@@ -200,6 +200,8 @@ def plot(geom: Node, expr: str, filename, /, selection: Node | None = None,
                                 unit, slices, level, entities, sdim,
                                 str(feature.getString('rangeunit')))
             for temporary, file in zip(drawn, files):
+                _settle(temporary, file)
+            for temporary, file in zip(drawn, files):
                 os.replace(temporary, file)
         finally:
             for temporary in drawn:
@@ -267,6 +269,23 @@ def _files(filename, path: Path, pictures: list, many: bool) -> list[Path]:
     return [path.with_name(path.name.replace(PLACEHOLDER,
                                              str(picture.number)))
             for picture in pictures]
+
+
+def _settle(temporary: Path, file: Path):
+    """
+    Checks that COMSOL drew into `temporary`, and gives it the permissions
+    `file` has, or a new file would have: a temporary file is the owner's
+    only.
+    """
+    if not temporary.stat().st_size:
+        raise OSError(f'COMSOL wrote nothing to the picture "{file}".')
+    try:
+        mode = file.stat().st_mode & 0o777
+    except OSError:
+        mask = os.umask(0)
+        os.umask(mask)
+        mode = 0o666 & ~mask
+    os.chmod(temporary, mode)
 
 
 def _temporary(file: Path) -> Path:

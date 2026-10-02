@@ -732,3 +732,46 @@ def test_eigenvalue_sweep(client, tmp_path):
                            step=2)) == 2
     finally:
         client.remove(model)
+
+
+@pytest.mark.parametrize('problem, message', [
+    ('wrong', 'COMSOL drew another value than'),
+    ('missing', 'without its values in the title')])
+def test_title_refused(swept, tmp_path, monkeypatch, problem, message):
+    model, geom = swept
+    keep = tmp_path/'T_2.png'
+    keep.write_bytes(b'old')
+    monkeypatch.setattr(mk._sweep, 'title_problem',
+                        lambda indicator, title: problem)
+    with pytest.raises(RuntimeError, match=message):
+        mk.plot(geom, 'T', tmp_path/'T_{outer}.png', outer=[1, 2],
+                step='last')
+    # nothing replaced, no temporary file left
+    assert keep.read_bytes() == b'old'
+    assert sorted(path.name for path in tmp_path.iterdir()) == ['T_2.png']
+
+
+def test_free_time_step_pictures(client, tmp_path):
+    model, geom, faces = heat_plate(client, 'free steps', study=False)
+    try:
+        study = (model/'studies').create(name='free')
+        study.create('Transient').property('tlist', 'range(0,10,100)')
+        sweep(study, '100 1000')
+        model.solve()
+        java = model.java
+        for tag in java.sol('sol1').feature().tags():
+            solver = java.sol('sol1').feature(tag)
+            if str(solver.getType()) == 'Time':
+                solver.set('tout', 'tsteps')
+                solver.set('tstepsbdf', 'free')
+        model.solve()
+        times = [mk.step_values(geom, outer=k)['t'] for k in (1, 2)]
+        assert len(times[0]) != len(times[1])
+        # the title's time is checked against each value's own steps
+        assert len(mk.plot(geom, 'T', tmp_path/'last_{outer}.png',
+                           outer='all', step='last')) == 2
+        middle = len(times[1]) // 2
+        assert mk.plot(geom, 'T', tmp_path/'middle.png', outer=2,
+                       step=middle).exists()
+    finally:
+        client.remove(model)

@@ -7,6 +7,8 @@ The plate of test_results, 0.1 x 0.05 x 0.01 m, held at Th at x = 0 and
 20 degC at x = 0.1, swept over Th around a short time-dependent study.
 """
 import math
+import os
+import sys
 
 import numpy
 import pytest
@@ -634,10 +636,11 @@ def test_listed():
                                         '5: Th=5; ...; 9: Th=9; 10: Th=10')
 
 
-def title(expected, candidates, number=2, switches=()):
+def title(expected, candidates, number=2, switches=(), complete=True,
+          steps=None):
     """A title to check, as `Sweep.title` makes it."""
     return mk._sweep.Title(number, expected, candidates, list(switches),
-                           'outer=k')
+                           'outer=k', complete, steps or {})
 
 
 @pytest.mark.parametrize('indicator, number, expected, candidates, '
@@ -686,7 +689,20 @@ def title(expected, candidates, number=2, switches=()):
     ('Function Switch 1(2)=Analytic 2 Time=10 s', 2, {}, {},
      [('Function Switch 1', 'Analytic 2')], None),
     ('Time=10 s', 2, {'Th': 200}, {'Th': [100, 200]}, (), 'missing'),
-    ('', 2, {}, {}, [('Material Switch 1', 'Material 2')], 'missing')])
+    ('', 2, {}, {}, [('Material Switch 1', 'Material 2')], 'missing'),
+    # no index with several parameters: the digits must tell the values
+    ('W=0.1 m, Th=100 degC Time=1 s', 2, {'W': 0.14, 'Th': 100},
+     {'W': [0.1, 0.14, 0.1, 0.14], 'Th': [100, 100, 200, 200]}, (),
+     'wrong'),
+    ('W=0.14 m, Th=100 degC Time=1 s', 2, {'W': 0.14, 'Th': 100},
+     {'W': [0.1, 0.14, 0.1, 0.14], 'Th': [100, 100, 200, 200]}, (), None),
+    ('Th=100 degC, k=10 W/m/K', 2, {'Th': 100, 'k': 10.4},
+     {'Th': [100, 100], 'k': [10, 10.4]}, (), 'wrong'),
+    # the right value, another index
+    ('Th(1)=200 degC Time=1 s', 2, {'Th': 200}, {'Th': [200, 200]}, (),
+     'wrong'),
+    # nothing to check is not a pass
+    ('Th(2)=200 degC', 2, {}, {}, (), 'missing')])
 def test_title(indicator, number, expected, candidates, switches, problem):
     found = mk._sweep.title_problem(
         indicator, title(expected, candidates, number, switches))
@@ -1058,3 +1074,60 @@ def test_last_value_kept_of_geometry(fresh):
                                            'was solved on.* must keep all '
                                            'solutions to be read'):
         mk.average(geom, 'domain', 'T', 1)
+
+
+def test_title_incomplete():
+    # a material sweep whose label did not give the switch's item
+    assert mk._sweep.title_problem(
+        'Material Switch 1(2)=Material 2 Time=10 s',
+        title({}, {}, switches=[('Material Switch 1', 'Material 2')],
+              complete=False)) == 'missing'
+
+
+@pytest.mark.parametrize('indicator, steps, problem', [
+    ('Th(2)=200 degC Time=2 s', {'Time': (2.0, True)}, None),
+    ('Th(2)=200 degC Time=2 s', {'Time': (3.0, True)}, 'wrong'),
+    ('Th(2)=200 degC Time=2 s', {'Time': (3.0, False)}, 'wrong'),
+    ('Th(2)=200 degC Time=1 min', {'Time': (60.0, True)}, None),
+    ('Th(2)=200 degC Time=1.5 ms', {'Time': (1.5e-3, True)}, None),
+    ('Th(2)=200 degC', {'Time': (2.0, True)}, 'missing'),
+    ('Th(2)=200 degC', {'Time': (2.0, False)}, None),
+    ('Th(2)=200 degC Time=2 fortnights', {'Time': (2.0, True)}, 'missing'),
+    ('p0(2)=2 kPa freq(1)=100 Hz', {'freq': (100.0, True)}, None),
+    ('p0(2)=2 kPa freq(1)=0.1 kHz', {'freq': (100.0, True)}, None),
+    ('p0(2)=2 kPa freq(2)=200 Hz', {'freq': (100.0, False)}, 'wrong')])
+def test_title_steps(indicator, steps, problem):
+    expected = ({'p0': 2} if indicator.startswith('p0') else {'Th': 200})
+    candidates = {name: [1, value] for name, value in expected.items()}
+    assert mk._sweep.title_problem(
+        indicator, title(expected, candidates, steps=steps)) == problem
+
+
+def test_same_points_one_to_one():
+    same = mk._sweep.same_points
+    a = numpy.array([[0, 0], [0, 0], [1, 1]])
+    assert not same(a, numpy.array([[0, 0], [1, 1], [2, 2]]))
+    assert same(a, numpy.array([[1, 1], [0, 0], [1e-14, 0]]))
+
+
+@pytest.mark.skipif(sys.platform == 'win32',
+                    reason='Windows has no POSIX permissions')
+def test_settle(tmp_path):
+    settle = mk._plot._settle
+    empty = tmp_path/'.empty.png'
+    empty.write_bytes(b'')
+    with pytest.raises(OSError, match='COMSOL wrote nothing'):
+        settle(empty, tmp_path/'x.png')
+    drawn = tmp_path/'.drawn.png'
+    drawn.write_bytes(b'png')
+    os.chmod(drawn, 0o600)
+    old = tmp_path/'old.png'
+    old.write_bytes(b'old')
+    os.chmod(old, 0o644)
+    settle(drawn, old)
+    assert drawn.stat().st_mode & 0o777 == 0o644
+    os.chmod(drawn, 0o600)
+    mask = os.umask(0)
+    os.umask(mask)
+    settle(drawn, tmp_path/'new.png')
+    assert drawn.stat().st_mode & 0o777 == 0o666 & ~mask
