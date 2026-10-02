@@ -35,7 +35,7 @@ def offline(monkeypatch):
         root = str(discovery.backend()['root'])
     except Exception as error:
         pytest.skip(f'COMSOL not found: {error}')
-    monkeypatch.setattr(_catalog, '_root', lambda: root)
+    monkeypatch.setattr(_catalog, 'comsol_root', lambda: root)
     return root
 
 
@@ -202,7 +202,7 @@ def fake_physics(tmp_path, monkeypatch, *, features=True, groups=None,
     folder = tmp_path/'data'/'completion'
     folder.mkdir(parents=True)
     (folder/'physics.xml').write_text(text, encoding='utf-8')
-    monkeypatch.setattr(_catalog, '_root', lambda: str(tmp_path))
+    monkeypatch.setattr(_catalog, 'comsol_root', lambda: str(tmp_path))
 
 
 def test_catalogue_format_small(tmp_path, monkeypatch):
@@ -256,7 +256,7 @@ def test_where_level(where, level):
 
 
 def test_catalogue_missing(monkeypatch, tmp_path):
-    monkeypatch.setattr(_catalog, '_root', lambda: str(tmp_path))
+    monkeypatch.setattr(_catalog, 'comsol_root', lambda: str(tmp_path))
     with pytest.raises(RuntimeError, match="catalogue of names was not "
                                            'found'):
         _catalog.catalogue('physics')
@@ -614,7 +614,7 @@ def test_lookups_leave_nothing(plate, tmp_path):
 def test_without_catalogue(plate, monkeypatch, tmp_path):
     model, geom, _ = plate
     heat = model/'physics'/'heat'
-    monkeypatch.setattr(_catalog, '_root', lambda: str(tmp_path))
+    monkeypatch.setattr(_catalog, 'comsol_root', lambda: str(tmp_path))
     with pytest.raises(RuntimeError, match='catalogue of names'):
         mk.physics_types(geom)
     with pytest.raises(RuntimeError, match='catalogue of names'):

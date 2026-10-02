@@ -44,7 +44,7 @@ def _folder() -> Path:
     import jpype  # type: ignore[import-untyped]
     if not jpype.isJVMStarted():
         raise RuntimeError('COMSOL is not running; call mph.start() first.')
-    return Path(_catalog._root())/'data'
+    return Path(_catalog.comsol_root())/'data'
 
 
 def _libraries() -> dict[str, Path]:
@@ -71,7 +71,7 @@ def _chosen(library, search) -> dict[str, Path]:
     """
     installed = _libraries()
     if library is None:
-        library = 'all' if _catalog._words(search) else BASIC
+        library = 'all' if _catalog.search_words(search) else BASIC
     if library == 'all':
         return installed
     names = [library] if isinstance(library, str) else library
@@ -197,15 +197,15 @@ def materials(*, search: str | None = None, library: str | list[str] |
     Reads the library files of the running COMSOL (call `mph.start()`
     first) and leaves nothing in any model.
     """
-    words = _catalog._words(search)
+    words = _catalog.search_words(search)
     by_name: list[dict] = []
     by_group: list[dict] = []
     for name, path in _chosen(library, search).items():
         for item in sorted(_read(path),
                            key=lambda item: _catalog.name_key(item.name)):
-            if not _catalog._found(words, item.name, *item.groups):
+            if not _catalog.words_found(words, item.name, *item.groups):
                 continue
-            found = by_name if _catalog._found(words, item.name) \
+            found = by_name if _catalog.words_found(words, item.name) \
                 else by_group
             found.append({'name': item.name, 'library': name,
                           'groups': list(item.groups),
@@ -381,7 +381,7 @@ def _domains(geom: Node, component, selection) -> list[int] | None:
         _comsol.check_built(geom)
         if not _comsol.entity_count(geom, _comsol.sdim(geom)):
             raise ValueError(f'Geometry "{geom}" has no domains.')
-        held = _held(component, _comsol.sdim(geom))
+        held = held_domains(component, _comsol.sdim(geom))
         if held:
             taken = {n for _, numbers in held for n in numbers}
             free = [n for n in range(1, _comsol.entity_count(
@@ -404,7 +404,7 @@ def _domains(geom: Node, component, selection) -> list[int] | None:
     return found
 
 
-def _held(component, dim: int) -> list[tuple[str, list[int]]]:
+def held_domains(component, dim: int) -> list[tuple[str, list[int]]]:
     """
     Returns the labels and domains of the members of the component's
     material list that hold domains (level `dim`): active materials,

@@ -159,9 +159,8 @@ def test_size(plate):
     model, geom = plate
     quality = mk.mesh_quality(geom)
     java = model.java
-    from mphkit import _datasets
     found = []
-    with _datasets.scratch(java) as create:
+    with _comsol.scratch(java) as create:
         data = create(java.result().dataset(), 'Mesh')
         data.set('mesh', 'mesh1')
         for kind in ('MinVolume', 'MaxVolume'):

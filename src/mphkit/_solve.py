@@ -26,7 +26,7 @@ from typing import Any, overload
 
 from mph.model import Model
 
-from . import _check, _comsol, _datasets
+from . import _check, _comsol
 
 # Tag prefix of the temporary solver sequence; its blocks in a progress
 # log are skipped
@@ -129,7 +129,7 @@ def problem_size(model: Model, /, study=None) -> dict:
     java = model.java
     study_java = _study(model, study)
     std = str(study_java.tag())
-    interfaces = _check._interfaces(model)
+    interfaces = _check.active_physics(model)
     meshes = _check_meshes(model, study_java, interfaces)
     with _comsol.history_off(java):
         attached = _attached(java, std)
@@ -167,7 +167,7 @@ def _study(model: Model, study) -> Any:
                 '(model.solve() without a name solves them all).')
         return active[0]
     wrong = f'study must be a study node or name, not {study!r}.'
-    found = _datasets.find(studies, study, 'study', 'studies', wrong)
+    found = _comsol.find_node(studies, study, 'study', 'studies', wrong)
     if not any(str(s.tag()) == str(found.tag()) for s in active):
         raise ValueError(f'Study "{_comsol.name_of(found)}" is disabled.')
     return found

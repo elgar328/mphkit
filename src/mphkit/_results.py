@@ -19,7 +19,7 @@ import numpy
 from mph.node import Node
 from numpy.typing import NDArray
 
-from . import _comsol, _datasets, _sweep
+from . import _comsol, _sweep
 from ._measure import numbers_of
 
 # COMSOL feature types: the kind of result, then the level of the entities
@@ -386,7 +386,7 @@ def value(geom: Node, expr: str, points, /, *, unit: str | None = None,
     _sweep.check_step(step, None)
     _sweep.check_outer(outer)
     model = geom.model.java
-    with _datasets.scratch(model) as create:
+    with _comsol.scratch(model) as create:
         request = _sweep.resolve(create, geom, dataset, step, outer)
         results: list[tuple[Array, Array]] = []
         for target in request.targets:
@@ -488,7 +488,7 @@ def _over(name: str, geom: Node, entity: str, expr: str, selection,
         settings['intvolume' if level == 2 else 'intsurface'] = True
     ftype = KINDS[name] + LEVELS[level]
     column = -(sdim + 1) if position else -1
-    with _datasets.scratch(model) as create:
+    with _comsol.scratch(model) as create:
         request = _sweep.resolve(create, geom, dataset, step, outer)
         if request.restricted is None:
             found = numbers_of(geom, entity, selection)

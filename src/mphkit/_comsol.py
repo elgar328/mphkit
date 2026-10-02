@@ -7,7 +7,7 @@ here, so that a change in either needs a fix in one place only.
 from __future__ import annotations
 
 import numbers
-from collections.abc import Iterable, Iterator
+from collections.abc import Callable, Iterable, Iterator
 from contextlib import contextmanager
 from difflib import get_close_matches
 from typing import Any
@@ -95,6 +95,29 @@ def parent_of(node: Node) -> Node:
     if parent is None:
         raise LookupError(f'Node "{node}" has no parent.')
     return parent
+
+
+def find_node(container, value, what: str, group: str, wrong: str):
+    """
+    Returns the Java object in `container` given by a node of the MPh
+    group `group`, an MPh name, a label or a tag. `wrong` is the message
+    for a value of another type; `what` names the object in messages.
+    """
+    if isinstance(value, Node):
+        if len(value.path) != 2 or value.path[0] != group:
+            raise TypeError(f'"{value}" is not a {what} node.')
+        key = tag_of(value)
+    elif isinstance(value, str):
+        key = value
+    else:
+        raise TypeError(wrong)
+    for tag in container.tags():
+        java = container.get(tag)
+        if key in (str(tag), name_of(java), str(java.label())):
+            return java
+    known = [name_of(container.get(tag)) for tag in container.tags()]
+    raise LookupError(f'No {what} "{key}"; the model has '
+                      f'{", ".join(repr(n) for n in known) or "none"}.')
 
 
 def geometry_of(node: Node) -> Node:
@@ -1049,6 +1072,32 @@ def history_off(model) -> Iterator[None]:
         yield
     finally:
         history.enable()
+
+
+@contextmanager
+def scratch(model) -> Iterator[Callable[[Any, str], Any]]:
+    """
+    Yields a function that creates temporary features, removed afterwards
+    together with everything else created, with the history switched off.
+    """
+    made: list[tuple[Any, str]] = []
+
+    def create(container, kind: str):
+        tag = str(container.uniquetag('mk'))
+        container.create(tag, kind)
+        made.append((container, tag))
+        return container.get(tag)
+
+    with history_off(model):
+        try:
+            yield create
+        finally:
+            for container, tag in reversed(made):
+                try:
+                    if tag in [str(t) for t in container.tags()]:
+                        container.remove(tag)
+                except Exception:
+                    pass
 
 
 ##########

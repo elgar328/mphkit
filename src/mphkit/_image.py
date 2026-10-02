@@ -12,11 +12,10 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Any
 
 from mph.node import Node
 
-from . import _comsol, _datasets
+from . import _comsol, _mesh
 
 # Suffix → COMSOL image type and the property holding its file name.
 FORMATS = {'.png': ('png', 'pngfilename'), '.jpg': ('jpeg', 'jpegfilename'),
@@ -181,7 +180,7 @@ def export(create, model, group, path: Path, size: tuple[int, int],
            sdim: int):
     """
     Writes the plot group `group` to `path` with a temporary image export
-    made with `create` (see `_datasets.scratch`). The export draws the
+    made with `create` (see `_comsol.scratch`). The export draws the
     group: running it before (`group.run()`) would also open a window of
     the COMSOL server, one per picture on Windows. Title and colour legend
     are on. Every setting must exist, so that a renamed property raises
@@ -282,7 +281,7 @@ def _mesh_picture(geom: Node, path: Path, selection, mesh,
     if sdim < 2:
         raise ValueError(f'Mesh pictures are for 2D and 3D geometries; '
                          f'"{geom}" is 1D.')
-    sequence = _mesh(geom, mesh)
+    sequence = _mesh.find_mesh(geom, mesh)
     _comsol.check_built(geom)
     level, entities = sdim, None
     if selection is not None:
@@ -294,7 +293,7 @@ def _mesh_picture(geom: Node, path: Path, selection, mesh,
                              f'"{selection}" selects {kind} entities.')
     model = geom.model.java
     view = geometry_view(geom)
-    with _datasets.scratch(model) as create:
+    with _comsol.scratch(model) as create:
         data = create(model.result().dataset(), 'Mesh')
         _comsol.set_property(data, 'mesh', str(sequence.tag()))
         if entities is not None:
@@ -318,45 +317,3 @@ def _mesh_picture(geom: Node, path: Path, selection, mesh,
             raise RuntimeError(f'COMSOL could not draw the mesh: '
                                f'{_comsol.reason(error)}') from error
     return path
-
-
-def _mesh(geom: Node, mesh, check: bool = True) -> Any:
-    """
-    Returns the Java mesh sequence to draw: the one given, or the only
-    non-empty one of the geometry's component. Raises for an empty mesh
-    and for one whose settings changed since it was built, where COMSOL
-    would draw nothing or the old mesh; `check=False` leaves that to the
-    caller.
-    """
-    meshes = _comsol.component_of(geom).mesh()
-    own = [str(t) for t in meshes.tags()]
-    if mesh is True:
-        if not own:
-            raise RuntimeError(f'Geometry "{geom}" has no mesh; create one '
-                               "with (model/'meshes').create(geom) and run "
-                               'model.mesh().')
-        full = [meshes.get(t) for t in own if not meshes.get(t).isEmpty()]
-        if not full:
-            raise RuntimeError(f'Geometry "{geom}" has no mesh yet; run '
-                               'model.mesh() first.')
-        if len(full) > 1:
-            names = ', '.join(f'"{_comsol.name_of(m)}" ({m.tag()})'
-                              for m in full)
-            raise ValueError(f'Geometry "{geom}" has several meshes: '
-                             f'{names}; pass mesh= one of these.')
-        sequence = full[0]
-    else:
-        wrong = (f'mesh must be True, False, or a mesh name, tag or node, '
-                 f'not {mesh!r}.')
-        try:
-            # the geometry's own meshes first: labels repeat across
-            # components
-            sequence = _datasets.find(meshes, mesh, 'mesh', 'meshes', wrong)
-        except LookupError:
-            sequence = _datasets.find(geom.model.java.mesh(), mesh, 'mesh',
-                                     'meshes', wrong)
-            raise ValueError(f'Mesh "{_comsol.name_of(sequence)}" does not '
-                             f'belong to geometry "{geom}".') from None
-    if check:
-        _comsol.check_mesh_built(sequence)
-    return sequence

@@ -82,7 +82,7 @@ class CatalogueError(RuntimeError):
 # Catalogue #
 #############
 
-def _root() -> str:
+def comsol_root() -> str:
     """Returns the installation folder of the running COMSOL client."""
     import jpype  # type: ignore[import-untyped]
     return str(jpype.JClass('java.lang.System').getProperty('cs.root'))
@@ -104,7 +104,7 @@ def catalogue(kind: str) -> tuple[Any, dict[str, Any]]:
     element and its properties by code. Raises `CatalogueError` when it is
     missing or not in the expected format.
     """
-    return _load(kind, _root())
+    return _load(kind, comsol_root())
 
 
 @functools.cache
@@ -305,7 +305,7 @@ def _entry(kind: str, element, type: str | None = None) -> Entry:
 def children(entry: Entry) -> list[Entry]:
     """Returns the feature types that can be created under `entry`."""
     if entry.kind == 'physics':
-        features = _features(_root())
+        features = _features(comsol_root())
         found = [features[code] for code in
                  (entry.element.get('features') or '').split()
                  if code in features]
@@ -385,7 +385,7 @@ def _java(node: Node):
     return _comsol.java_of(node)
 
 
-def _geometry_of_physics(model, physics):
+def geometry_of_physics(model, physics):
     """Returns the Java geometry of a physics interface, or `None`."""
     try:
         component = model.java.component(str(physics.model()))
@@ -409,7 +409,7 @@ def _physics_entry(node: Node) -> tuple[Any, Any, Entry | None]:
     Java geometry (or `None`) and the catalogue entry of the node.
     """
     physics = _comsol.java_of(Node(node.model, join(node.path[:2])))
-    geometry = _geometry_of_physics(node.model, physics)
+    geometry = geometry_of_physics(node.model, physics)
     if geometry is None:
         return physics, None, None
     return physics, geometry, _walk(node, _interface(physics, geometry))
@@ -476,7 +476,7 @@ def name_key(name: str) -> tuple[str, str]:
     return name.casefold(), name
 
 
-def _words(search) -> list[str]:
+def search_words(search) -> list[str]:
     """Splits a search into lower-case words."""
     if search is None:
         return []
@@ -485,7 +485,7 @@ def _words(search) -> list[str]:
     return search.lower().split()
 
 
-def _found(words: list[str], *texts) -> bool:
+def words_found(words: list[str], *texts) -> bool:
     """Tells whether every word occurs in the joined texts."""
     joined = ' '.join(t for t in texts if t).lower()
     return all(word in joined for word in words)
@@ -516,7 +516,7 @@ def stage(entry: Entry, words: list[str], common=frozenset()
     in `common` are not searched.
     """
     head = f'{entry.type} {entry.description or ""} {entry.tag or ""}'
-    if _found(words, head):
+    if words_found(words, head):
         return 1, False, None
     props = [p for p in entry.props.values() if _searched(p, common)]
     candidates: list[tuple[int, str, str]] = []
@@ -532,8 +532,8 @@ def stage(entry: Entry, words: list[str], common=frozenset()
                            _prop_text(prop)))
     for own in (True, False):
         for level, words_of, shown in candidates:
-            if _found(words, words_of) if own \
-                    else _found(words, head, words_of):
+            if words_found(words, words_of) if own \
+                    else words_found(words, head, words_of):
                 return level, not own, shown
     return None
 
@@ -713,7 +713,7 @@ def _filter(rows: dict[str, dict], words: list[str]) -> dict[str, dict]:
         choices = row['choices'] or {}
         texts = [name, row['description'], *choices,
                  *[d for d in choices.values() if d]]
-        if _found(words, *texts):
+        if words_found(words, *texts):
             found[name] = row
     return found
 
@@ -746,7 +746,7 @@ def physics_types(geom: Node, /, *, search: str | None = None) -> list[dict]:
     metal phase transformation) are left out. Sorted by type; a 3D
     geometry has more than 250, so search first.
     """
-    words = _words(search)
+    words = search_words(search)
     if not isinstance(geom, Node) or len(geom.path) != 2 \
             or geom.path[0] != 'geometries':
         raise TypeError(f'mk.physics_types takes a geometry, not {geom!r}.')
@@ -762,7 +762,7 @@ def physics_types(geom: Node, /, *, search: str | None = None) -> list[dict]:
         item = {'type': interface.tag,
                 'description': text(interface.get('descr')),
                 'tag': interface.get('id')}
-        if _found(words, *item.values()):
+        if words_found(words, *item.values()):
             found.append(item)
     return sorted(found, key=lambda item: name_key(item['type']))
 
@@ -828,7 +828,7 @@ def feature_types(parent: Node, /, *, search: str | None = None
     mechanics). Physics interfaces created without a geometry raise
     `TypeError`.
     """
-    words = _words(search)
+    words = search_words(search)
     _check_node(parent, 'mk.feature_types takes a physics interface or '
                         'feature, a geometry or work plane, a mesh or mesh '
                         'feature, or a study')
@@ -926,7 +926,7 @@ def properties(node: Node, type: str | None = None, /, *,
     acoustics) and give `{}`; once created, their node shows all
     properties.
     """
-    words = _words(search)
+    words = search_words(search)
     _check_node(node, 'mk.properties takes a model node (physics, '
                       'geometry, mesh, study or material)')
     if type is None:
@@ -970,7 +970,7 @@ def _existing_entry(node: Node, java) -> Entry | None:
 
 def _physics_settings(node: Node, java) -> dict[str, dict]:
     """Describes the property groups of a physics interface."""
-    geometry = _geometry_of_physics(node.model, java)
+    geometry = geometry_of_physics(node.model, java)
     listed: dict[str, dict[str, Prop]] | None = None
     try:
         entry = _interface(java, geometry) if geometry is not None else None
@@ -1078,7 +1078,7 @@ def variables(node: Node, /, *, search: str | None = None) -> list[dict]:
     expansion) are not included, since COMSOL lists none for them.
     Physics interfaces created without a geometry raise `TypeError`.
     """
-    words = _words(search)
+    words = search_words(search)
     _check_node(node, 'mk.variables takes a physics interface or a '
                       'geometry')
     if len(node.path) != 2 or node.path[0] not in ('physics', 'geometries'):
@@ -1086,7 +1086,7 @@ def variables(node: Node, /, *, search: str | None = None) -> list[dict]:
                         f'geometry, not "{node}".')
     java = _comsol.java_of(node)
     if node.path[0] == 'physics':
-        geometry = _geometry_of_physics(node.model, java)
+        geometry = geometry_of_physics(node.model, java)
         if geometry is None:
             raise _no_geometry(node)
         interfaces = [java]
@@ -1127,7 +1127,7 @@ def variables(node: Node, /, *, search: str | None = None) -> list[dict]:
     found = list(dependent.values()) + [others[n] for n in
                                         sorted(others, key=name_key)]
     return [item for item in found
-            if _found(words, item['name'], item['description'])]
+            if words_found(words, item['name'], item['description'])]
 
 
 def where_level(where: str) -> str | None:

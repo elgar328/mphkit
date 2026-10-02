@@ -1,6 +1,5 @@
 """
-Datasets of solved models: finding the one to evaluate, and temporary
-features for evaluating it.
+Datasets of solved models: finding the one to evaluate.
 
 COMSOL evaluates the first dataset of the model when none is given,
 whatever its geometry, so the helpers pick the solved dataset of the
@@ -8,8 +7,6 @@ geometry themselves and raise when there are several.
 """
 from __future__ import annotations
 
-from collections.abc import Callable, Iterator
-from contextlib import contextmanager
 from typing import Any, NamedTuple
 
 from mph.node import Node
@@ -90,17 +87,17 @@ def _lookup(geom: Node, dataset) -> tuple[Any, str]:
              f'not {dataset!r}.')
     if (isinstance(dataset, Node) and len(dataset.path) == 2
             and dataset.path[0] == 'studies'):
-        return find(model.study(), dataset, 'study', 'studies', wrong), \
-            'study'
+        return _comsol.find_node(model.study(), dataset, 'study', 'studies',
+                                 wrong), 'study'
     try:
-        return find(model.result().dataset(), dataset, 'dataset',
-                    'datasets', wrong), 'dataset'
+        return _comsol.find_node(model.result().dataset(), dataset,
+                                 'dataset', 'datasets', wrong), 'dataset'
     except LookupError as error:
         if not isinstance(dataset, str):
             raise
         try:
-            return find(model.study(), dataset, 'study', 'studies', wrong), \
-                'study'
+            return _comsol.find_node(model.study(), dataset, 'study',
+                                     'studies', wrong), 'study'
         except LookupError:
             studies = [repr(_comsol.name_of(model.study(tag)))
                        for tag in model.study().tags()]
@@ -236,29 +233,6 @@ def _pass(geom: Node, solutions: Solutions, sweep: str) -> str:
             f"make one, ds = mk.set((model/'datasets').create('Solution')"
             f'.java, solution={sweep!r}, geom={geom.tag()!r}), and pass '
             'dataset=str(ds.tag())')
-
-def find(container, value, what: str, group: str, wrong: str):
-    """
-    Returns the Java object in `container` given by a node of the MPh
-    group `group`, an MPh name, a label or a tag. `wrong` is the message
-    for a value of another type; `what` names the object in messages.
-    """
-    if isinstance(value, Node):
-        if len(value.path) != 2 or value.path[0] != group:
-            raise TypeError(f'"{value}" is not a {what} node.')
-        key = _comsol.tag_of(value)
-    elif isinstance(value, str):
-        key = value
-    else:
-        raise TypeError(wrong)
-    for tag in container.tags():
-        java = container.get(tag)
-        if key in (str(tag), _comsol.name_of(java), str(java.label())):
-            return java
-    known = [_comsol.name_of(container.get(tag)) for tag in container.tags()]
-    raise LookupError(f'No {what} "{key}"; the model has '
-                      f'{", ".join(repr(n) for n in known) or "none"}.')
-
 
 def geometry_tag(dataset) -> str | None:
     """Returns the tag of the geometry a Java dataset belongs to."""
@@ -428,29 +402,3 @@ def step_count(model, dataset) -> int:
 def solution_steps(solution) -> int:
     """Returns the number of steps (inner solutions) of a solution."""
     return len(solution.getSolutioninfo().getSolnum(1, True))
-
-
-@contextmanager
-def scratch(model) -> Iterator[Callable[[Any, str], Any]]:
-    """
-    Yields a function that creates temporary features, removed afterwards
-    together with everything else created, with the history switched off.
-    """
-    made: list[tuple[Any, str]] = []
-
-    def create(container, kind: str):
-        tag = str(container.uniquetag('mk'))
-        container.create(tag, kind)
-        made.append((container, tag))
-        return container.get(tag)
-
-    with _comsol.history_off(model):
-        try:
-            yield create
-        finally:
-            for container, tag in reversed(made):
-                try:
-                    if tag in [str(t) for t in container.tags()]:
-                        container.remove(tag)
-                except Exception:
-                    pass

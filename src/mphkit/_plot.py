@@ -163,7 +163,7 @@ def plot(geom: Node, expr: str, filename, /, selection: Node | None = None,
     _check_folder(filename)
     _sweep.check_outer(outer)
     model = geom.model.java
-    with _datasets.scratch(model) as create:
+    with _comsol.scratch(model) as create:
         pictures, many = _sweep.pictures(
             create, geom, dataset, step, outer,
             lambda many: _check_name(path, many))

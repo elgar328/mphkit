@@ -15,7 +15,7 @@ from typing import Any
 import numpy
 from mph.node import Node
 
-from . import _comsol, _datasets, _image, _measure
+from . import _comsol, _measure
 
 # Quality measures, by COMSOL's names, and their mesh variables
 MEASURES = {'skewness': 'qualskewness', 'maxangle': 'qualmaxangle',
@@ -158,6 +158,49 @@ def mesh_quality(geom: Node, entity: str = 'domain', /, selection=None, *,
     return result
 
 
+def find_mesh(geom: Node, mesh, check: bool = True) -> Any:
+    """
+    Returns the Java mesh sequence to draw: the one given, or the only
+    non-empty one of the geometry's component. Raises for an empty mesh
+    and for one whose settings changed since it was built, where COMSOL
+    would draw nothing or the old mesh; `check=False` leaves that to the
+    caller.
+    """
+    meshes = _comsol.component_of(geom).mesh()
+    own = [str(t) for t in meshes.tags()]
+    if mesh is True:
+        if not own:
+            raise RuntimeError(f'Geometry "{geom}" has no mesh; create one '
+                               "with (model/'meshes').create(geom) and run "
+                               'model.mesh().')
+        full = [meshes.get(t) for t in own if not meshes.get(t).isEmpty()]
+        if not full:
+            raise RuntimeError(f'Geometry "{geom}" has no mesh yet; run '
+                               'model.mesh() first.')
+        if len(full) > 1:
+            names = ', '.join(f'"{_comsol.name_of(m)}" ({m.tag()})'
+                              for m in full)
+            raise ValueError(f'Geometry "{geom}" has several meshes: '
+                             f'{names}; pass mesh= one of these.')
+        sequence = full[0]
+    else:
+        wrong = (f'mesh must be True, False, or a mesh name, tag or node, '
+                 f'not {mesh!r}.')
+        try:
+            # the geometry's own meshes first: labels repeat across
+            # components
+            sequence = _comsol.find_node(meshes, mesh, 'mesh', 'meshes',
+                                         wrong)
+        except LookupError:
+            sequence = _comsol.find_node(geom.model.java.mesh(), mesh,
+                                         'mesh', 'meshes', wrong)
+            raise ValueError(f'Mesh "{_comsol.name_of(sequence)}" does not '
+                             f'belong to geometry "{geom}".') from None
+    if check:
+        _comsol.check_mesh_built(sequence)
+    return sequence
+
+
 def _sequence(geom: Node, mesh) -> Any:
     """
     Returns the Java mesh sequence. If it is empty or changed since it
@@ -167,8 +210,8 @@ def _sequence(geom: Node, mesh) -> Any:
     all of them are named.
     """
     try:
-        sequence = _image._mesh(geom, True if mesh is None else mesh,
-                                check=False)
+        sequence = find_mesh(geom, True if mesh is None else mesh,
+                             check=False)
     except RuntimeError as error:
         meshes = _comsol.component_of(geom).mesh()
         reasons = _failures(geom, [meshes.get(t) for t in meshes.tags()])
@@ -241,7 +284,7 @@ def _evaluate(geom: Node, sequence, level: int, variable: str, points,
     read again with only its own boundary selected.
     """
     model = geom.model.java
-    with _datasets.scratch(model) as create:
+    with _comsol.scratch(model) as create:
         data = create(model.result().dataset(), 'Mesh')
         data.set('mesh', str(sequence.tag()))
         data.set('sorder', 'linear')

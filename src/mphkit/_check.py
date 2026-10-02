@@ -120,7 +120,7 @@ def check(model: Model, /) -> list[dict]:
     """
     if not isinstance(model, Model):
         raise TypeError(f'mk.check takes a model, not {model!r}.')
-    interfaces = _interfaces(model)
+    interfaces = active_physics(model)
     found: list[dict] = []
     components: set[str] = set()
     materials: set[str] = set()
@@ -150,7 +150,7 @@ def check(model: Model, /) -> list[dict]:
 # Parsing #
 ###########
 
-def _interfaces(model: Model) -> list[Physics]:
+def active_physics(model: Model) -> list[Physics]:
     """
     Returns the active physics interfaces on a geometry, after checking
     that their geometries are built.
@@ -168,7 +168,7 @@ def _interfaces(model: Model) -> list[Physics]:
                 dims = _comsol.selection_dims(java.selection())
             except Exception:
                 continue
-            geometry = _catalog._geometry_of_physics(model, java)
+            geometry = _catalog.geometry_of_physics(model, java)
             if geometry is None or not dims:
                 continue
             key = (str(ctag), str(geometry.tag()))
@@ -416,7 +416,8 @@ def _material_units(model: Model, component, done: set[str],
 def _no_material(physics: Physics, features: list[Feature], found):
     """Reports domain features that take properties from no material."""
     sdim = physics.sdim
-    held = {n for _, numbers in _materials._held(physics.component, sdim)
+    held = {n for _, numbers in _materials.held_domains(physics.component,
+                                                        sdim)
             for n in numbers}
     coupled: set[int] = set()
     try:
