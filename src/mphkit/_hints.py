@@ -4,7 +4,7 @@ Suggestions for names that do not exist in `mphkit` or `mphkit.sel`.
 People and AI assistants guess helper names: `mk.box` for `mk.sel.box`,
 `mk.select_box`, `mk.sel_box`, `mk.sel.block`. Both modules answer an
 unknown name with the helper that was probably meant and a pointer to
-`help()`.
+the overview, `mphkit.__doc__`, which lists every helper.
 
 The hook is a module subclass rather than a module-level `__getattr__`:
 type checkers treat a module with `__getattr__` as having every attribute,
@@ -202,6 +202,12 @@ SOLVE_NOTE = ("Studies, meshes and solving are plain MPh: (model/'studies')"
               ".create(name='s'), study.create('Stationary'), "
               "(model/'meshes').create(geom), model.solve('s'); "
               'mphkit.feature_types(study) lists the step types.')
+LOAD_NOTE = ("An existing model: old = client.load('file.mph') in MPh; "
+             'mphkit.import_ imports CAD geometry. help(mphkit.sel.find) '
+             'moves its numbered selections.')
+JAVA_NOTE = ("node.java is the COMSOL Java object of an MPh node (mk.set "
+             "takes it too); model.save('model.java') writes a model as "
+             'Java.')
 GUESSED: dict[str, tuple[tuple[str, ...], str]] = {
     **{name: ((), SWEEP_NOTE) for name in (
         'parametric_sweep', 'param_sweep', 'parameter_sweep', 'parametric',
@@ -232,7 +238,15 @@ GUESSED: dict[str, tuple[tuple[str, ...], str]] = {
              "search='flux') finds the names."),
     **{name: ((), 'Animations stay plain MPh; mphkit.plot draws one step '
                   'per call (step=).') for name in ('animate', 'animation')},
+    **{name: ((), LOAD_NOTE) for name in (
+        'load_model', 'load_mph', 'open_model', 'import_model',
+        'import_mph')},
+    **{name: ((), JAVA_NOTE) for name in ('to_java', 'export_java')},
 }
+
+# Notes for whole names only: with a prefix they mean other things, e.g.
+# `add_load` a structural load
+EXACT = {'load': LOAD_NOTE, 'java': JAVA_NOTE}
 
 # How selection helpers are called; `{kind}` stands for the entity kind.
 SEL_CALL = '(geom, {kind}, ...)'
@@ -274,8 +288,16 @@ def missing_attribute(module: str, name: str) -> AttributeError:
         return AttributeError(f'module {module!r} has no attribute {name!r}')
 
 
+# The end of every message: the overview lists all helpers (its Index)
+POINTER = {MAIN: 'print(mphkit.__doc__) lists all helpers.',
+           SEL: "print(mphkit.__doc__) lists all helpers, mphkit.sel's too."}
+
+
 def _message(module: str, name: str) -> str:
-    """Builds the error message with suggestions and a pointer to help()."""
+    """
+    Builds the error message with suggestions and a pointer to the
+    overview.
+    """
     suggestions, note = _suggest(module, name)
     if note is None and len(suggestions) == 1:
         note = NOTES.get(suggestions[0])
@@ -284,7 +306,7 @@ def _message(module: str, name: str) -> str:
         message += f' Did you mean {" or ".join(suggestions)}?'
     if note:
         message += f' {note}'
-    return f'{message} See help({module}) for all helpers.'
+    return f'{message} {POINTER[module]}'
 
 
 def _names() -> dict[str, dict[str, str]]:
@@ -334,6 +356,8 @@ def _suggest(module: str, name: str) -> Result:
     intent, prefix, rest = _parse(name.lower())
     if rest in ('evaluate', 'eval'):
         return [], EVALUATE_NOTE
+    if module == MAIN and name.lower() in EXACT:
+        return [], EXACT[name.lower()]
     if module == MAIN and rest in GUESSED:
         meant, guessed = GUESSED[rest]
         return list(meant), guessed

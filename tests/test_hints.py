@@ -219,7 +219,7 @@ def test_suggestion(module, name, expected):
     text = message(module, name)
     assert text.startswith(f"module '{module.__name__}' has no attribute {name!r}.")
     assert expected in text
-    assert text.endswith(f'See help({module.__name__}) for all helpers.')
+    assert text.endswith(_hints.POINTER[module.__name__])
 
 
 @pytest.mark.parametrize('module, name', [
@@ -256,6 +256,38 @@ def test_guessed_notes(name, expected):
     assert expected in message(mk, name)
 
 
+@pytest.mark.parametrize('name, expected', [
+    ('load', "old = client.load('file.mph')"),
+    ('load_model', "old = client.load('file.mph')"),
+    ('import_model', 'mphkit.import_ imports CAD geometry'),
+    ('import_mph', 'help(mphkit.sel.find)'),
+    ('java', 'node.java is the COMSOL Java object'),
+    ('export_java', "model.save('model.java')")])
+def test_existing_model_notes(name, expected):
+    assert expected in message(mk, name)
+
+
+@pytest.mark.parametrize('name, expected', [
+    ('make_mesh', "(model/'meshes').create(geom)"),
+    ('add_study', "study.create('Stationary')"),
+    ('get_results', 'The results helpers are mphkit.integral'),
+    ('add_sweep', "mphkit.feature(geom, 'Sweep', ...) (a geometry sweep)")])
+def test_prefixed_guesses(name, expected):
+    # a prefix as in make_mesh keeps the note of the word after it
+    assert expected in message(mk, name)
+
+
+def test_load_with_prefix():
+    # add_load is more likely a structural load than an existing model
+    assert 'client.load' not in message(mk, 'add_load')
+    assert 'client.load' not in message(mk, 'create_load')
+
+
+def test_sel_pointer():
+    assert message(mk.sel, 'xyzzy').endswith(
+        "print(mphkit.__doc__) lists all helpers, mphkit.sel's too.")
+
+
 def test_sel_result_stays():
     assert mk.sel.result is not None
     assert 'results helpers' not in message(mk.sel, 'results')
@@ -273,11 +305,12 @@ def test_meanings_name_helpers():
 def test_no_suggestion_still_points_to_help():
     text = message(mk, 'xyzzy')
     assert 'Did you mean' not in text
-    assert 'help(mphkit)' in text
+    assert text.endswith('print(mphkit.__doc__) lists all helpers.')
     # no far-fetched matches, and no module suggesting itself
     assert 'Did you mean' not in message(mk, 'rect')
     assert 'mphkit.sel?' not in message(mk.sel, 'selection')
-    assert message(mk, 'bounding').count('mphkit.') == 1
+    # one suggestion, before the pointer to mphkit.__doc__
+    assert message(mk, 'bounding').split('?')[0].count('mphkit.') == 1
 
 
 def test_python_adds_no_second_suggestion():
@@ -286,7 +319,7 @@ def test_python_adds_no_second_suggestion():
         run = subprocess.run([sys.executable, '-c', f'import mphkit; mphkit.{name}'],
                              capture_output=True, text=True)
         last = run.stderr.strip().splitlines()[-1]
-        assert 'help(mphkit)' in last
+        assert 'print(mphkit.__doc__)' in last
         assert 'Did you mean:' not in last
 
 

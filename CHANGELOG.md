@@ -94,6 +94,17 @@ until 1.0, a minor release (0.2, 0.3, ...) may change the API. See
   Unknown names such as `mk.mesh_stats`, `mk.quality_of_mesh` or
   `mk.mphmeshstats` suggest it, and mesh picture hints mention it.
 
+- Unknown names such as `mk.load`, `mk.import_model` or `mk.java` say
+  how to open an existing model with MPh and what `node.java` is.
+
+### Changed
+
+- The package overview, `print(mphkit.__doc__)`, is half as long: one
+  runnable script, the rules and an index of every helper, with the
+  details in each helper's `help()`. Errors for unknown names end with
+  "print(mphkit.__doc__) lists all helpers." instead of pointing to
+  `help(mphkit)`, which appends every helper's documentation.
+
 ### Fixed
 
 - `mk.plot` and mesh pictures (`mk.image(..., mesh=True)`) no longer open
