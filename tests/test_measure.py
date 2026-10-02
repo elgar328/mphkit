@@ -54,6 +54,20 @@ def test_measure_errors(pair):
         mk.measure(pair, 'domain', True)
     with pytest.raises(TypeError):
         mk.measure(pair, 'domain', 1.5)
+    # strings: all entities, or a selection by name
+    every = r'leave out the selection \(None\) for all domain entities\.$'
+    for text in ('domain', 'volumes', 'all'):
+        with pytest.raises(TypeError, match=f'not {text!r}; {every}'):
+            mk.measure(pair, 'domain', text)
+    with pytest.raises(TypeError, match=r"not 'left'; a selection by name is "
+                                        r"model/'selections'/'left'\.$"):
+        mk.measure(pair, 'domain', 'left')
+    # where None means "not given", no advice to leave it out
+    with pytest.raises(TypeError, match=r"model/'selections'/'boundary'"):
+        mk.sel.neighbors(pair, 'domain', boundary='boundary')
+    # a number as a 0-d array, as numpy gives it
+    assert mk.measure(pair, 'domain', numpy.array(2)) == \
+        pytest.approx(mk.measure(pair, 'domain', 2))
 
 
 def test_bounding_box(pair):

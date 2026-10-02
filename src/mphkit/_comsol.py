@@ -284,14 +284,35 @@ def entity_numbers(value) -> list[int]:
     return []
 
 
+def selection_hint(geom: Node, text: str, every: str) -> str:
+    """
+    Says what to pass instead of the string `text` given as a selection:
+    for an entity kind such as `'faces'` or for `'all'`, `every` (with
+    `{kind}` for the kind), else the selection of that name.
+    """
+    try:
+        dim = parent_dim(geom)
+    except Exception:
+        dim = 3
+    kind = entity_suggestion(text, dim)
+    if kind is not None or text.lower() == 'all':
+        return every.format(kind=repr(kind) if kind else 'entity')
+    return f"a selection by name is model/'selections'/{text!r}"
+
+
 def listed_numbers(found: list[int]) -> str:
     """Writes entity numbers for a message: `1` or `[1, 2]`."""
     return str(found[0]) if len(found) == 1 else str(found)
 
 
-def check_selection(geom: Node, selection: Node):
+def check_selection(geom: Node, selection: Node, every: str | None = None):
     """
     Returns the Java selection behind a selection node of `geom`.
+
+    `every` says how to take all entities, for a string such as
+    `'boundary'` given instead of a node; `{kind}` in it stands for the
+    quoted entity kind, or `entity` for `'all'`. By default: leave out the
+    selection.
 
     MPh finds selections by label, and the selections COMSOL derives from
     one feature (e.g. `geom1_blk1_dom` and `geom1_blk1_bnd`) share the
@@ -302,13 +323,16 @@ def check_selection(geom: Node, selection: Node):
             or selection.path[0] != 'selections'):
         found = entity_numbers(selection)
         if found:
-            what = ('is an entity number' if len(found) == 1
-                    else 'are entity numbers')
-            raise TypeError(f'{listed_numbers(found)} {what}, not a selection '
-                            'node; numbers change with the geometry, so '
-                            'select by location with mk.sel.box and the '
-                            'like.')
-        raise TypeError(f'{selection!r} is not a selection node.')
+            raise TypeError(f'Expected a selection node, not entity numbers '
+                            f'such as {listed_numbers(found)}: numbers change '
+                            'with the geometry, so select by location with '
+                            'mk.sel.box and the like.')
+        message = f'{selection!r} is not a selection node'
+        if isinstance(selection, str):
+            message += '; ' + selection_hint(
+                geom, selection, every or 'leave out the selection for all '
+                                          'entities')
+        raise TypeError(f'{message}.')
     java = java_of(selection)
     tag = str(java.tag())
     gtag = geom.tag()
@@ -695,6 +719,9 @@ def resolve_object(container, ref: str) -> str:
     raise LookupError(f'No geometry object with tag or name "{ref}".')
 
 
+# Helpers that pass their `input` on to an input of another name
+INPUT_HELPERS = {'Fillet3D': 'mk.fillet', 'Fillet': 'mk.fillet',
+                 'Chamfer3D': 'mk.chamfer', 'Chamfer': 'mk.chamfer'}
 INPUT_MODES = {
     ('Delete', 'input'): 'objects',
     ('Fillet3D', 'edge'): 'all', ('Chamfer3D', 'edge'): 'all',
@@ -814,7 +841,11 @@ def set_input(owner: Node, container, java, key: str, value):
     mode = INPUT_MODES.get((type_name(java), key))
     levels = [int(d) for d in selection.dimension()]
     dim = levels[0] if levels else None
-    refs = value if isinstance(value, (list, tuple)) else [value]
+    found = entity_numbers(value)
+    if found:
+        raise TypeError(_numbers_input(owner, java, key, mode, dim, found))
+    refs = (list(value) if isinstance(value, (list, tuple, numpy.ndarray))
+            else [value])
     sources, objects = [], []
     for ref in refs:
         source = selection_source(owner, ref) if isinstance(ref, Node) \
@@ -858,9 +889,48 @@ def set_input(owner: Node, container, java, key: str, value):
         for tag in objects:
             selection.all(tag)
     else:
+        made = ('made in the plane' if is_workplane(owner.java)
+                else "made with where='geometry'")
         raise TypeError(f'Input "{key}" takes entities of level {dim}, not '
-                        "objects; pass a selection made with "
-                        "where='geometry'.")
+                        f'objects; pass a selection {made}.')
+
+
+def _numbers_input(owner: Node, java, key: str, mode: str | None,
+                   dim: int | None, found: list[int]) -> str:
+    """
+    Explains that the input `key` of a geometry feature takes no numbers,
+    by what it takes: objects, objects or entities (`mode`, see
+    `INPUT_MODES`) or entities of level `dim` only.
+    """
+    kind = type_name(java)
+    helper = INPUT_HELPERS.get(kind)
+    where = f'Input "{key}" of {kind}'
+    if helper:
+        where += f' (the input of {helper})'
+    plane = is_workplane(owner.java)
+    parent, extra = ('plane', '') if plane else ('geom', ", where='geometry'")
+    numbers = f'not numbers such as {listed_numbers(found)}'
+    objects = 'geometry objects (their nodes or names) or one selection'
+    if dim is None:
+        return f'{where} takes {objects}, {numbers}.'
+    reason = 'entity numbers change with the geometry, so select by location'
+    if mode == 'objects':
+        level = 'object' if plane else 'domain'
+        return (f'{where} takes {objects}, {numbers}: {reason}, e.g. '
+                f'mk.sel.box({parent}, {level!r}, ...{extra}).')
+    try:
+        name = entity_level_name(dim, parent_dim(owner)) or str(dim)
+    except Exception:
+        name = str(dim)
+    example = f'e.g. mk.sel.box({parent}, {name!r}, ...{extra})'
+    if mode == 'all':
+        return f'{where} takes geometry objects or one selection, ' \
+               f'{numbers}: {reason}, {example}.'
+    if plane:
+        return f'{where} takes one selection made in the plane, ' \
+               f'{numbers}: {reason}, {example}.'
+    return (f"{where} takes one selection made with where='geometry', "
+            f"{numbers}: {reason} with mk.sel and where='geometry'.")
 
 
 #####################

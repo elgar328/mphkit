@@ -114,7 +114,13 @@ until 1.0, a minor release (0.2, 0.3, ...) may change the API. See
   given entity numbers, instead of "'int' object is not iterable", a
   `ValueError` about the property `input` or COMSOL's "Unknown
   selection". `sel.entities`, `mk.image` and `mk.coordinate_system` say
-  that a number given as a selection is an entity number.
+  that a number given as a selection is an entity number, and a string
+  such as `'boundary'` or a selection's name gets what to pass instead.
+  Geometry operations (`mk.fillet`, `mk.chamfer`, `mk.delete`, the
+  Boolean operations and inputs of `mk.feature`) given numbers say to
+  select by location or to pass the objects, instead of "Cannot use 3 as
+  a geometry input"; in a work plane, they no longer ask for a selection
+  made with `where='geometry'`.
 - The error for an unknown property name given to the geometry helpers,
   or to `mk.set` on a feature of a geometry, physics, mesh or study, or
   on a material, ends with the call that lists the properties, e.g.
@@ -128,6 +134,10 @@ until 1.0, a minor release (0.2, 0.3, ...) may change the API. See
   Windows.
 - `mk.measure`, `mk.bounding_box` and `mk.sel.find` no longer leave lines
   in the model's history, which showed up in a Java export of the model.
+- An entity number given as a 0-d numpy array, e.g. `numpy.array(2)`, is
+  taken as a selection by `mk.measure`, `mk.bounding_box`,
+  `mk.coordinates`, `mk.material`, `mk.mesh_quality` and
+  `mk.sel.neighbors`, instead of raising "iteration over a 0-d array".
 
 ## [0.2.0] - 2026-09-29
 

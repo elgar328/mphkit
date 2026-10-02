@@ -107,9 +107,10 @@ def _inputs(geom: Node, where: str | None, values, call: str,
                 kind += f', input_entity={entity!r}'
             example = f'mk.sel.adjacent({parent}, {example}{kind}{extra})'
         raise TypeError(f'sel.{call} takes selection nodes, not entity '
-                        f'numbers ({", ".join(map(str, found))}): numbers '
-                        'change with the geometry, so select by location, '
-                        f'e.g. {example}.')
+                        'numbers such as '
+                        f'{_comsol.listed_numbers(found)}: numbers change '
+                        'with the geometry, so select by location, e.g. '
+                        f'{example}.')
     if where == 'component':
         for value in values:
             if isinstance(value, Node) and value.path[0] == 'geometries':
@@ -547,7 +548,8 @@ def entities(geom: Node, selection: Node, /) -> list[int]:
     """
     _comsol.check_not_workplane(geom, 'sel.entities')
     _comsol.check_built(geom)
-    java = _comsol.check_selection(geom, selection)
+    java = _comsol.check_selection(
+        geom, selection, 'mk.sel.all(geom, {kind}) selects all of them')
     return sorted(int(e) for e in java.entities())
 
 
@@ -577,7 +579,8 @@ def neighbors(geom: Node, entity: str, /, *, domain=None, boundary=None,
                         "neighbors(geom, 'domain', boundary=6) for the "
                         "domains next to boundary 6.")
     [(kind, value)] = given.items()
-    found = _measure.numbers_of(geom, kind, value)
+    # None means "not given" here: no hint to leave the selection out
+    found = _measure.numbers_of(geom, kind, value, every=False)
     source = _comsol.entity_dim(geom, kind)
     target = _comsol.entity_dim(geom, entity)
     java = _comsol.java_of(geom)

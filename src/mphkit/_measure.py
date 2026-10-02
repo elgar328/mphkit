@@ -24,12 +24,16 @@ from . import _comsol
 AXES = 'xyz'
 
 
-def numbers_of(geom: Node, entity: str, selection) -> list[int]:
+def numbers_of(geom: Node, entity: str, selection,
+               every: bool = True) -> list[int]:
     """
     Returns the entity numbers `selection` stands for in the built geometry.
 
     `selection` is an entity number, a list of numbers, a selection node at
-    the level of `entity`, or `None` for all entities of that level.
+    the level of `entity`, or `None` for all entities of that level. With
+    `every`, a string such as `'boundary'` or `'all'` is answered with
+    leaving out the selection; callers where `None` means something else
+    turn it off.
     """
     _comsol.check_built(geom)
     dim = _comsol.entity_dim(geom, entity)
@@ -43,13 +47,19 @@ def numbers_of(geom: Node, entity: str, selection) -> list[int]:
             raise ValueError(f'Selection "{selection}" is not a {entity} '
                              'selection.')
         return [int(e) for e in java.entities()]
-    items = selection if isinstance(
-        selection, (list, tuple, numpy.ndarray)) else [selection]
+    many = (isinstance(selection, (list, tuple))
+            or isinstance(selection, numpy.ndarray) and selection.ndim > 0)
+    items = selection if many else [selection]
     found = []
     for item in items:
-        if isinstance(item, bool) or not isinstance(item, numbers.Integral):
-            named = (f"; a selection by name is model/'selections'/"
-                     f'{item!r}' if isinstance(item, str) else '')
+        if not _comsol.is_integer(item):
+            named = ''
+            if isinstance(item, str):
+                every_ = (f'leave out the selection (None) for all {entity} '
+                          'entities' if every else
+                          "a selection by name is model/'selections'/"
+                          f'{item!r}')
+                named = '; ' + _comsol.selection_hint(geom, item, every_)
             raise TypeError(f'Expected entity numbers, a selection node '
                             f'or None, not {selection!r}{named}.')
         found.append(int(item))

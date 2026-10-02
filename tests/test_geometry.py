@@ -252,7 +252,7 @@ def test_coordinate_system_errors(model, geom):
                              selection=mk.sel.box(geom, 'boundary', z=0))
     with pytest.raises(ValueError, match='stretchingType'):
         mk.coordinate_system(geom, 'PML', stretchingtype='rational')
-    with pytest.raises(TypeError, match='^1 is an entity number'):
+    with pytest.raises(TypeError, match='not entity numbers such as 1: '):
         mk.coordinate_system(geom, 'PML', selection=1)
     with pytest.raises(Exception):
         mk.coordinate_system(geom, 'NoSuchType')
@@ -984,3 +984,76 @@ def test_curved_faces_split(model):
     wall = mk.sel.cylinder(geom, 'boundary', (5, 5, 0), 1.01, rin=0.99,
                            bottom=-0.01, top=1.01)
     assert len(mk.sel.entities(geom, wall)) == 4
+
+
+def test_geometry_inputs_reject_numbers(model):
+    # entity numbers fail before anything is created, with a way out
+    geom = mk.geometry(model, 3)
+    plate = mk.block(geom, (1, 1, 1), name='plate')
+    mk.block(geom, (1, 1, 1), (2, 0, 0), name='other')
+    model.build(geom)
+
+    def features():
+        return [str(t) for t in geom.java.feature().tags()]
+    before = features()
+    reason = ('entity numbers change with the geometry, so select by '
+              'location, e.g. ')
+    with pytest.raises(TypeError) as error:
+        mk.fillet(geom, [3, 5], 0.1)
+    assert str(error.value) == (
+        'Input "edge" of Fillet3D (the input of mk.fillet) takes geometry '
+        'objects or one selection, not numbers such as [3, 5]: ' + reason +
+        "mk.sel.box(geom, 'edge', ..., where='geometry').")
+    with pytest.raises(TypeError, match=r'^Input "edge" of Chamfer3D \(the '
+                       r'input of mk\.chamfer\) .* such as 3: '):
+        mk.chamfer(geom, 3, 0.1)
+    with pytest.raises(TypeError, match=r'such as \[3, 5\]: '):
+        mk.fillet(geom, numpy.array([3, 5]), 0.1)
+    with pytest.raises(TypeError) as error:
+        mk.delete(geom, 4)
+    assert str(error.value) == (
+        'Input "input" of Delete takes geometry objects (their nodes or '
+        'names) or one selection, not numbers such as 4: ' + reason +
+        "mk.sel.box(geom, 'domain', ..., where='geometry').")
+    with pytest.raises(TypeError) as error:
+        mk.union(geom, [1, 2])
+    assert str(error.value) == (
+        'Input "input" of Union takes geometry objects (their nodes or '
+        'names) or one selection, not numbers such as [1, 2].')
+    with pytest.raises(TypeError, match=r'^Input "input2" of Difference .* '
+                                        r'such as 2\.$'):
+        mk.difference(geom, plate, [2])
+    with pytest.raises(TypeError, match=r'such as 1\.$'):
+        mk.feature(geom, 'Move', input=[1], displx=1)
+    assert features() == before
+    # objects in a numpy array, and the selection the message suggests
+    mk.move(geom, numpy.array([plate]), (0, 0, 1))
+    top = mk.sel.box(geom, 'edge', z=2, where='geometry')
+    fillet = mk.fillet(geom, top, 0.1)
+    model.build(geom)
+    named = str(fillet.java.selection('edge').named())
+    with pytest.raises(TypeError, match=r'such as 3: '):
+        mk.set(fillet, edge=[3])
+    assert str(fillet.java.selection('edge').named()) == named
+
+
+def test_geometry_inputs_reject_numbers_2d(model):
+    geom = mk.geometry(model, 2)
+    mk.square(geom, 1)
+    model.build(geom)
+    with pytest.raises(TypeError, match=r"e\.g\. mk\.sel\.box\(geom, 'point', "
+                                        r"\.\.\., where='geometry'\)\.$"):
+        mk.fillet(geom, [3], 0.1)
+    corner = mk.sel.box(geom, 'point', x=1, y=1, where='geometry')
+    mk.fillet(geom, corner, 0.2)                 # as the message suggests
+    model.build(geom)
+    assert mk.measure(geom, 'domain') == pytest.approx(
+        1 - (1 - math.pi/4)*0.2**2, rel=1e-4)    # the arc is approximated
+    plane = mk.workplane(mk.geometry(model, 3))
+    mk.square(plane, 1)
+    with pytest.raises(TypeError, match=r"e\.g\. mk\.sel\.box\(plane, "
+                                        r"'point', \.\.\.\)\.$"):
+        mk.fillet(plane, [1], 0.1)
+    with pytest.raises(TypeError, match=r"e\.g\. mk\.sel\.box\(plane, "
+                                        r"'object', \.\.\.\)\.$"):
+        mk.delete(plane, 1)

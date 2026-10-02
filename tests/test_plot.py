@@ -172,8 +172,8 @@ def test_kinds_of_selections(solved, tmp_path):
                              name='around')
     for n, selection in enumerate((result, around)):
         assert mk.plot(geom, 'T', tmp_path/f'{n}.png', selection).exists()
-    with pytest.raises(TypeError, match=r'^3 is an entity number, not a '
-                                        r'selection node; .*mk\.sel\.box'):
+    with pytest.raises(TypeError, match=r'^Expected a selection node, not '
+                       r'entity numbers such as 3: .*mk\.sel\.box'):
         mk.plot(geom, 'T', tmp_path/'3.png', 3)
     assert not (tmp_path/'3.png').exists()
 

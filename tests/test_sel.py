@@ -101,31 +101,31 @@ def test_set_operations_reject_numbers(model, cube):
     selections = [str(t) for t in model.java.selection().tags()]
     features = [str(t) for t in cube.java.feature().tags()]
     calls = [
-        (lambda: mk.sel.union(cube, 'boundary', [1, 2]), 'union', '(1, 2)'),
-        (lambda: mk.sel.union(cube, 'boundary', 1), 'union', '(1)'),
-        (lambda: mk.sel.union(cube, 'boundary', [left, 3]), 'union', '(3)'),
+        (lambda: mk.sel.union(cube, 'boundary', [1, 2]), 'union', '[1, 2]'),
+        (lambda: mk.sel.union(cube, 'boundary', 1), 'union', '1'),
+        (lambda: mk.sel.union(cube, 'boundary', [left, 3]), 'union', '3'),
         (lambda: mk.sel.union(cube, 'boundary', numpy.array([1, 2])),
-         'union', '(1, 2)'),
+         'union', '[1, 2]'),
         (lambda: mk.sel.union(cube, 'boundary', numpy.int64(2)), 'union',
-         '(2)'),
+         '2'),
         (lambda: mk.sel.union(cube, 'boundary', numpy.array(2)), 'union',
-         '(2)'),
+         '2'),
         (lambda: mk.sel.intersection(cube, 'boundary', [1]), 'intersection',
-         '(1)'),
+         '1'),
         (lambda: mk.sel.difference(cube, 'boundary', [1], left),
-         'difference', '(1)'),
+         'difference', '1'),
         (lambda: mk.sel.difference(cube, 'boundary', left, 2),
-         'difference', '(2)'),
-        (lambda: mk.sel.complement(cube, 'boundary', 3), 'complement', '(3)'),
+         'difference', '2'),
+        (lambda: mk.sel.complement(cube, 'boundary', 3), 'complement', '3'),
         (lambda: mk.sel.union(cube, 'boundary', [1, 2], where='geometry'),
-         'union', '(1, 2)'),
+         'union', '[1, 2]'),
     ]
     for call, name, numbers in calls:
         with pytest.raises(TypeError) as error:
             call()
         text = str(error.value)
         assert text.startswith(f'sel.{name} takes selection nodes, not '
-                               f'entity numbers {numbers}: ')
+                               f'entity numbers such as {numbers}: ')
         assert "mk.sel.box(geom, 'boundary', ..." in text
     with pytest.raises(TypeError, match=r"e\.g\. mk\.sel\.box\(geom, "
                                         r"'boundary', \.\.\., "
@@ -320,13 +320,20 @@ def test_entities_errors(model, cube):
         mk.sel.entities(cube, model/'selections'/'missing')
     with pytest.raises(TypeError):
         mk.sel.entities(cube, cube/'cube')
-    with pytest.raises(TypeError, match=r'^1 is an entity number, not a '
-                                        r'selection node; .*mk\.sel\.box'):
+    with pytest.raises(TypeError, match=r'^Expected a selection node, not '
+                       r'entity numbers such as 1: .*mk\.sel\.box'):
         mk.sel.entities(cube, 1)
-    with pytest.raises(TypeError, match=r'^\[1, 2\] are entity numbers'):
+    with pytest.raises(TypeError, match=r'such as \[1, 2\]: '):
         mk.sel.entities(cube, [1, 2])
-    with pytest.raises(TypeError, match=r"^'x' is not a selection node\.$"):
+    with pytest.raises(TypeError, match=r"^'x' is not a selection node; a "
+                       r"selection by name is model/'selections'/'x'\.$"):
         mk.sel.entities(cube, 'x')
+    with pytest.raises(TypeError, match=r"^'faces' is not a selection node; "
+                       r"mk\.sel\.all\(geom, 'boundary'\) selects all of "
+                       r"them\.$"):
+        mk.sel.entities(cube, 'faces')
+    with pytest.raises(TypeError, match=r"mk\.sel\.all\(geom, entity\)"):
+        mk.sel.entities(cube, 'all')
     # the selections COMSOL derives from one feature share its label
     block = cube/'cube'
     block.property('selresult', True)
