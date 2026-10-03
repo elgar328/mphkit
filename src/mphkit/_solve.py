@@ -463,7 +463,13 @@ def progress(path, /, *, pid: int | None = None) -> dict:
     ```
 
     From the log (written by `mk.log_progress` or `comsol batch
-    -batchlog`; `None` where the log has no such line yet):
+    -batchlog`; `None` where the log has no such line yet). COMSOL logs
+    its work in blocks, one per solver or compile step; `percent`, `task`,
+    `dofs`, `solved_dofs`, `time`, `solver_time` and `step_size` start
+    again from `None` with each block, and the blocks `mk.problem_size`
+    logs while it runs are skipped. Lines after the last block (saving,
+    evaluating results) still set `percent` and `task`, while `block`
+    names the block that ended:
 
     - `percent`, `task`: COMSOL's progress and what it does. The percent is
       of all that COMSOL is running at the time (a whole study, say), not
@@ -473,8 +479,10 @@ def progress(path, /, *, pid: int | None = None) -> dict:
       is `None` in a `block` until that block logs it; for a short solve
       that may be only at 100.
     - `parameter`: the parameter value of a sweep being solved, e.g.
-      `'hh = 300'` (the log does not say how many follow).
-    - `block`, `block_open`: the solver step being run, e.g.
+      `'hh = 300'` (the log does not say how many follow); `None` again
+      at the start of each Compile Equations block, until the log gives
+      the next value.
+    - `block`, `block_open`: the last block, e.g.
       `'Stationary Solver 1 in static/Solution 1'`, and whether it is
       still open (also after a crash).
     - `dofs`, `solved_dofs`: degrees of freedom, with and without internal
@@ -489,7 +497,7 @@ def progress(path, /, *, pid: int | None = None) -> dict:
       output times, with output times COMSOL does not log, or past the end
       time) or ahead of it: output times that fall within a time step are
       logged before that step's line.
-    - `last_lines`: the last lines of the current step, without the
+    - `last_lines`: the last lines of the last block, without the
       progress and memory lines, e.g. nonlinear iterations or time steps.
     - `updated_s_ago`: seconds since the log last changed.
 
