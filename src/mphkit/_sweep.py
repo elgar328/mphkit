@@ -35,9 +35,11 @@ STEP_NAMES = ('', 't', 'freq', 'lambda')
 SWITCHES = ('matsw.', 'funsw.')
 # Values shown in messages: the first ones, then the last ones
 SHOWN = (5, 2)
-# Relative tolerances: step values compared between outer values, and
-# vertex coordinates
+# Relative tolerances: values compared (steps, outer values), and vertex
+# coordinates. Values agree within TOLERANCE of the larger of the two, or
+# within FLOOR of the largest of their column, for rounding near zero.
 TOLERANCE = 1e-9
+FLOOR = 1e-14
 COORDINATES = 1e-12
 
 # a number as COMSOL prints it in plot titles, e.g. 133.33 or 5.5511E-17,
@@ -624,6 +626,8 @@ class Picture(NamedTuple):
     step: int | None    # the step (`looplevel`), None if there is one
     number: int | None  # the outer value, counted from 1 as in `outer=`
     title: Title | None  # what its title must show
+    total: int = 1      # the number of steps (of the outer value)
+    names: tuple[str, ...] = ('',)  # the names of the steps
 
 
 class Title(NamedTuple):
@@ -663,10 +667,12 @@ def pictures(create, geom: Node, dataset, step, outer,
     them all each time, `outer='all'` once.
     """
     prepared = _prepare(create, geom, dataset, step, outer, 'plot', ready)
+    model = geom.model.java
     if isinstance(prepared, Plain):
+        names = _names(_datasets.solution_of(model, prepared.data))
         return [Picture(prepared.data, None,
                         prepared.solnums[0] if prepared.total > 1 else None,
-                        None, None)], False
+                        None, None, prepared.total, tuple(names))], False
     sweep, children = prepared.sweep, prepared.children
     decision = prepared.decision
     if decision == 'full' and not sweep.materials():
@@ -699,8 +705,9 @@ def pictures(create, geom: Node, dataset, step, outer,
     drawn = {k: prepared.steps[k][0][0] if sweep.count(k) > 1 else None
              for k in prepared.positions}
     return [Picture(sweep.data, sweep.numbers[k - 1], drawn[k], k,
-                    sweep.title(k, drawn[k])) for k in prepared.positions], \
-        prepared.many
+                    sweep.title(k, drawn[k]), sweep.count(k),
+                    tuple(_names(model.sol(sweep.children[k - 1]))))
+            for k in prepared.positions], prepared.many
 
 
 def title_problem(indicator: str, title: Title) -> str | None:
@@ -934,18 +941,19 @@ def _step_si(model, name: str, given) -> float:
     are converted by COMSOL.
     """
     if not isinstance(given, str):
-        return float(given)
+        return _finite(name, given, float(given))
     unit = STEP_SI.get(name)
     if unit is None:
         return _si(model, name, given)
     try:
         with _comsol.history_off(model):
-            return float(model.param().evaluate(given, unit))
+            value = float(model.param().evaluate(given, unit))
     except Exception as error:
         raise ValueError(f'COMSOL cannot read {given!r} as a value of {name} '
                          f'in {unit}: {_comsol.reason(error)} Give the unit '
                          "in brackets, e.g. '2[min]', or a number in SI "
                          'units.') from error
+    return _finite(name, given, value)
 
 
 def _by_value_hint(solution) -> str:
@@ -1038,7 +1046,7 @@ def _si(model, name: str, given) -> float:
     it is, a string converted by COMSOL with the parameter's unit.
     """
     if not isinstance(given, str):
-        return float(given)
+        return _finite(name, given, float(given))
     if name.startswith(SWITCHES):
         raise ValueError(f'{name} takes the number of the case, not '
                          f'{given!r}.')
@@ -1050,18 +1058,45 @@ def _si(model, name: str, given) -> float:
                          f'units), not {given!r}.')
     try:
         with _comsol.history_off(model):
-            return float(parameters.evaluate(given, str(unit)))
+            value = float(parameters.evaluate(given, str(unit)))
     except Exception as error:
         raise ValueError(f'COMSOL cannot read {given!r} as a value of {name} '
                          f'in {unit}: {_comsol.reason(error)} Give the unit '
                          "in brackets, e.g. '200[degC]', or a number in SI "
                          'units.') from error
+    return _finite(name, given, value)
+
+
+def _finite(name: str, given, value: float) -> float:
+    """Returns a value given for `name`, which must be a finite number."""
+    if not math.isfinite(value):
+        raise ValueError(f'{name}={given!r} is not a finite number.')
+    return value
 
 
 def _close(value: float, target: float, every: list[float]) -> bool:
-    """Tells whether two values agree within 1e-9 of the largest swept."""
-    scale = max([abs(v) for v in every if not math.isnan(v)] or [0.0])
-    return abs(value - target) <= TOLERANCE * scale
+    """
+    Tells whether two values agree as `_agree()` has it, `every` being
+    the values of their column.
+    """
+    return bool(_agree(value, target, _scale(every)))
+
+
+def _agree(a, b, scale: float):
+    """
+    Tells where values agree, also of arrays and complex: within 1e-9 of
+    the larger of the two, or of 1e-14 times `scale` (the largest of their
+    column, see `_scale()`) for rounding near zero; so values that differ
+    by less than that are taken as the same, as a very fine logarithmic
+    list might have. Values that are not finite agree only with the same
+    value, NaN with none.
+    """
+    a, b = numpy.asarray(a), numpy.asarray(b)
+    with numpy.errstate(invalid='ignore', over='ignore'):
+        near = numpy.abs(a - b) <= numpy.maximum(
+            TOLERANCE*numpy.maximum(numpy.abs(a), numpy.abs(b)),
+            FLOOR*scale)
+    return numpy.where(numpy.isfinite(a) & numpy.isfinite(b), near, a == b)
 
 
 ######################
@@ -1097,15 +1132,14 @@ def _ambiguity(what: str, given, columns: Callable[[], Columns]
     noun = 'step' if what == 'step' else 'value'
     table = {name: (numpy.asarray(values, dtype=float), unit)
              for name, (values, unit) in columns().items()}
-    # the tolerance of _close(), for a whole column at once
+    # as _close(), for a whole column at once
     scales = {name: _scale(values) for name, (values, _) in table.items()}
     found = []
     for k in dict.fromkeys(numbers):
         for name, (values, unit) in table.items():
             if k > len(values) or math.isnan(values[k - 1]):
                 continue
-            at = numpy.flatnonzero(
-                numpy.abs(values - k) <= TOLERANCE*scales[name]) + 1
+            at = numpy.flatnonzero(_agree(values, k, scales[name])) + 1
             if len(at) == 1 and at[0] != k:
                 found.append((k, name, float(values[k - 1]), unit))
                 break
@@ -1129,9 +1163,10 @@ def _ambiguity(what: str, given, columns: Callable[[], Columns]
             f'{what}={pick}.')
 
 
-def _scale(values: Array) -> float:
-    """Returns the largest magnitude of values, NaN left out, as _close()."""
-    finite = numpy.abs(values[~numpy.isnan(values)])
+def _scale(values) -> float:
+    """Returns the largest finite magnitude of values, 0 if none."""
+    magnitudes = numpy.abs(numpy.asarray(values))
+    finite = magnitudes[numpy.isfinite(magnitudes)]
     return float(finite.max()) if finite.size else 0.0
 
 
@@ -1223,8 +1258,11 @@ def no_outer(model, data, outer, caller: str | None, dataset
     values = f'({_call("step_values", dataset)} gives the values)'
     step: Any
     if isinstance(outer, Mapping):
-        step = (_step_of(model, solution, outer)
-                if set(outer) <= set(names) else None)
+        try:
+            step = (_step_of(model, solution, outer)
+                    if set(outer) <= set(names) else None)
+        except ValueError:      # a value COMSOL cannot read, say
+            step = None
     elif _by_name(outer) or not isinstance(outer, (str, numbers.Integral)):
         step = None if _by_name(outer) else [int(k) for k in outer]
     else:
@@ -1685,7 +1723,7 @@ def named_steps(model, solution) -> dict[str, Array]:
 def same_steps(model, children: list[str], strict: bool = False) -> bool:
     """
     Tells whether the given children have the same steps: names, number
-    and values within 1e-9 of each name's largest. Eigenvalues differ
+    and values, which agree as in `_agree()`. Eigenvalues differ
     between values by nature: their number alone counts, unless `strict`.
     """
     tables = []
@@ -1703,8 +1741,7 @@ def same_steps(model, children: list[str], strict: bool = False) -> bool:
     values = [_step_table(solution) for *_, solution in tables]
     for name in names:
         stack = numpy.array([table[name] for table in values])
-        tolerance = TOLERANCE * float(numpy.abs(stack).max())
-        if numpy.any(numpy.abs(stack - stack[0]) > tolerance):
+        if not numpy.all(_agree(stack, stack[0], _scale(stack))):
             return False
     return True
 

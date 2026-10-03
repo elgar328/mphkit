@@ -5,6 +5,7 @@ Most tests draw the solved plate-with-holes example (mm, 2 holes). Tests
 that change a model build their own. What the pictures show was checked
 by eye while writing these; the tests compare sizes and bytes.
 """
+import re
 import struct
 
 import numpy
@@ -738,6 +739,116 @@ def test_eigenvalue_sweep(client, tmp_path):
         assert first.read_bytes() != third.read_bytes()
         assert len(mk.plot(geom, 'u', tmp_path/'u_{outer}.png', outer='all',
                            step=2)) == 2
+        # as many eigenvalues as outer values: only the first level is a step
+        steps.property('neigs', 2)
+        model.solve()
+        first = mk.plot(geom, 'u', tmp_path/'first2.png', outer=2, step=1)
+        second = mk.plot(geom, 'u', tmp_path/'second2.png', outer=2, step=2)
+        assert first.read_bytes() != second.read_bytes()
+    finally:
+        client.remove(model)
+
+
+def drawn_values(monkeypatch) -> list[dict[str, float]]:
+    """
+    Records the values COMSOL drew in each picture of mk.plot, from its
+    title (`evaluatedparamindicator`), e.g. {'a': 10.0, 'Time': 1.0}.
+    """
+    found = []
+    draw = mk._plot._draw
+
+    def recording(create, model, group, *args):
+        draw(create, model, group, *args)
+        indicator = str(group.getString('evaluatedparamindicator'))
+        found.append({name: float(value) for name, value in re.findall(
+            r'(\w+)(?:\(\d+\))?=\s*([-+\d.eE]+)', indicator)})
+    monkeypatch.setattr(mk._plot, '_draw', recording)
+    return found
+
+
+def check_steps(geom, tmp_path, found, dataset, steps, outer=None):
+    """Draws `steps` and checks that each shows its values."""
+    table = mk.step_values(geom, dataset=dataset, outer=outer)
+    for k in steps:
+        found.clear()
+        mk.plot(geom, 'T', tmp_path/f'{dataset}_{k}.png', dataset=dataset,
+                outer=outer, step=k)
+        shown = found[0]
+        for name, values in table.items():
+            assert shown['Time' if name == 't' else name] == \
+                pytest.approx(values[k - 1]), (dataset, k, name)
+
+
+def test_steps_of_several_parameters(client, tmp_path, monkeypatch):
+    model, geom, faces = heat_plate(client, 'several', study=False)
+    try:
+        for name in ('a', 'b', 'c', 'q'):
+            model.parameter(name, '1')
+
+        def stationary(name, *sweeps):
+            study = (model/'studies').create(name=name)
+            study.create('Stationary')
+            for names, lists in sweeps:
+                node = study.create('Parametric')
+                mk.set(node, pname=names, plistarr=lists,
+                       punit=[''] * len(names), sweeptype='filled')
+        stationary('filled', (['a', 'b'], ['10 20', '1 2 3']))
+        stationary('three', (['a', 'b', 'c'], ['1 2', '1 2 3', '1 2 3 4']))
+        stationary('single', (['a', 'b'], ['5', '1 2 3']))
+        # an outer sweep over b of an inner one over a and c
+        stationary('nested', (['a', 'c'], ['10 20', '1 2 3']),
+                   (['b'], ['100 200']))
+        timed = (model/'studies').create(name='timed')
+        mk.set(timed.create('Transient'), tlist='0 1 2', useparam=True,
+               pname=['q'], plistarr=['1 2'], punit=[''])
+        model.solve()
+        found = drawn_values(monkeypatch)
+        check_steps(geom, tmp_path, found, 'filled', range(1, 7))
+        check_steps(geom, tmp_path, found, 'three', (1, 9, 24))
+        check_steps(geom, tmp_path, found, 'single', (2, 3))
+        check_steps(geom, tmp_path, found, 'nested', (2, 4, 6), outer=1)
+        check_steps(geom, tmp_path, found, 'nested', (5,), outer=2)
+        check_steps(geom, tmp_path, found, 'timed', (2, 4))
+    finally:
+        client.remove(model)
+
+
+def test_frequencies_with_auxiliary_sweep(client, tmp_path, monkeypatch):
+    model = client.create('auxiliary')
+    try:
+        model.parameter('q', '1')
+        model.parameter('b', '1')
+        geom = mk.geometry(model, 2)
+        mk.rectangle(geom, (1, 0.2))
+        model.build(geom)
+        acoustics = (model/'physics').create('PressureAcoustics', geom)
+        source = acoustics.create('Pressure', 1)
+        source.select(mk.sel.box(geom, 'boundary', x=0))
+        source.property('p0', 'b*1[Pa]')
+        acoustics.create('PlaneWaveRadiation', 1).select(
+            mk.sel.box(geom, 'boundary', x=1))
+        air = (model/'materials').create('Common')
+        (air/'Basic').property('density', ['1.2'])
+        (air/'Basic').property('soundspeed', ['343*q'])
+        (model/'meshes').create(geom)
+        for name, outer in (('plain', False), ('outer', True)):
+            study = (model/'studies').create(name=name)
+            mk.set(study.create('Frequency'), plist='500 1000 1500',
+                   useparam=True, pname_aux=['q'], plistarr_aux=['1 2'],
+                   punit_aux=[''])
+            if outer:
+                sweep(study, '1 2', 'b', '')
+        model.solve()
+        found = drawn_values(monkeypatch)
+        for dataset, outer, steps in (('plain', None, range(1, 7)),
+                                      ('outer', 1, (2, 5))):
+            table = mk.step_values(geom, dataset=dataset, outer=outer)
+            for k in steps:
+                found.clear()
+                mk.plot(geom, 'p', tmp_path/f'{dataset}_{k}.png',
+                        dataset=dataset, outer=outer, step=k)
+                assert found[0]['freq'] == pytest.approx(table['freq'][k - 1])
+                assert found[0]['q'] == pytest.approx(table['q'][k - 1])
     finally:
         client.remove(model)
 

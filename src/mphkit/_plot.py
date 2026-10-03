@@ -354,8 +354,8 @@ def _group(create, model, geom: Node, picture, view: str, expr: str,
     returns both. The dataset is set first: a new plot group uses the
     first dataset of the model, whatever its geometry, and a Deform added
     later takes its displacement from the dataset set by then. Of a sweep,
-    the outer value comes next: it fills in the levels of the loop, of
-    which only the first, the step, is changed.
+    the outer value comes next. Both fill in the levels of the loop, of
+    which those of the steps are changed, see `_levels()`.
     """
     sdim = _comsol.sdim(geom)
     group = create(model.result(), f'PlotGroup{sdim}D')
@@ -363,9 +363,12 @@ def _group(create, model, geom: Node, picture, view: str, expr: str,
     if picture.outer is not None:
         _comsol.set_property(group, 'outersolnum', str(picture.outer))
     if picture.step is not None:
-        levels = ([str(level) for level in group.getStringArray('looplevel')]
-                  if picture.outer is not None else [''])
-        levels[0] = str(picture.step)
+        where = f'dataset {_datasets.describe(picture.data)}'
+        if picture.number is not None:
+            where += f' at outer={picture.number}'
+        levels = _levels([str(level) for level in
+                          group.getStringArray('looplevel')],
+                         picture.step, picture.total, picture.names, where)
         _comsol.set_property(group, 'looplevel', levels)
     for key, value in (('view', view), ('edges', 'on'),
                        ('titletype', 'auto')):
@@ -388,6 +391,41 @@ def _group(create, model, geom: Node, picture, view: str, expr: str,
         chosen.selection().geom(geom.tag(), level)
         chosen.selection().set(entities)
     return group, feature
+
+
+def _levels(default: list[str], step: int, count: int, names, where: str
+            ) -> list[str]:
+    """
+    Returns the levels of a plot group's loop that draw `step` (from 1)
+    of `count` steps named `names`, from the levels COMSOL fills in, the
+    last step: the number of steps of each inner level, the fastest
+    first, then the outer value drawn, e.g. ['3', '2', '1'] for 3 values
+    of b by 2 of a, at outer value 1, and step 4 = ['1', '2', '1']. The
+    inner levels are the shortest start, as many as names at most, whose
+    counts multiply to `count`. Time steps of an outer sweep start with
+    'last' instead: with one name, the first level is the step.
+    """
+    if not default:
+        return [str(step)]
+    product = 1
+    for end, level in enumerate(default[:len(names)], 1):
+        if not level.isdigit():
+            break
+        product *= int(level)
+        if product == count:
+            levels, rest = list(default), step - 1
+            for i in range(end):
+                levels[i] = str(rest % int(default[i]) + 1)
+                rest //= int(default[i])
+            return levels
+        if product > count:
+            break
+    if len(names) > 1:
+        raise ValueError(
+            f'mk.plot cannot tell which levels of the plot make step {step} '
+            f'of {where}, whose steps run over {", ".join(names)}; draw it '
+            'with a plot group of your own.')
+    return [str(step)] + default[1:]
 
 
 def _draw(create, model, group, path: Path, pixels, sdim: int, expr: str,

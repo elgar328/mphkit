@@ -149,6 +149,10 @@ def test_plain_and_inner_sweep(fresh):
     with pytest.raises(ValueError, match=r'as steps, not as outer values: '
                                          r'pass step=2 instead of outer='):
         mk.average(geom, 'domain', 'T', outer={'Th': '200[degC]'})
+    # a value that cannot be a step still gets the advice
+    with pytest.raises(ValueError, match=r'as steps, not as outer values: '
+                                         r'pass step= instead of outer='):
+        mk.average(geom, 'domain', 'T', outer={'Th': float('nan')})
 
 
 ############
@@ -664,6 +668,20 @@ def test_same_steps():
     assert same(model, ['h', 'i'], strict=True)
     assert same(model, ['j', 'j'])
     assert not same(model, ['j', 'k'])
+    # values near zero compare by their own size, not the largest's
+    tiny = Model(a=Solution(['t'], [0, 1e-12, 1]),
+                 b=Solution(['t'], [0, 2e-12, 1]),
+                 c=Solution(['t'], [1e-12, 1e-12, 1]),
+                 d=Solution(['t'], [1e-17, 1e-12, 1]),
+                 e=Solution(['t'], [0, float('nan'), 1]),
+                 f=Solution(['t'], [0, float('inf'), 1]),
+                 g=Solution(['t'], [0, float('inf'), 1]))
+    assert not same(tiny, ['a', 'b'])
+    assert not same(tiny, ['a', 'c'])
+    assert same(tiny, ['a', 'd'])
+    assert not same(tiny, ['e', 'e'])
+    assert same(tiny, ['f', 'g'])
+    assert not same(tiny, ['a', 'f'])
 
 
 def test_named_steps():
@@ -1260,12 +1278,83 @@ def test_file_names(tmp_path):
     assert files(braces, pictures[1:]) == [tmp_path/'T_{x}_1.png']
 
 
+def test_levels():
+    # the levels of COMSOL's plot loop for a step, as probed (2026-10-03)
+    def levels(default, step, count, names):
+        return mk._plot._levels(default.split(), step, count, names.split(),
+                                'dataset "x"')
+    # filled a (2 values) x b (3): b varies fastest, the first level
+    assert levels('3 2', 2, 6, 'a b') == ['2', '1']        # a=10, b=2
+    assert levels('3 2', 3, 6, 'a b') == ['3', '1']
+    assert levels('3 2', 4, 6, 'a b') == ['1', '2']        # a=20, b=1
+    assert levels('2 3 4', 24, 24, 'a b c') == ['2', '3', '4']
+    assert levels('2 3 4', 9, 24, 'a b c') == ['1', '2', '2']
+    # a parameter with one value, first or last
+    assert levels('3 1', 2, 3, 'a b') == ['2', '1']
+    assert levels('1 3', 2, 3, 'a b') == ['1', '2']
+    # specified combinations, auxiliary sweeps: one level
+    assert levels('3', 2, 3, 'a b') == ['2']
+    assert levels('3', 2, 3, 'k') == ['2']
+    # frequency and time with an auxiliary sweep, eigenvalues per value
+    assert levels('2 3', 2, 6, 'freq q') == ['2', '1']      # 500 Hz, q=2
+    assert levels('2 3', 3, 6, 'freq q') == ['1', '2']
+    assert levels('3 2 2', 7, 12, 'freq q b') == ['1', '1', '2']
+    assert levels('4 2', 5, 8, 'lambda q') == ['1', '2']
+    assert levels('3 2', 4, 6, 't q') == ['1', '2']
+    # an outer value: its levels stay
+    assert levels('2 3 1', 2, 6, 'freq q') == ['2', '1', '1']
+    assert levels('3 2 2', 4, 6, 'a c') == ['1', '2', '2']
+    assert levels('last 1 2', 2, 3, 't') == ['2', '1', '2']
+    # one name: only the first level, even if an outer level fits
+    assert levels('1 2', 2, 2, 'lambda') == ['2', '2']
+    assert levels('5', 2, 5, 't') == ['2']
+    assert levels('', 2, 5, 't') == ['2']
+    # several names and no levels that fit
+    for default, step, count in (('last 2', 2, 6), ('4 2', 7, 9)):
+        with pytest.raises(ValueError, match=r'mk.plot cannot tell which '
+                           r'levels .* step \d+ of dataset "x", whose steps '
+                           'run over t, q; draw it with a plot group of '
+                           'your own'):
+            levels(default, step, count, 't q')
+
+
 def test_close():
     close = mk._sweep._close
     assert close(373.15, 373.15 + 1e-8, [373.15, 473.15])
     assert not close(373.15, 373.16, [373.15, 473.15])
     assert close(0.0, 0.0, [0.0, 0.0])
     assert not close(0.0, 1e-300, [0.0, 0.0])
+    # small values are compared by their own size
+    assert not close(0.0, 5e-10, [0.0, 1e-3, 1.0])
+    log = [0.0] + [10.0**e for e in range(-12, 1)]
+    assert [v for v in log if close(v, 1e-11, log)] == [1e-11]
+    # rounding of COMSOL's range() and near zero
+    assert close(0.1, 0.10000000000000009, [-1.0, 0.1, 1.0])
+    assert close(0.0, 1e-17, [0.0, 1.0])
+    # values that are not finite: only the same one, NaN none
+    inf, nan = float('inf'), float('nan')
+    assert not close(inf, 1e300, [1.0, 1e300])
+    assert close(inf, inf, [1.0, inf])
+    assert not close(nan, nan, [nan])
+    assert not close(0.0, 1.0, [0.0, 1.0, inf])
+    # whole columns, complex too, without warnings
+    agree = mk._sweep._agree
+    with warnings.catch_warnings():
+        warnings.simplefilter('error')
+        assert list(agree(numpy.array([inf, 1.0, nan]), inf, 1.0)) == \
+            [True, False, False]
+        assert list(agree(numpy.array([1j, 2j]), 1j, 2.0)) == [True, False]
+    assert mk._sweep._scale([nan, -inf, -3.0, 2.0]) == 3.0
+    assert mk._sweep._scale([nan]) == 0.0
+
+
+def test_finite_values():
+    for given in (float('nan'), float('inf'), -float('inf')):
+        with pytest.raises(ValueError, match="t=.* is not a finite number"):
+            mk._sweep._step_si(None, 't', given)
+        with pytest.raises(ValueError, match="Th=.* is not a finite number"):
+            mk._sweep._si(None, 'Th', given)
+    assert mk._sweep._step_si(None, 't', 2) == 2.0
 
 
 ######################################
