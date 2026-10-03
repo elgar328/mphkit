@@ -119,8 +119,9 @@ def plot(geom: Node, expr: str, filename, /, selection: Node | None = None,
     such as `{'t': 10}`; for a picture per step, loop over the values,
     `for t in mk.step_values(geom)['t']: ... step={'t': t}`. Several
     outer values (`outer='all'` or a list) give a picture each, in a list
-    of paths; `{outer}` in the file name stands for the value's number,
-    e.g. `mk.plot(geom, 'T', 'T_{outer}.png', outer='all', step='last')`
+    of paths; `{outer}` in the file name stands for the value's number
+    (1, 2, ... in the order of `mk.outer_values`, not the value), e.g.
+    `mk.plot(geom, 'T', 'T_{outer}.png', outer='all', step='last')`
     (a plain string, not an f-string). The title shows the value, checked
     against the one asked for. A sweep that changes the geometry is not
     drawn: every value must have been solved on the geometry as built,

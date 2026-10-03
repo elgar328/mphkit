@@ -92,6 +92,14 @@ def test_adjacent(model, geom):
     assert len(entities(mk.sel.adjacent(geom, both), 2)) == 10
     inner = mk.sel.adjacent(geom, both, exterior=False, interior=True)
     assert len(entities(inner, 2)) == 1
+    # the face between two selections, as help(mk.sel.adjacent) says
+    b = mk.sel.box(geom, 'domain', x=(9, 21))
+    between = mk.sel.intersection(geom, 'boundary', [
+        mk.sel.adjacent(geom, a), mk.sel.adjacent(geom, b)])
+    assert entities(between, 2) == entities(inner, 2)
+    # not interior=True on one of them: no face has it on both sides
+    alone = mk.sel.adjacent(geom, a, exterior=False, interior=True)
+    assert entities(alone, 2) == []
 
 
 def test_set_operations_reject_numbers(model, cube):

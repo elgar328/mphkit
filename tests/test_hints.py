@@ -536,6 +536,9 @@ def test_help_example(client, monkeypatch, tmp_path):
         assert [row['Tmax'] for row in table] == \
             pytest.approx([100, 200, 300])
         assert namespace['heat'].shape == (3,)
+        # the own mesh: the script's mk.problem_size fails without one
+        size = mk.problem_size(namespace['model'])
+        assert sum(size['mesh_elements'].values()) > 0
     run_example(code, client, monkeypatch, tmp_path, check)
     assert len(list(tmp_path.glob('T_*.png'))) == 3
 

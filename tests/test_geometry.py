@@ -110,6 +110,22 @@ def test_input_from_other_geometry(model, geom):
         mk.feature(geom, 'Union', input=[blk])
 
 
+def test_workplane_faces(model):
+    # unused 2D objects of a work plane stay as faces (help(mk.workplane))
+    for z, faces in ((20, 7), (10, 7)):
+        geom = mk.geometry(model, 3, length_unit='mm')
+        mk.block(geom, (200, 100, 20))
+        plane = mk.workplane(geom, quickz=z)
+        mk.square(plane, 20, (90, 40))
+        model.build(geom)
+        assert mk.summary(geom)['boundaries'] == faces
+        if z == 20:      # the top face is split: the patch is its own face
+            patch = mk.sel.box(geom, 'boundary', x=(90, 110), y=(40, 60),
+                               z=20)
+            assert len(mk.sel.entities(geom, patch)) == 1
+            assert mk.measure(geom, 'boundary', patch) == pytest.approx(400)
+
+
 def test_workplane_node(model, geom):
     mk.feature(geom, 'Block', name='a', size=(10, 10, 10))
     mk.feature(geom, 'Block', name='b', size=(10, 10, 10), pos=(20, 0, 0))

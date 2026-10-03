@@ -372,7 +372,11 @@ def all_(geom: Node, entity: str, /, *, where: str | None = None,
 
 def union(geom: Node, entity: str, /, input, *, where: str | None = None,
           name: str | None = None) -> Node:
-    """Selects the union of the `input` selections."""
+    """
+    Selects the union of the `input` selections, e.g.
+    `sel.union(geom, 'boundary', [top, side])`: the kind comes second,
+    unlike `mk.union(geom, [a, b])` of objects.
+    """
     properties = {'entitydim': _level(geom, entity, where),
                   'input': _inputs(geom, where, input, 'union', entity)}
     return _create(geom, 'Union', where, name, properties)
@@ -380,7 +384,10 @@ def union(geom: Node, entity: str, /, input, *, where: str | None = None,
 
 def intersection(geom: Node, entity: str, /, input, *,
                  where: str | None = None, name: str | None = None) -> Node:
-    """Selects the entities that all `input` selections have in common."""
+    """
+    Selects the entities that all `input` selections have in common, e.g.
+    `sel.intersection(geom, 'boundary', [walls, hot])`.
+    """
     properties = {'entitydim': _level(geom, entity, where),
                   'input': _inputs(geom, where, input, 'intersection',
                                    entity)}
@@ -389,7 +396,10 @@ def intersection(geom: Node, entity: str, /, input, *,
 
 def difference(geom: Node, entity: str, /, add, subtract, *,
                where: str | None = None, name: str | None = None) -> Node:
-    """Selects the entities in `add` that are not in `subtract`."""
+    """
+    Selects the entities in `add` that are not in `subtract`, e.g.
+    `sel.difference(geom, 'boundary', [outer], [inlet])`.
+    """
     properties = {'entitydim': _level(geom, entity, where),
                   'add': _inputs(geom, where, add, 'difference', entity),
                   'subtract': _inputs(geom, where, subtract, 'difference',
@@ -399,7 +409,10 @@ def difference(geom: Node, entity: str, /, add, subtract, *,
 
 def complement(geom: Node, entity: str, /, input, *,
                where: str | None = None, name: str | None = None) -> Node:
-    """Selects all entities that are not in the `input` selections."""
+    """
+    Selects all entities that are not in the `input` selections, e.g.
+    `sel.complement(geom, 'domain', [holes])`.
+    """
     properties = {'entitydim': _level(geom, entity, where),
                   'input': _inputs(geom, where, input, 'complement', entity)}
     return _create(geom, 'Complement', where, name, properties)
@@ -413,10 +426,15 @@ def adjacent(geom: Node, /, input, entity: str = 'boundary', *,
     Selects the entities of kind `entity` adjacent to the `input` selections.
 
     For example `adjacent(geom, domains)` gives the exterior boundaries of
-    a domain selection; `interior=True` adds the interior ones,
-    `exterior=False` leaves out the exterior ones. The inputs are of kind
-    `input_entity`; note that `entity`, the kind returned, comes after
-    `input`.
+    a domain selection: those with input domains on one side only, also
+    where they touch other domains; `interior=True` adds the interior
+    ones, with input domains on both sides (between two input domains),
+    and `exterior=False` leaves out the exterior ones. So the faces
+    between two selections `a` and `b` are `sel.intersection(geom,
+    'boundary', [sel.adjacent(geom, a), sel.adjacent(geom, b)])`, not
+    `interior=True` on one of them. The inputs are of kind `input_entity`;
+    note that `entity`, the kind returned, comes after `input`, unlike in
+    `sel.union` and the other set operations.
     """
     properties = {'entitydim': _comsol.entity_dim(geom, input_entity),
                   'outputdim': _comsol.entity_dim(geom, entity),

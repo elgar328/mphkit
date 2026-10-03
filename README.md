@@ -95,6 +95,7 @@ plane = mk.workplane(geom, quickz=0)
 mk.circle(plane, 2); mk.extrude(geom, plane, 5); mk.revolve(geom, plane)
 mk.import_(geom, 'part.step')
 mk.feature(geom, 'AnyType', ...)   # any other geometry feature
+mk.geometry(model, 2, axisymmetric=True)  # r-z half plane: x is r, y is z
 ```
 
 Selections by location (`mk.sel`), usable in physics, materials and mesh:
@@ -185,7 +186,8 @@ take `outer=`, e.g. `mk.average(geom, 'domain', 'T', unit='degC',
 outer='all', step='last')` for one value per parameter value, or
 `outer={'Th': '200[degC]'}` for one; `mk.outer_values(geom)` tells
 whether a sweep is one (and lists the values, in SI units), and
-`mk.step_values(geom)` lists the steps' values.
+`mk.step_values(geom)` lists the steps' values, eigenfrequencies too
+(`'freq'`, in Hz).
 
 Pictures, written to a file:
 

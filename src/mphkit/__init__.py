@@ -30,11 +30,15 @@ selections.
     mk.properties(temp, search='temperature')     # 'T0': ...
     temp.property('T0', 'Th')
     steel = mk.material(geom, 'Structural steel')  # own values: see help
-    (model/'meshes').create(geom)                 # COMSOL's default mesh
+    mesh = (model/'meshes').create(geom)
+    mk.set(mesh/'Size', custom=True, hmax=10)     # own size, optional
+    mesh.create('FreeTet')                        # the mesher
+    model.mesh()
     study = (model/'studies').create(name='heating')
     study.create('Transient').property('tlist', 'range(0,1,10)')
     sweep = study.create('Parametric')
     mk.set(sweep, pname=['Th'], plistarr=['100 200 300'], punit=['degC'])
+    mk.problem_size(model)                        # dofs, solver, memory
     problems = [p for p in mk.check(model) if p['severity'] == 'warning']
     assert not problems, problems
     model.solve('heating')
@@ -74,7 +78,13 @@ Rules:
 - Sizes and coordinates are in the geometry's length unit, and may be
   COMSOL expressions with parameters and units, e.g. 'L-2*t', '5[mm]'.
 - Build the geometry (`model.build(geom)`) before querying it, and again
-  after adding a `where='geometry'` selection.
+  after adding a `where='geometry'` selection (a loaded model is built if
+  it was built when saved).
+- These parameter names clash with COMSOL's own variables and the solve
+  fails with 'Duplicate parameter/variable name': h, x, y, z, X, Y, Z,
+  pi, i, j, nx, dom, dvol, qual (t, T, freq are fine).
+- The default features of a physics interface are its children, e.g.
+  `physics/'Initial Values 1'`.
 - Extra keyword arguments are COMSOL property names; an unknown one
   raises an error that often suggests the right one or the
   `mk.properties` call that lists them.
@@ -89,6 +99,7 @@ Existing models: `old = client.load('file.mph')`, then `old.reset()` (it
 keeps the solutions) and `old.save('old.java')` show it as Java
 (`old.save()` without a path overwrites the .mph); `help(mk.sel.find)`
 moves numbered selections and tells how to inspect the old model.
+Its nodes: `old/'geometries'/'Geometry 1'` (names: `old.geometries()`).
 
 Index:
 
@@ -115,7 +126,7 @@ Index:
 - Long solves: mk.log_progress, mk.progress (from another process).
 - Results: mk.integral, mk.average, mk.maximum, mk.minimum, mk.value,
   mk.plot; sweeps: mk.outer_values, mk.step_values (values of the outer
-  loop and of the steps).
+  loop and of the steps, also eigenfrequencies).
 - Other: mk.set (properties of any node or Java object), mk.component_of
   (a geometry's component), mk.coordinate_system (e.g. for perfectly
   matched layers), mk.LicenseError (no CAD license), mk.StepWarning

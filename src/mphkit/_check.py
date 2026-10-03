@@ -107,18 +107,18 @@ def check(model: Model, /) -> list[dict]:
       condition of a physics interface, e.g. thermal insulation.
 
     It checks the top-level features of active physics interfaces on a
-    geometry, which must be built (`model.build(geom)`, also after loading
-    a file), and the materials in use (component materials and global
-    materials a link points to, not those inside a material switch). Not
-    checked: subfeatures, pair features, global features (without a
-    selection), physics settings, and what the solve itself reports
-    clearly (undefined parameters or variables, syntax errors). If the
-    temporary model cannot create a physics interface, its selections and
-    default conditions are not checked. After solving, MPh's `model.problems()` lists COMSOL's
-    own messages. Default features are recognised in a temporary model of
-    the same kind; in models from older COMSOL versions they may show up
-    as user features. Returns plain values (`json.dumps` works) and
-    leaves nothing in the model.
+    geometry, which must be built (`model.build(geom)`; a loaded model is
+    built if it was built when saved), and the materials in use (component
+    materials and global materials a link points to, not those inside a
+    material switch). Not checked: subfeatures, pair features, global
+    features (without a selection), physics settings, and what the solve
+    itself reports clearly (undefined parameters or variables, syntax
+    errors). If the temporary model cannot create a physics interface, its
+    selections and default conditions are not checked. After solving, MPh's
+    `model.problems()` lists COMSOL's own messages. Default features are
+    recognised in a temporary model of the same kind; in models from older
+    COMSOL versions they may show up as user features. Returns plain values
+    (`json.dumps` works) and leaves nothing in the model.
     """
     if not isinstance(model, Model):
         raise TypeError(f'mk.check takes a model, not {model!r}.')

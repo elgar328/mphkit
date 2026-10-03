@@ -542,10 +542,12 @@ def workplane(geom: Node, /, *, name: str | None = None, **properties) -> Node:
     `'yz'`, +y for `'zx'`, but -y for `'xz'` (likewise -x for `'zy'` and
     -z for `'yx'`).
 
-    With `unite=True` the plane's 2D objects are imprinted into the 3D
-    geometry, e.g. to create an evaluation surface. Add 2D features with
-    `square(plane, ...)`, `rectangle(plane, ...)`, `circle(plane, ...)` or
-    `polygon(plane, ...)`.
+    Add 2D features with `square(plane, ...)`, `rectangle(plane, ...)`,
+    `circle(plane, ...)` or `polygon(plane, ...)`. Those that no
+    `extrude()` or `revolve()` uses stay in the 3D geometry as faces: on
+    a face they split it, e.g. a heated patch on a top face with the plane
+    at its height (`quickz=`), and inside a domain they make an interior
+    face, e.g. to evaluate on.
     """
     return feature(geom, 'WorkPlane', name=name, **properties)
 

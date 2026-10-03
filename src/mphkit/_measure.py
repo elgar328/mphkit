@@ -110,7 +110,8 @@ def measure(geom: Node, entity: str, /, selection=None) -> float:
 def bounding_box(geom: Node, entity: str, /, selection=None) -> dict | None:
     """
     Returns the bounding box of entities as `{'x': (min, max), ...}`, in
-    the geometry's length unit.
+    the geometry's length unit; of the whole geometry with
+    `bounding_box(geom, 'domain')` (or `mk.summary(geom)['bounding_box']`).
 
     Has one pair per space dimension, so it can be passed on as
     `sel.box(geom, entity, **bbox)`. For a single point, min equals max:
