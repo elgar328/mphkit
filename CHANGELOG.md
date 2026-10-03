@@ -9,16 +9,53 @@ until 1.0, a minor release (0.2, 0.3, ...) may change the API. See
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-04
+
 ### Added
 
+- `mk.geometry(model, 2, axisymmetric=True)` makes a 2D axisymmetric
+  geometry: the r-z half plane of a body of revolution.
+- `mk.materials` lists the materials in COMSOL's material libraries
+  (names, property groups and basic properties, with `search=`), and
+  `mk.material` inserts one into the component of a geometry, on all
+  domains or a selection, instead of typing property values by hand.
+  Unknown material names suggest close ones or the library to pass.
+- `mk.physics_types`, `mk.feature_types`, `mk.properties` and
+  `mk.variables` look up COMSOL's names instead of guessing them: the
+  physics interfaces for a geometry, the features of a physics interface
+  with the levels they go on (also geometry, mesh and study types), the
+  properties of a node or feature type with descriptions, defaults and
+  choices, and the variables for result expressions, each with
+  `search=`. They read the installed COMSOL's code-completion data,
+  which is undocumented, and raise if it is missing or changed.
+- `mk.check(model)` lists, before solving, what COMSOL would get wrong
+  silently or vaguely: expressions in the wrong unit, domains without a
+  material, conditions that select nothing or apply nowhere, a component
+  without a mesh, physics that no study step solves, and (as info)
+  boundaries left at the default condition.
+- `mk.mesh_quality(geom)` gives a mesh's quality in numbers, for all or
+  some domains, or boundaries in 3D: the lowest and mean quality in any
+  of COMSOL's six measures (`quality=`), a histogram, the worst elements
+  and where they are, the values per entity, the element sizes, the
+  entities left without elements and what COMSOL reported when building
+  the mesh. It matches COMSOL's mesh statistics for all element types.
+- `mk.problem_size(model)` gives, before solving, the degrees of freedom
+  of each study step, the solver COMSOL would use, the mesh elements and
+  the computer's memory (macOS and Windows) and cores.
+- `mk.log_progress(path)` makes COMSOL write its progress log, and
+  `mk.progress(path)` reads it from another process (percent, task,
+  memory, degrees of freedom, sweep parameter, time steps, last lines),
+  with the state, CPU and memory of the solving processes (macOS and
+  Windows), for long solves run in the background; `help(mk.progress)`
+  shows how to start and stop one.
 - `mk.integral`, `mk.average`, `mk.maximum`, `mk.minimum` and `mk.value`
-  read results of a solved model over entities, selections or points.
-  They raise in most cases where COMSOL would silently give a wrong
-  number (a unit that does not fit, several solutions, a geometry changed
-  since the solve, a point outside the geometry) and leave nothing in the
-  model. `dataset=` also takes the study that made it. They refuse the
-  results of a study whose last solve failed, and the copy of a
-  parametric sweep's last value, pointing to the sweep's dataset.
+  read the results of a solved model over entities, selections or
+  points. They raise in most cases where COMSOL would silently give a
+  wrong number (a unit that does not fit, several solutions, a geometry
+  changed since the solve, a point outside the geometry). `dataset=` also
+  takes the study that made it. They refuse the results of a study whose
+  last solve failed, and the copy COMSOL makes of a parametric sweep's
+  last value, pointing to the sweep's own dataset instead.
 - Parametric sweeps that COMSOL stores as an outer loop (around a
   time-dependent or eigenvalue study or a list of frequencies, or over
   the geometry, mesh, materials or functions) are read with `outer=`, in
@@ -27,93 +64,47 @@ until 1.0, a minor release (0.2, 0.3, ...) may change the API. See
   their parameter values and `mk.step_values` the times, frequencies or
   parameter values of the steps by name, both in SI units; `step=` also
   picks a step by value, e.g. `{'t': 10}`, in each outer value.
-- A number given as `step=` or `outer=` is a position; one that is also
+- A number given as `step=` or `outer=` is a position. One that is also
   the value of another position, such as `step=10` on times 0, 1, ..., 10
-  (the tenth step is t = 9), gives an `mk.StepWarning`, a `UserWarning`.
-  Pick by value to mean the time, `step={'t': 10}`, or turn it off with
-  `warnings.filterwarnings('ignore', category=mk.StepWarning)`. For the
-  warning, numbers given as `outer=` are compared with the values as
-  swept, e.g. Th in degC.
+  (the tenth step is t = 9), gives an `mk.StepWarning`, a `UserWarning`:
+  pick by value to mean the time, `step={'t': 10}`, or turn the warning
+  off with `warnings.filterwarnings('ignore', category=mk.StepWarning)`.
+  For the warning, numbers given as `outer=` are compared with the values
+  as swept, e.g. Th in degC.
 - A sweep that changes the geometry is read over selection nodes or all
   entities, evaluated on each value's geometry; entity numbers, explicit
   selections and selections that are empty for a value raise. `mk.plot`
   does not draw it.
-- Unknown names such as `mk.time_values` or `mk.sweep_values` suggest
-  `mk.step_values` and `mk.outer_values`; `mk.sweep`,
-  `mk.parametric_sweep` and `mk.solve` say how to make a sweep or solve
-  with plain MPh.
-- Unknown names such as `mk.volume_integral`, `mk.mphint2` or `mk.probe`
-  suggest the results helpers; `mk.evaluate` points to MPh's
-  `model.evaluate`.
 - `mk.plot` saves a picture of an expression on a solved model: on the
   surface, on a selection, on slices (`x=`, `y=`, `z=`), seen from a side
-  (`view='top'`, ...) or on the deformed shape (`deform=True`), in
-  chosen colours (`color_range=`, `color_table=`), with the checks of the
-  results helpers, and leaves nothing in the model. With
-  `outer=` it draws values of a parametric sweep stored as an outer
-  loop, one picture each (`'T_{outer}.png'`), and checks that the title
-  shows the value asked for. An error leaves existing files as they were
-  (unless replacing several fails halfway) and removes the folders made
-  for the pictures. Numbers given as `step=` or `outer=` warn as in the
-  results helpers.
+  (`view='top'`, ...) or on the deformed shape (`deform=True`), in chosen
+  colours (`color_range=`, `color_table=`), with the checks of the
+  results helpers. With `outer=` it draws values of a parametric sweep
+  stored as an outer loop, one picture each (`'T_{outer}.png'`), and
+  checks that the title shows the value asked for. Numbers given as
+  `step=` or `outer=` warn as in the results helpers. An error leaves
+  existing files as they were (unless replacing several fails halfway)
+  and removes the folders made for the pictures.
 - `mk.image(geom, filename, mesh=True)` saves a picture of the mesh,
   coloured by element quality, also of a selection only.
-- Unknown names such as `mk.mphplot`, `mk.slice` or `mk.surface_plot`
-  suggest `mk.plot`, and `mk.mphmesh` or `mk.mesh_plot` suggest
-  `mk.image`.
-- `mk.physics_types`, `mk.feature_types`, `mk.properties` and
-  `mk.variables` look up COMSOL's names instead of guessing them: physics
-  interfaces for a geometry, the features of a physics interface with the
-  levels they go on (also the geometry, mesh and study types), the
-  properties of a node or feature type with their descriptions, defaults
-  and choices, and the variables for result
-  expressions, each with `search=`. They read the undocumented
-  code-completion data of the installed COMSOL, raise if it is missing or
-  changed, and leave nothing in the model. Unknown names such as
-  `mk.list_features`, `mk.property_values` or `mk.vars` suggest them.
-- `mk.materials` lists the materials in COMSOL's material libraries
-  (names, property groups and basic properties, with `search=`), and
-  `mk.material` inserts one into the component of a geometry, on all
-  domains or a selection, instead of typing property values by hand.
-  Unknown material names suggest close ones or the library to pass.
-  Unknown names such as `mk.list_materials` or `mk.matlib` suggest them.
-  The example script takes its structural steel from the library.
-- `mk.check(model)` lists, before solving, what COMSOL would get wrong
-  silently or vaguely: expressions in the wrong unit, domains without
-  material, conditions that select nothing or apply nowhere, a component
-  without mesh, physics no study step solves, and (as info) boundaries
-  left at the default condition. It leaves nothing in the model. Unknown
-  names such as `mk.validate` or `mk.lint` suggest it.
-- `mk.problem_size(model)` gives, before solving, the degrees of freedom
-  of each study step, the solver COMSOL would use, the mesh elements and
-  the computer's memory (macOS and Windows) and cores, and leaves nothing
-  in the model. `mk.log_progress(path)` makes COMSOL write its progress
-  log, and `mk.progress(path)` reads it from another process (percent,
-  task, memory, degrees of freedom, sweep parameter, time steps, last
-  lines) with the solving processes' state, CPU and memory (macOS and
-  Windows), for long solves run in the background; `help(mk.progress)`
-  shows how to start and stop one.
-  Unknown names such as `mk.dofs`, `mk.show_progress` or `mk.stop_solve`
-  suggest them.
-- `mk.mesh_quality(geom)` gives a mesh's quality in numbers (lowest and
-  mean, a histogram, the worst elements with their positions, per entity,
-  in COMSOL's six quality measures, `quality=`) with the element sizes,
-  the entities left without elements and what COMSOL reported when
-  building the mesh; for all or some domains, or boundaries in 3D. It
-  matches COMSOL's mesh statistics for all element types and leaves
-  nothing in the model.
-  Unknown names such as `mk.mesh_stats`, `mk.quality_of_mesh` or
-  `mk.mphmeshstats` suggest it, and mesh picture hints mention it.
-- Unknown names such as `mk.load`, `mk.import_model` or `mk.java` say
-  how to open an existing model with MPh and what `node.java` is.
-- `mk.geometry(model, 2, axisymmetric=True)` makes a 2D axisymmetric
-  geometry (the r-z half plane); unknown names such as `mk.axisymmetric`
-  suggest it.
+- The new helpers leave nothing in the model.
+- Unknown names suggest the new helpers: `mk.volume_integral`,
+  `mk.mphint2`, `mk.probe` → the results helpers; `mk.time_values`,
+  `mk.sweep_values` → `mk.step_values`, `mk.outer_values`; `mk.mphplot`,
+  `mk.slice` → `mk.plot`; `mk.mesh_plot` → `mk.image`;
+  `mk.list_features`, `mk.vars` → the name lookups; `mk.matlib` →
+  `mk.materials`; `mk.lint`, `mk.validate` → `mk.check`; `mk.dofs`,
+  `mk.stop_solve` → `mk.problem_size`, `mk.progress`; `mk.mesh_stats` →
+  `mk.mesh_quality`; `mk.axisymmetric` → `mk.geometry`. Others say how
+  to do it with plain MPh: `mk.evaluate` (MPh's `model.evaluate`),
+  `mk.sweep`, `mk.parametric_sweep` and `mk.solve` (making a sweep or
+  solving), `mk.load`, `mk.import_model` (opening an existing model) and
+  `mk.java` (what `node.java` is).
 
 ### Changed
 
-- `mk.geometry` raises a `TypeError` for a `dim` that is no integer (e.g.
-  `'2D'` or `2.0`) and a `ValueError` for one other than 1, 2 or 3,
+- `mk.geometry` raises a `TypeError` for a `dim` that is not an integer
+  (e.g. `'2D'` or `2.0`) and a `ValueError` for one other than 1, 2 or 3,
   before creating anything, instead of COMSOL's error and an empty
   component left in the model.
 - mphkit requires MPh below 2 (`mph>=1.4,<2`): it uses some of MPh's
@@ -231,6 +222,7 @@ First release.
 - `LicenseError` is raised when a feature needs a license that is not
   available.
 
-[Unreleased]: https://github.com/elgar328/mphkit/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/elgar328/mphkit/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/elgar328/mphkit/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/elgar328/mphkit/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/elgar328/mphkit/releases/tag/v0.1.0

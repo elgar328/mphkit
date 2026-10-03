@@ -156,7 +156,7 @@ from .geometry import (array, block, chamfer, circle, component_of,
                        rigid_transform, rotate, sphere, square, union,
                        workplane)
 
-__version__ = '0.3.0.dev0'
+__version__ = '0.3.0'
 
 __all__ = ['LicenseError', 'StepWarning', 'array', 'average', 'block', 'bounding_box',
            'chamfer', 'check', 'circle', 'component_of', 'coordinate_system',
