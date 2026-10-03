@@ -5,11 +5,11 @@
 [![License](https://img.shields.io/pypi/l/mphkit)](https://github.com/elgar328/mphkit/blob/main/LICENSE)
 [![COMSOL](https://img.shields.io/badge/COMSOL-6.4-blue)](https://www.comsol.com/)
 
-Helpers on top of [MPh](https://github.com/MPh-py/MPh) for COMSOL models
-in Python: geometry and selections by location, materials from COMSOL's
-libraries, checks before solving, and results as numbers and pictures.
-Selecting by location instead of by entity number keeps selections
-working when the geometry changes.
+Helpers on top of [MPh](https://github.com/MPh-py/MPh) for COMSOL in
+Python: build geometry, select by location, insert library materials,
+check a model before solving, and read results as numbers or pictures.
+Selections made by location, not entity number, keep working when the
+geometry changes.
 
 > [!WARNING]
 > **Early stage.** The API may change at any time, without deprecation
@@ -257,9 +257,9 @@ a plate with a row of cooling holes, for one or more holes.
 
 ## Limitations
 
-- Setting up physics, mesh and studies, and plots beyond `mk.plot`
-  (arrows, streamlines, graphs, animations), are left to MPh; mphkit
-  looks up the COMSOL names they need and checks them before solving.
+- Physics, mesh and study setup, and plots beyond `mk.plot` (arrows,
+  streamlines, graphs, animations), stay plain MPh; mphkit looks up the
+  names they need and checks them before solving.
 - A parametric sweep that changes the geometry is read over selection
   nodes or all entities, each value in its own geometry, and not drawn;
   a box at fixed coordinates picks what lies there in each value. With
