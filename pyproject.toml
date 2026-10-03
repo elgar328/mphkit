@@ -1,7 +1,7 @@
 [project]
 name = "mphkit"
 version = "0.3.0.dev0"
-description = "Helpers on top of MPh for building COMSOL geometries and geometry-based selections in Python, inserting materials from COMSOL's libraries, and reading and drawing results."
+description = "Helpers on top of MPh for COMSOL models in Python: geometry and selections by location, materials from COMSOL's libraries, checks before solving, and results as numbers and pictures."
 readme = "README.md"
 authors = [{ name = "elgar328" }]
 license = "MIT"

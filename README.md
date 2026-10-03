@@ -5,11 +5,11 @@
 [![License](https://img.shields.io/pypi/l/mphkit)](https://github.com/elgar328/mphkit/blob/main/LICENSE)
 [![COMSOL](https://img.shields.io/badge/COMSOL-6.4-blue)](https://www.comsol.com/)
 
-Helpers on top of [MPh](https://github.com/MPh-py/MPh) for building COMSOL
-geometries and geometry-based selections in Python, inserting materials
-from COMSOL's libraries, and reading and drawing results.
-Select boundaries by location instead of by entity number, so selections
-keep working when the geometry changes.
+Helpers on top of [MPh](https://github.com/MPh-py/MPh) for COMSOL models
+in Python: geometry and selections by location, materials from COMSOL's
+libraries, checks before solving, and results as numbers and pictures.
+Selecting by location instead of by entity number keeps selections
+working when the geometry changes.
 
 > [!WARNING]
 > **Early stage.** The API may change at any time, without deprecation
@@ -66,8 +66,8 @@ so other versions may need adjustments; reports are welcome. Checked on
 macOS and Windows; it should run wherever MPh runs. The name lookups read
 COMSOL's code-completion data in the installation (`data/completion`),
 which COMSOL does not document; they were checked with COMSOL 6.4 on
-macOS and Windows. A missing or changed catalogue raises an error rather than
-giving wrong names.
+macOS and Windows. A missing or changed catalogue raises an error rather
+than giving wrong names.
 
 ## Installation
 
@@ -150,8 +150,8 @@ built mesh) and does not predict memory or time; a direct solver needs
 far more memory than an iterative one. `mk.progress` reads COMSOL's
 progress log and the operating system and judges nothing.
 `help(mk.progress)` has a script that starts a solve in the background
-and how to stop it: end its Python process only, `os.kill(pid,
-signal.SIGTERM)`.
+and how to stop it (macOS and Linux): end its Python process only,
+`os.kill(pid, signal.SIGTERM)`.
 
 Results of the solved
 [example script](https://github.com/elgar328/mphkit/blob/main/examples/plate_with_holes.py),
@@ -196,10 +196,10 @@ mk.plot(geom, 'T', 'T.png', unit='degC')                # a solved result
 mk.plot(geom, 'T', 'mid.png', unit='degC', z=2.5, view='top')  # a slice from above
 ```
 
-`mk.plot` also draws a selection only, deformed shapes (`deform=True`)
-and the values of a sweep, one picture each (`mk.plot(geom, 'T',
-'T_{outer}.png', outer='all', step='last')`); like the other helpers it
-leaves nothing in the model.
+`mk.plot` also draws a selection only, deformed shapes (`deform=True`),
+fixed colours (`color_range=`, `color_table=`) and the values of a sweep,
+one picture each (`mk.plot(geom, 'T', 'T_{outer}.png', outer='all',
+step='last')`); like the other helpers it leaves nothing in the model.
 
 Mesh quality in numbers, after `model.mesh()` (skewness by default, 1 is
 best):
@@ -257,9 +257,9 @@ a plate with a row of cooling holes, for one or more holes.
 
 ## Limitations
 
-- mphkit covers geometry, selections, materials from COMSOL's
-  libraries, reading and drawing results, and looking up COMSOL's names. Physics, mesh, studies and plots beyond
-  `mk.plot` (arrows, streamlines, graphs, animations) are left to MPh.
+- Setting up physics, mesh and studies, and plots beyond `mk.plot`
+  (arrows, streamlines, graphs, animations), are left to MPh; mphkit
+  looks up the COMSOL names they need and checks them before solving.
 - A parametric sweep that changes the geometry is read over selection
   nodes or all entities, each value in its own geometry, and not drawn;
   a box at fixed coordinates picks what lies there in each value. With
