@@ -193,8 +193,10 @@ def processes(pid: int, started: float | None, written: float | None,
     children, so the children of an ended (or reused) `pid` count only
     if they started between `started` and `written`; a COMSOL server
     started by the solve was there before `mk.log_progress` wrote the
-    file. Processes that cannot be read (other users') are left out, as
-    is the console host; the list is in the order the processes started.
+    file. Descendants that cannot be read (other users') are left out, as
+    is the console host; `pid` itself, if it cannot be read, is listed
+    first with `None` values. The list is in the order the processes
+    started.
     """
     first = snapshot()
     if first is None:

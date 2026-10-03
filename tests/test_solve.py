@@ -383,6 +383,20 @@ def test_low_bits_windows(tmp_path):
 
 
 @windows
+def test_other_user_windows(tmp_path):
+    # System (ID 4) cannot be read by a user: alive, its values unknown
+    from mphkit import _winproc
+    facts = _winproc.facts(4)
+    if facts is not None and facts['created'] is not None:
+        pytest.skip('run as an administrator: System can be read')
+    result = mk.progress(tmp_path/'solve.log', pid=4)
+    assert result['alive'] is True
+    assert result['processes'] == [{'pid': 4, 'command': 'System',
+                                    'cpu_percent': None, 'rss_mb': None}]
+    assert result['cpu_percent'] is None and result['rss_mb'] is None
+
+
+@windows
 def test_tree_windows(tmp_path):
     process, child = leader(tmp_path, 30)
     try:
