@@ -524,8 +524,7 @@ def test_2d(model):
 
 
 def test_axisymmetric(model):
-    geom = mk.geometry(model, 2)
-    geom.java.axisymmetric(True)
+    geom = mk.geometry(model, 2, axisymmetric=True)
     mk.rectangle(geom, (2, 1))
     model.build(geom)
     solve_heat(model, geom, mk.sel.box(geom, 'boundary', y=0),

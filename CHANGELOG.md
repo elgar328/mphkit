@@ -105,9 +105,16 @@ until 1.0, a minor release (0.2, 0.3, ...) may change the API. See
   `mk.mphmeshstats` suggest it, and mesh picture hints mention it.
 - Unknown names such as `mk.load`, `mk.import_model` or `mk.java` say
   how to open an existing model with MPh and what `node.java` is.
+- `mk.geometry(model, 2, axisymmetric=True)` makes a 2D axisymmetric
+  geometry (the r-z half plane); unknown names such as `mk.axisymmetric`
+  suggest it.
 
 ### Changed
 
+- `mk.geometry` raises a `TypeError` for a `dim` that is no integer (e.g.
+  `'2D'` or `2.0`) and a `ValueError` for one other than 1, 2 or 3,
+  before creating anything, instead of COMSOL's error and an empty
+  component left in the model.
 - mphkit requires MPh below 2 (`mph>=1.4,<2`): it uses some of MPh's
   internals, which a major release may change.
 - The package overview, `print(mphkit.__doc__)`, is half as long: one

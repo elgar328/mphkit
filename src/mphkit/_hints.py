@@ -208,7 +208,7 @@ LOAD_NOTE = ("An existing model: old = client.load('file.mph') in MPh; "
 JAVA_NOTE = ("node.java is the COMSOL Java object of an MPh node (mk.set "
              "takes it too); model.save('model.java') writes a model as "
              'Java.')
-GUESSED: dict[str, tuple[tuple[str, ...], str]] = {
+GUESSED: dict[str, tuple[tuple[str, ...], str | None]] = {
     **{name: ((), SWEEP_NOTE) for name in (
         'parametric_sweep', 'param_sweep', 'parameter_sweep', 'parametric',
         'outer_sweep', 'sweep_parameter', 'sweep_parameters',
@@ -244,6 +244,9 @@ GUESSED: dict[str, tuple[tuple[str, ...], str]] = {
         'load_model', 'load_mph', 'open_model', 'import_model',
         'import_mph')},
     **{name: ((), JAVA_NOTE) for name in ('to_java', 'export_java')},
+    **{name: (('mphkit.geometry(model, 2, axisymmetric=True)',), None)
+       for name in ('axisymmetric', 'axisymmetry', 'axisym',
+                    'axial_symmetry')},
 }
 
 # Notes for whole names only: with a prefix they mean other things, e.g.

@@ -251,7 +251,10 @@ def test_no_sweep_suggestion(module, name):
     ('steps', 'Did you mean mphkit.step_values?'),
     ('times', 'Did you mean mphkit.step_values?'),
     ('maxval', 'Did you mean mphkit.maximum?'),
-    ('minval', 'Did you mean mphkit.minimum?')])
+    ('minval', 'Did you mean mphkit.minimum?'),
+    ('axisymmetric', 'Did you mean mphkit.geometry(model, 2, '
+                     'axisymmetric=True)?'),
+    ('axisym', 'axisymmetric=True')])
 def test_guessed_notes(name, expected):
     assert expected in message(mk, name)
 

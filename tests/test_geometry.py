@@ -22,6 +22,29 @@ def test_geometry_components(model):
     assert len(list(model.java.component().tags())) == 2
 
 
+def test_axisymmetric_geometry(model):
+    axi = mk.geometry(model, 2, axisymmetric=True)
+    assert axi.java.isAxisymmetric() and axi.java.getSDim() == 2
+    plain = mk.geometry(model, numpy.int64(2))
+    assert not plain.java.isAxisymmetric()
+    components = len(list(model.java.component().tags()))
+    for dim in (1, 3):
+        with pytest.raises(ValueError, match=f'axisymmetric=True is for 2D '
+                                             f'geometries .*, not {dim}D'):
+            mk.geometry(model, dim, axisymmetric=True)
+    for dim in (0, 4):
+        with pytest.raises(ValueError, match=f'dim is 1, 2 or 3, not {dim}'):
+            mk.geometry(model, dim)
+    for dim in ('2D', '2Daxi', 2.0, True):
+        with pytest.raises(TypeError, match='dim is the number of dimensions'
+                                            '.*pass axisymmetric=True'):
+            mk.geometry(model, dim)
+    with pytest.raises(TypeError, match='axisymmetric must be True or False'):
+        mk.geometry(model, 2, axisymmetric='yes')
+    # nothing made by the calls that failed
+    assert len(list(model.java.component().tags())) == components
+
+
 def test_feature_properties(model, geom):
     model.parameter('x', '3')
     blk = mk.feature(geom, 'Block', name='plate', size=(200, 200, 2.5),

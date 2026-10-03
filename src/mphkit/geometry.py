@@ -10,16 +10,38 @@ from . import _catalog, _comsol
 from ._comsol import WorkPlaneNode
 
 
-def geometry(model: Model, dim: int = 3, *, length_unit: str | None = None,
-             name: str | None = None) -> Node:
+def geometry(model: Model, dim: int = 3, *, axisymmetric: bool = False,
+             length_unit: str | None = None, name: str | None = None) -> Node:
     """
-    Creates a new component with a geometry of dimension `dim`.
+    Creates a new component with a geometry of dimension `dim` (1, 2 or
+    3).
 
     The component is created explicitly, so this also works in models that
     already have components. `length_unit` is, for example, `'mm'`; plain
     numbers given to other helpers are then interpreted in that unit.
     `name` labels the geometry. Returns the geometry node.
+
+    `axisymmetric=True` (2D only) makes the geometry the r-z half plane of
+    a body of revolution: x is r and y is z, also in selections (`x=`,
+    `y=`), the points of `mk.value` and the `'x'` and `'y'` of
+    `mk.summary` and `mk.bounding_box`. It is set here because COMSOL
+    locks it once a physics interface uses the geometry. Integrals and
+    averages are over the body of revolution; `mk.plot` draws the half
+    plane.
     """
+    if not isinstance(axisymmetric, bool):
+        raise TypeError(f'axisymmetric must be True or False, not '
+                        f'{axisymmetric!r}.')
+    if not _comsol.is_integer(dim):
+        raise TypeError(f'dim is the number of dimensions, 1, 2 or 3, not '
+                        f'{dim!r}; for a 2D axisymmetric geometry pass '
+                        'axisymmetric=True.')
+    dim = int(dim)
+    if dim not in (1, 2, 3):
+        raise ValueError(f'dim is 1, 2 or 3, not {dim}.')
+    if axisymmetric and dim != 2:
+        raise ValueError(f'axisymmetric=True is for 2D geometries (the r-z '
+                         f'half plane), not {dim}D.')
     java = model.java
     taken = _comsol.labels(java.geom())
     if name is not None:
@@ -28,6 +50,8 @@ def geometry(model: Model, dim: int = 3, *, length_unit: str | None = None,
     component = java.component().create(ctag, True)
     gtag = str(java.geom().uniquetag('geom'))
     geom = component.geom().create(gtag, dim)
+    if axisymmetric:
+        geom.axisymmetric(True)
     label = _comsol.pick_label(name, str(geom.label()), taken)
     geom.label(label)
     if length_unit is not None:
