@@ -1882,7 +1882,11 @@ def test_boundary_physics(client):
         pde.java.feature('cfeq1').set('f', 'ff')
         (model/'meshes').create(geom)
         study = (model/'studies').create(name='boundary')
-        study.create('Transient').property('tlist', '0 1')
+        step = study.create('Transient')
+        step.property('tlist', '0 1')
+        # tight tolerance, so that ff = 2 gives exactly twice ff = 1
+        step.property('rtolactive', True)
+        step.property('rtol', '1e-6')
         sweep(study, '1 2', 'ff', '')
         model.solve()
         # physics on boundaries only, read by entity numbers
