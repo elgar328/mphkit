@@ -590,7 +590,7 @@ def progress(path, /, *, pid: int | None = None) -> dict:
     still be logged, and `solve.py` may be saving, quitting or doing more
     work, which may log progress again.
 
-    To stop it on macOS and Linux, end the Python process only:
+    To stop it on macOS (Linux not tried), end the Python process only:
     `os.kill(pid, signal.SIGTERM)`; COMSOL ends with it, and `m.mph`
     stays as it was (Java may leave an `hs_err_pid*.log` file next to it).
     Do not signal the whole process group: the COMSOL server then may

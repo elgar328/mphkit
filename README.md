@@ -151,7 +151,7 @@ built mesh) and does not predict memory or time; a direct solver needs
 far more memory than an iterative one. `mk.progress` reads COMSOL's
 progress log and the operating system and judges nothing.
 `help(mk.progress)` has a script that starts a solve in the background
-and how to stop it: on macOS and Linux end its Python process only,
+and how to stop it: on macOS (Linux not tried) end its Python process only,
 `os.kill(pid, signal.SIGTERM)`; on Windows every process `mk.progress`
 lists.
 
@@ -271,8 +271,9 @@ a plate with a row of cooling holes, for one or more holes.
   change that keeps every vertex but numbers the entities otherwise
   goes unnoticed. Batch and cluster sweeps, optimization studies and
   time-dependent studies ended by a stop condition were not tried.
-- `mk.progress` reads memory and CPU from macOS and Windows; on Linux
-  some of them are `None` (not tried there).
+- `mk.progress` and `mk.problem_size` read memory (and `mk.progress`
+  CPU) from macOS and Windows; on Linux some of them are `None` (not
+  tried there).
 - No named helpers yet for geometry parts (`PartInstance`), sweeps, cones
   and the other remaining primitives, virtual operations or repair. They
   work through `mk.feature(geom, 'Sweep', ...)`, which handles arguments

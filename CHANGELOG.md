@@ -36,7 +36,8 @@ until 1.0, a minor release (0.2, 0.3, ...) may change the API. See
   swept, e.g. Th in degC.
 - A sweep that changes the geometry is read over selection nodes or all
   entities, evaluated on each value's geometry; entity numbers, explicit
-  selections and selections that are empty for a value raise.
+  selections and selections that are empty for a value raise. `mk.plot`
+  does not draw it.
 - Unknown names such as `mk.time_values` or `mk.sweep_values` suggest
   `mk.step_values` and `mk.outer_values`; `mk.sweep`,
   `mk.parametric_sweep` and `mk.solve` say how to make a sweep or solve
@@ -120,8 +121,8 @@ until 1.0, a minor release (0.2, 0.3, ...) may change the API. See
 - The package overview, `print(mphkit.__doc__)`, is half as long: one
   runnable script, the rules and an index of every helper, with the
   details in each helper's `help()`. Errors for unknown names end with
-  "print(mphkit.__doc__) lists all helpers." instead of pointing to
-  `help(mphkit)`.
+  "print(mphkit.__doc__) lists all helpers." (on `mk.sel` with
+  "..., mphkit.sel's too.") instead of pointing to `help(mphkit)`.
 - `sel.union`, `sel.intersection`, `sel.difference`, `sel.complement` and
   `sel.adjacent` raise a `TypeError` that says to select by location when
   given entity numbers, instead of "'int' object is not iterable", a
