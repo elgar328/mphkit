@@ -2,6 +2,7 @@
 Shared fixtures. Tests needing COMSOL are skipped when it is unavailable,
 and marked `comsol`: `pytest -m "not comsol"` runs the others in seconds.
 """
+import sys
 from pathlib import Path
 
 import pytest
@@ -16,6 +17,21 @@ def pytest_collection_modifyitems(items):
     for item in items:
         if COMSOL_FIXTURES & set(getattr(item, 'fixturenames', ())):
             item.add_marker(pytest.mark.comsol)
+
+
+@pytest.hookimpl(trylast=True)
+def pytest_sessionfinish(session):
+    """
+    Gives pytest's exit status to MPh, which ends the process through Java
+    with the status it recorded: 0 even after failed tests.
+    """
+    mph_session = sys.modules.get('mph.session')
+    if mph_session is None:
+        return
+    if not hasattr(mph_session, 'exit_code'):
+        raise RuntimeError('mph.session.exit_code is gone (MPh changed): '
+                           'pytest may exit with 0 after failed tests.')
+    mph_session.exit_code = int(session.exitstatus)
 
 
 @pytest.fixture(scope='session')
