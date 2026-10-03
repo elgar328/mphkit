@@ -490,6 +490,8 @@ def _over(name: str, geom: Node, entity: str, expr: str, selection,
     column = -(sdim + 1) if position else -1
     with _comsol.scratch(model) as create:
         request = _sweep.resolve(create, geom, dataset, step, outer)
+        found: list[int] = []
+        named: str | None = None
         if request.restricted is None:
             found = numbers_of(geom, entity, selection)
             if not found:

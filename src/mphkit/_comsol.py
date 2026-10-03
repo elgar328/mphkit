@@ -10,7 +10,7 @@ import numbers
 from collections.abc import Callable, Iterable, Iterator
 from contextlib import contextmanager
 from difflib import get_close_matches
-from typing import Any
+from typing import Any, SupportsInt, TypeGuard
 
 import numpy
 from mph.node import Node
@@ -300,7 +300,7 @@ def selection_dims(selection) -> list[int]:
     return [int(d) for d in selection.dimension()]
 
 
-def is_integer(value) -> bool:
+def is_integer(value) -> TypeGuard[SupportsInt]:
     """Tells whether `value` is an entity number: an int, not a bool."""
     if isinstance(value, (bool, numpy.bool_)):
         return False
@@ -646,7 +646,8 @@ def set_property(java, name: str, value, listing=None):
         raise
 
 
-def _listing(listing) -> str | None:
+def _listing(listing: str | Callable[[], str | None] | None
+             ) -> str | None:
     """Returns how to list the properties, made now if it is a function."""
     if not callable(listing):
         return listing

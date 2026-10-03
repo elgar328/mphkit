@@ -1044,8 +1044,8 @@ def _step_of(model, solution, wanted: Mapping) -> int | None:
                for name, given in wanted.items()}
     count = len(next(iter(table.values())))
     found = [k for k in range(1, count + 1)
-             if all(_close(float(table[name][k - 1].real), target,
-                           [float(v) for v in table[name].real])
+             if all(_close(float(numpy.real(table[name][k - 1])), target,
+                           [float(v) for v in numpy.real(table[name])])
                     for name, target in targets.items())]
     return found[0] if len(found) == 1 else None
 
@@ -1781,7 +1781,8 @@ def _step_table(solution) -> dict[str, Array]:
 
 def _real_if_exact(values: Array) -> Array:
     """Returns real values if all imaginary parts are exactly 0."""
-    return values.real.copy() if not numpy.any(values.imag) else values
+    return numpy.real(values).copy() if not numpy.any(numpy.imag(values)) \
+        else values
 
 
 def _eigenfrequency(model, solution) -> bool:
