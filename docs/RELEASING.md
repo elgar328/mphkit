@@ -88,7 +88,8 @@ undone (see step 9); steps 10 to 14 publish and cannot.
    uvx pyright@1.1.414 --pythonpath .venv/bin/python src/mphkit \
      tests/typed_results.py
    ```
-   pyright needs `--pythonpath` to find MPh; it should report no errors.
+   pyright needs `--pythonpath` to find MPh (`.venv/Scripts/python.exe`
+   on Windows); it should report no errors.
    If `.github/workflows/publish.yml` changed since the last release
    (`git diff vA.B.C -- .github/workflows/publish.yml`), also do a dry
    run of it on `main` (see [Publishing to PyPI](#publishing-to-pypi)):

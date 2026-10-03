@@ -85,12 +85,13 @@ until 1.0, a minor release (0.2, 0.3, ...) may change the API. See
   names such as `mk.validate` or `mk.lint` suggest it.
 - `mk.problem_size(model)` gives, before solving, the degrees of freedom
   of each study step, the solver COMSOL would use, the mesh elements and
-  the computer's memory and cores, and leaves nothing in the model.
-  `mk.log_progress(path)` makes COMSOL write its progress log, and
-  `mk.progress(path)` reads it from another process (percent, task,
-  memory, degrees of freedom, sweep parameter, time steps, last lines)
-  with the solving processes' state, CPU and memory, for long solves run
-  in the background; `help(mk.progress)` shows how to start and stop one.
+  the computer's memory (macOS and Windows) and cores, and leaves nothing
+  in the model. `mk.log_progress(path)` makes COMSOL write its progress
+  log, and `mk.progress(path)` reads it from another process (percent,
+  task, memory, degrees of freedom, sweep parameter, time steps, last
+  lines) with the solving processes' state, CPU and memory (macOS and
+  Windows), for long solves run in the background; `help(mk.progress)`
+  shows how to start and stop one.
   Unknown names such as `mk.dofs`, `mk.show_progress` or `mk.stop_solve`
   suggest them.
 - `mk.mesh_quality(geom)` gives a mesh's quality in numbers (lowest and

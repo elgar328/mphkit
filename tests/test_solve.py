@@ -21,9 +21,9 @@ from test_example import plate_with_holes
 
 data = Path(__file__).parent/'data'/'progress'
 posix = pytest.mark.skipif(os.name == 'nt', reason='POSIX processes')
-macos = pytest.mark.skipif(sys.platform != 'darwin', reason='macOS only')
-# progress() tells whether a process lives on POSIX only
-ALIVE = None if os.name == 'nt' else True
+windows = pytest.mark.skipif(sys.platform != 'win32', reason='Windows only')
+memory = pytest.mark.skipif(sys.platform not in ('darwin', 'win32'),
+                            reason='memory on macOS and Windows only')
 
 
 def parse(name, lines=None):
@@ -223,20 +223,18 @@ def test_arguments(tmp_path):
         mk.progress(tmp_path/'solve.log', pid=True)
 
 
-@posix
 def test_no_such_process(tmp_path):
     for pid in (2**22 + 12345, 2**40):
         result = mk.progress(tmp_path/'solve.log', pid=pid)
         assert result['alive'] is False and result['processes'] == []
 
 
-@posix
 def test_this_process(tmp_path):
     result = mk.progress(tmp_path/'solve.log', pid=os.getpid())
     assert result['alive'] is True
     assert os.getpid() in [p['pid'] for p in result['processes']]
     assert result['rss_mb'] > 0
-    if sys.platform == 'darwin':
+    if sys.platform in ('darwin', 'win32'):
         assert isinstance(result['cpu_percent'], float)
 
 
@@ -292,7 +290,6 @@ def test_group_outlives_leader(tmp_path):
         os.killpg(leader.pid, signal.SIGKILL)
 
 
-@posix
 def test_process_id_used_again(tmp_path):
     log = tmp_path/'solve.log'
     write_info(log, os.getpid(), now())
@@ -335,7 +332,119 @@ def test_info_files(tmp_path):
         assert result['pid'] is None and result['alive'] is None
 
 
-@macos
+# A leader that starts a sleeping child, writes the child's ID to the file
+# argv[1] and sleeps argv[2] seconds. Run by the Python without a virtual
+# environment: its launcher would end the child with the leader.
+LEADER = """
+import subprocess, sys, time
+child = subprocess.Popen(
+    [sys.executable, '-c', 'import time; time.sleep(30)'],
+    stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+    stderr=subprocess.DEVNULL)
+open(sys.argv[1], 'w').write(str(child.pid))
+time.sleep(float(sys.argv[2]))
+"""
+
+
+def leader(tmp_path, seconds):
+    """Starts LEADER; returns it and its child's ID."""
+    written = tmp_path/'child.pid'
+    process = subprocess.Popen(
+        [getattr(sys, '_base_executable', sys.executable), '-c', LEADER,
+         str(written), str(seconds)],
+        stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL)
+    wait_for(lambda: written.is_file() and written.read_text())
+    return process, int(written.read_text())
+
+
+def end(*pids):
+    for pid in pids:
+        try:
+            os.kill(pid, signal.SIGTERM)
+        except OSError:
+            pass
+
+
+@windows
+def test_ended_windows(tmp_path):
+    # Popen holds the ended process: its ID is not used again meanwhile
+    child = subprocess.Popen([sys.executable, '-c', 'pass'])
+    child.wait()
+    result = mk.progress(tmp_path/'solve.log', pid=child.pid)
+    assert result['alive'] is False and result['processes'] == []
+
+
+@windows
+def test_low_bits_windows(tmp_path):
+    # Windows would open this process for its ID + 1
+    result = mk.progress(tmp_path/'solve.log', pid=os.getpid() + 1)
+    assert result['alive'] is False and result['processes'] == []
+
+
+@windows
+def test_tree_windows(tmp_path):
+    process, child = leader(tmp_path, 30)
+    try:
+        result = mk.progress(tmp_path/'solve.log', pid=process.pid)
+        assert result['alive'] is True
+        assert [(p['pid'], p['command']) for p in result['processes']] == \
+            [(process.pid, 'python'), (child, 'python')]
+        assert isinstance(result['cpu_percent'], float)
+    finally:
+        end(child, process.pid)
+        process.wait()
+
+
+@windows
+def test_orphan_windows(tmp_path):
+    # as a COMSOL server whose Python ended
+    log = tmp_path/'solve.log'
+    started = now(-1)
+    process, child = leader(tmp_path, 0)
+    try:
+        process.wait()         # ended; held, so its ID is not used again
+        write_info(log, process.pid, started)
+        result = mk.progress(log)
+        assert result['pid'] == process.pid and result['alive'] is False
+        assert [p['pid'] for p in result['processes']] == [child]
+        # pid= alone: an ended process lists no children
+        assert mk.progress(log, pid=process.pid)['processes'] == []
+        # a child that started before the info file's start time ...
+        write_info(log, process.pid, now(5))
+        assert mk.progress(log)['processes'] == []
+        # ... or after the file was written is another process's
+        write_info(log, process.pid, now(-20))
+        info = Path(str(log) + '.json')
+        os.utime(info, (time.time() - 10, time.time() - 10))
+        assert mk.progress(log)['processes'] == []
+    finally:
+        end(child)
+
+
+@windows
+def test_console_host_windows(tmp_path):
+    # a program without a window gets a console host as its child
+    from mphkit import _winproc
+    process = subprocess.Popen(
+        [getattr(sys, '_base_executable', sys.executable), '-c',
+         'import time; time.sleep(30)'],
+        creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
+    try:
+        def hosts():
+            rows = _winproc.snapshot() or {}
+            return [pid for pid, (parent, program) in rows.items()
+                    if parent == process.pid
+                    and program.lower() == 'conhost.exe']
+        wait_for(hosts)
+        result = mk.progress(tmp_path/'solve.log', pid=process.pid)
+        assert [p['command'] for p in result['processes']] == ['python']
+    finally:
+        end(process.pid)
+        process.wait()
+
+
+@memory
 def test_machine(tmp_path):
     result = mk.progress(tmp_path/'solve.log')
     assert result['free_memory_mb'] > 0
@@ -419,8 +528,12 @@ def test_two_plate(client, tmp_path, logging):
         assert result['dofs'] == dofs
         assert 0.5*dofs < result['solved_dofs'] < dofs
         assert (result['percent'], result['block_open']) == (100, False)
-        assert result['pid'] == os.getpid() and result['alive'] is ALIVE
+        assert result['pid'] == os.getpid() and result['alive'] is True
         assert result['started'] == info['started']
+        if sys.platform == 'win32':
+            # MPh's COMSOL server is a child of this process
+            commands = [p['command'] for p in result['processes']]
+            assert 'comsolmphserver' in commands
         assert result['comsol_cores'] == size['machine']['comsol_cores']
         # again in this process: the start time stays
         mk.log_progress(log)
@@ -433,6 +546,32 @@ def test_two_plate(client, tmp_path, logging):
         assert log.stat().st_size == length
     finally:
         client.remove(model)
+
+
+def test_launcher_time(client, tmp_path, logging):
+    # an info file a launcher wrote for this process's parent: kept on
+    # Windows (a virtual environment's python.exe starts the real one)
+    log = tmp_path/'solve.log'
+    parent = os.getppid()
+    if sys.platform == 'win32':
+        from mphkit import _winproc
+        facts = _winproc.facts(parent)
+        assert facts is not None and facts['created'] is not None
+        started = datetime.datetime.fromtimestamp(
+            facts['created']).astimezone().isoformat()
+    else:
+        started = now(-1)
+    write_info(log, parent, started)
+    mk.log_progress(log)
+    info = json.loads(read(str(log) + '.json'))
+    assert info['pid'] == os.getpid()
+    assert (info['started'] == started) is (sys.platform == 'win32')
+    # the parent's ID with another start time: not its launcher's file
+    old = '2000-01-01T00:00:00+00:00'
+    write_info(log, parent, old)
+    mk.log_progress(log)
+    info = json.loads(read(str(log) + '.json'))
+    assert info['pid'] == os.getpid() and info['started'] != old
 
 
 def test_log_progress_arguments(tmp_path):
@@ -643,7 +782,7 @@ def test_documented(client, tmp_path, monkeypatch, logging):
         assert before['exists'] and before['pid'] == os.getpid()
         model.solve()
         after = eval(code[2].split('#')[0], namespace)
-        assert after['percent'] == 100 and after['alive'] is ALIVE
+        assert after['percent'] == 100 and after['alive'] is True
         assert after['dofs'] == size['steps'][0]['dofs']
     finally:
         client.remove(model)

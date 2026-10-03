@@ -109,8 +109,8 @@ def problem_size(model: Model, /, *, study=None) -> dict:
     `mesh_elements` counts the elements of each mesh the study uses (by
     name; a name used in several components gets the tag added).
     `machine` is about the computer Python runs on (a remote COMSOL
-    server may differ): its memory and free memory in MB (macOS only,
-    else `None`), its cores, and the cores COMSOL uses (set with
+    server may differ): its memory and free memory in MB (macOS and
+    Windows, else `None`), its cores, and the cores COMSOL uses (set with
     `mph.start(cores=...)`).
 
     It does not estimate memory or time. As a guide, a direct solver
@@ -355,9 +355,16 @@ def _solver_kind(children, types: dict[str, str]) -> dict:
 
 
 def _machine() -> dict:
-    """Returns the memory and cores of this computer and of COMSOL."""
+    """
+    Returns the memory (macOS and Windows) and cores of this computer and
+    of COMSOL.
+    """
     total = None
-    if sys.platform == 'darwin':
+    if sys.platform == 'win32':
+        from . import _winproc
+        memory = _winproc.memory()
+        total = memory['total_mb'] if memory is not None else None
+    elif sys.platform == 'darwin':
         out = _run(['sysctl', '-n', 'hw.memsize'])
         if out.strip().isdigit():
             total = int(out) // 2**20
@@ -406,7 +413,8 @@ def log_progress(path, /):
 
     It also writes `<path>.json` with the ID of this Python process and
     the time of the call, from which `mk.progress` finds the processes
-    that solve; a file a launcher wrote for this process keeps the
+    that solve; a file a launcher wrote for this process (on Windows also
+    for the virtual environment's python.exe that started it) keeps the
     launcher's time.
     See `help(mk.progress)` for running a long solve in the background.
     """
@@ -427,8 +435,8 @@ def log_progress(path, /):
     util.showProgress(str(log))
     info = _read_info(log)
     pid = os.getpid()
-    if (info is None or info.get('pid') != pid
-            or _started(info.get('started')) is None):
+    if (info is None or _started(info.get('started')) is None
+            or (info.get('pid') != pid and not _launched_me(info))):
         info = {'pid': pid, 'started': _now()}
     _write_info(log, {'pid': pid, 'started': info['started']})
     return log
@@ -483,15 +491,21 @@ def progress(path, /, *, pid: int | None = None) -> dict:
     and `elapsed_s` of the solving process (counted from `started`, also
     after the process ended), its `pid`, whether it is
     `alive`, and `processes`, its own and its children's and those of its
-    process group, with `cpu_percent` and `rss_mb` (memory, also of the
+    process group (Windows has none: there also the children of the
+    process after it ended, if they started before the info file was
+    written), with `cpu_percent` and `rss_mb` (memory, also of the
     Python running MPh) and their sums; `free_memory_mb` and
-    `swap_used_mb` of the computer. A process that started after
-    `started` (an ID used again) counts as not alive. `pid=` overrides
-    the info file's process, e.g. for a job started without one
-    (`started` and `elapsed_s` stay the info file's). Free memory and
-    swap come from macOS only; on Linux the summed `cpu_percent` is
-    `None` (ps gives averages there), on Windows the process facts are.
-    Linux and Windows were not tried.
+    `swap_used_mb` of the computer (on Windows the page files in use). A
+    process that started after `started` (an ID used again) counts as
+    not alive. `pid=` overrides the info file's process, e.g. for a job
+    started without one (`started` and `elapsed_s` stay the info file's;
+    on Windows an ended `pid=` lists no children). Free memory and swap
+    come from macOS and Windows; on Linux the summed `cpu_percent` is
+    `None` (ps gives averages there). On Windows `cpu_percent` is
+    measured over half a second, which the call takes longer, the list
+    is in the order the processes started, without the console host
+    (`conhost.exe`), and `command` is the program's name without `.exe`.
+    Linux was not tried.
 
     It does not judge whether the solve goes well, and errors do not
     show in the log: read the output of the solving script. It reads the
@@ -499,10 +513,7 @@ def progress(path, /, *, pid: int | None = None) -> dict:
     time steps).
 
     Long solves in the background (each shell command of an agent runs in
-    a new process); the launch and stop below are for macOS and Linux. On
-    Windows `alive` and `processes` are always `None`: whether the solve
-    is over shows in `solve.out` (the line `saved`) and the log.
-    `solve.py`, next to the input `m.mph`:
+    a new process). `solve.py`, next to the input `m.mph`:
 
     ```python
     from pathlib import Path
@@ -518,8 +529,10 @@ def progress(path, /, *, pid: int | None = None) -> dict:
     print('saved', flush=True)
     ```
 
-    `launch.py` starts it in a new session, so that it outlives the shell
-    command, and prints its ID and the log's path:
+    `launch.py` starts it in a new session (on Windows without a
+    console), so that it outlives the shell command and neither Ctrl+C
+    nor closing the terminal reaches it, and prints its ID and the log's
+    path:
 
     ```python
     import datetime, json, os, subprocess, sys
@@ -534,11 +547,13 @@ def progress(path, /, *, pid: int | None = None) -> dict:
     for name in ('solve.log', 'solve.log.json', 'solve.out',
                  'm_solved.mph'):
         (here/name).unlink(missing_ok=True)
+    options = ({'creationflags': subprocess.CREATE_NO_WINDOW}
+               if sys.platform == 'win32' else {'start_new_session': True})
     with open(here/'solve.out', 'w') as out:
         job = subprocess.Popen(
             [sys.executable, '-u', 'solve.py'], cwd=here,
             stdin=subprocess.DEVNULL, stdout=out,
-            stderr=subprocess.STDOUT, start_new_session=True)
+            stderr=subprocess.STDOUT, **options)
     info = {'pid': job.pid,
             'started': datetime.datetime.now().astimezone().isoformat()}
     (here/'info.tmp').write_text(json.dumps(info))
@@ -560,13 +575,33 @@ def progress(path, /, *, pid: int | None = None) -> dict:
     if `solve.out` has the line `saved`, else `solve.out` says why.
     `percent` 100 with `alive` `True` means saving or quitting.
 
-    To stop it, end the Python process only: `os.kill(pid,
+    To stop it on macOS and Linux, end the Python process only: `os.kill(pid,
     signal.SIGTERM)`; COMSOL ends with it, and `m.mph` stays as it was
     (Java may leave an `hs_err_pid*.log` file next to it).
     Do not signal the whole process group: the COMSOL server then may
     hang without its client. If `processes` is not empty some ten seconds
     later (e.g. when stopped while COMSOL was starting),
     `os.killpg(pid, signal.SIGKILL)` ends them.
+
+    On Windows end every process `mk.progress` lists, the newest first
+    (ending Python only leaves the COMSOL server running when stopped
+    while COMSOL starts):
+
+    ```python
+    for p in reversed(mk.progress(log)['processes'] or []):
+        try:
+            os.kill(p['pid'], signal.SIGTERM)
+        except OSError:
+            pass                                 # ended meanwhile
+    ```
+
+    The list is checked against start times, so an ID used again is not
+    ended. The ID `launch.py` prints is Python's launcher there (a
+    virtual environment's python.exe starts the real one); `pid=` with it
+    lists them all too. If `launch.py` cannot delete one of its files and
+    `processes` is empty, a COMSOL server was left behind: end
+    `comsolmphserver.exe` in the Task Manager, or all of yours with
+    `taskkill /im comsolmphserver.exe /f`.
 
     Batch mode works the same with, in `launch.py`, the command
     `[comsol, 'batch', '-np', '4', '-inputfile', str(here/'m.mph'),
@@ -576,7 +611,11 @@ def progress(path, /, *, pid: int | None = None) -> dict:
     files to delete. It succeeded if that file's last line is `Done` and
     `m_solved.mph` exists. Stop it with `os.killpg(pid, signal.SIGTERM)`:
     ending only the script leaves COMSOL computing. Batch mode may
-    rewrite COMSOL's preferences file.
+    rewrite COMSOL's preferences file. On Windows the command is
+    `[comsolbatch, '-np', '4', ...]` with `comsolbatch =
+    Path(mph.discovery.backend()['root'])/'bin'/'win64'/'comsolbatch.exe'`
+    (`comsol.exe batch` opens the COMSOL Desktop there),
+    `m_solved.mph.recovery` is deleted too, and it stops as above.
     """
     if not isinstance(path, (str, os.PathLike)):
         raise TypeError(f'path must be a file name, not {path!r}.')
@@ -609,7 +648,8 @@ def progress(path, /, *, pid: int | None = None) -> dict:
     if from_info and info and _is_pid(info.get('pid')):
         pid = info['pid']
     result['pid'] = pid
-    result.update(_processes(pid, started if from_info else None))
+    result.update(_processes(pid, started if from_info else None,
+                             _info_time(log) if from_info else None))
     result['free_memory_mb'] = _free_memory_mb()
     result['swap_used_mb'] = _swap_used_mb()
     return result
@@ -726,6 +766,34 @@ def _read_info(log: Path) -> dict | None:
     return info if isinstance(info, dict) else None
 
 
+def _info_time(log: Path) -> float | None:
+    """Returns when the info file of a log was written, or None."""
+    try:
+        return _info_path(log).stat().st_mtime
+    except OSError:
+        return None
+
+
+def _launched_me(info: dict) -> bool:
+    """
+    Tells whether an info file was written for the launcher that started
+    this process on Windows: a virtual environment's python.exe starts
+    the real Python as its child, so a launcher's `job.pid` is the
+    parent's. Its start time must match, against a process ID used again.
+    """
+    if sys.platform == 'win32':
+        from . import _winproc
+        started = _started(info.get('started'))
+        parent = os.getppid()
+        if info.get('pid') != parent or started is None:
+            return False
+        facts = _winproc.facts(parent)
+        created = facts['created'] if facts is not None else None
+        return (created is not None
+                and abs(created - started.timestamp()) <= SLACK)
+    return False
+
+
 def _write_info(log: Path, info: dict):
     """Writes the info file of a log at once, never half."""
     target = _info_path(log)
@@ -762,19 +830,25 @@ def _run(command: list[str]) -> str:
     return run.stdout if run.returncode == 0 else ''
 
 
-def _processes(pid: int | None, started: datetime.datetime | None) -> dict:
+def _processes(pid: int | None, started: datetime.datetime | None,
+               written: float | None = None) -> dict:
     """
     Returns whether a process is alive and its processes: itself, its
     descendants and the members of its process group (they outlive it:
-    a batch job, or a COMSOL server left behind). `started` is the time
-    the info file gives, against a process ID used again.
+    a batch job, or a COMSOL server left behind); on Windows, which has
+    no process groups, its descendants also after it ended. `started` is
+    the time the info file gives, against a process ID used again, and
+    `written` (Windows only) the time the file was written.
     """
     gone: dict[str, Any] = {'alive': False, 'cpu_percent': None,
                             'rss_mb': None, 'processes': []}
     if pid is None:
         return {**gone, 'alive': None}
-    if os.name == 'nt':
-        return {**gone, 'alive': None, 'processes': None}
+    if sys.platform == 'win32':
+        from . import _winproc
+        return _winproc.processes(
+            pid, started.timestamp() if started is not None else None,
+            written, SLACK)
     rows = []
     for line in _run(['ps', '-A', '-o',
                       'pid=,ppid=,pgid=,stat=,pcpu=,rss=,comm=']).splitlines():
@@ -832,7 +906,14 @@ def _elapsed(text: str) -> float | None:
 
 
 def _free_memory_mb() -> int | None:
-    """Free memory of macOS: free, inactive and speculative pages."""
+    """
+    Free memory of macOS (free, inactive and speculative pages) and of
+    Windows (available memory).
+    """
+    if sys.platform == 'win32':
+        from . import _winproc
+        memory = _winproc.memory()
+        return memory['free_mb'] if memory is not None else None
     if sys.platform != 'darwin':
         return None
     text = _run(['vm_stat'])
@@ -846,7 +927,10 @@ def _free_memory_mb() -> int | None:
 
 
 def _swap_used_mb() -> int | None:
-    """Swap in use on macOS."""
+    """Swap in use on macOS, page files in use on Windows."""
+    if sys.platform == 'win32':
+        from . import _winproc
+        return _winproc.swap_used_mb()
     if sys.platform != 'darwin':
         return None
     found = re.search(r'used = ([\d.]+)([KMGT])',
