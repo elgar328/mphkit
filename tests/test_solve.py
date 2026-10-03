@@ -395,8 +395,8 @@ def test_plate(client, plate, tmp_path):
     assert size['mesh_elements']['mesh'] > 0
     assert size['machine']['comsol_cores'] == client.cores
     assert size['machine']['cores'] == os.cpu_count()
-    assert mk.problem_size(model, 'static')['steps'] == size['steps']
-    assert mk.problem_size(model, model/'studies'/'static')['steps'] == \
+    assert mk.problem_size(model, study='static')['steps'] == size['steps']
+    assert mk.problem_size(model, study=model/'studies'/'static')['steps'] == \
         size['steps']
     assert leaves_nothing(model, tmp_path) == before
     json.dumps(size)
@@ -448,11 +448,11 @@ def test_arguments_comsol(client, plate):
     with pytest.raises(TypeError, match='takes a model'):
         mk.problem_size(geom)
     with pytest.raises(LookupError, match='No study "nothing"'):
-        mk.problem_size(model, 'nothing')
+        mk.problem_size(model, study='nothing')
     (model/'studies').create(name='second').create('Stationary')
     with pytest.raises(ValueError, match='"static", "second"'):
         mk.problem_size(model)
-    assert mk.problem_size(model, 'second')['study'] == 'second'
+    assert mk.problem_size(model, study='second')['study'] == 'second'
 
 
 def test_no_study(model):

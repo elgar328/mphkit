@@ -30,14 +30,14 @@ BINS = 10
 
 def mesh_quality(geom: Node, entity: str = 'domain', /, selection=None, *,
                  mesh: Node | str | None = None,
-                 measure: str = 'skewness') -> dict:
+                 quality: str = 'skewness') -> dict:
     """
     Returns the quality of a mesh in numbers, for all domains, some
     domains or (in 3D) boundaries:
 
     ```python
     mk.mesh_quality(geom)
-    # {'mesh': 'mesh', 'measure': 'skewness', 'level': 'domain',
+    # {'mesh': 'mesh', 'quality': 'skewness', 'level': 'domain',
     #  'elements': {'tet': 6267, 'pyr': 5, 'prism': 1093, 'hex': 35},
     #  'min': 0.045, 'mean': 0.62,
     #  'worst': [{'quality': 0.045, 'position': (0.98, 1.0, 0.94),
@@ -60,7 +60,8 @@ def mesh_quality(geom: Node, entity: str = 'domain', /, selection=None, *,
     `None` for all. `mesh` is needed when the geometry's component has
     several non-empty meshes (name as in `model.meshes()`, tag or node;
     `None` or `True` for the only one, as in `mk.image`). Quality
-    runs from 0 to 1, 1 being best. `measure` is COMSOL's: `'skewness'`
+    runs from 0 to 1, 1 being best. `quality` names COMSOL's measure:
+    `'skewness'`
     (the default, also in the COMSOL Desktop and its mesh messages),
     `'maxangle'`, `'volcircum'`, `'vollength'`, `'condition'` or
     `'growth'` (the size change to neighbouring elements, not the shape).
@@ -68,10 +69,11 @@ def mesh_quality(geom: Node, entity: str = 'domain', /, selection=None, *,
     element of the example's plate. Long thin boundary-layer elements rate
     high by skewness and maximum angle, low by the volume measures.
 
-    The result has the element count by type, the lowest and the mean
-    quality (each element counted once), the `worst` elements (up to
-    five, lowest first, with the centroid in the geometry's length unit
-    and the entity number), a `histogram` of the counts with quality in
+    The result has the measure (`'quality'`), the element count by type,
+    the lowest and the mean quality (each element counted once), the
+    `worst` elements (up to five, lowest first, each with its number
+    under `'quality'`, the centroid in the geometry's length unit and the
+    entity number), a `histogram` of the counts with quality in
     0-0.1, 0.1-0.2, ..., 0.9-1 (0.3 counts in 0.3-0.4, 1 in the last),
     the element `size` (COMSOL's `h`, the longest edge of an element, in
     the geometry's length unit; not a boundary-layer thickness), each
@@ -99,9 +101,9 @@ def mesh_quality(geom: Node, entity: str = 'domain', /, selection=None, *,
         raise TypeError(f"entity must be 'domain' or 'boundary', not "
                         f"{entity!r}; the selection comes third, e.g. "
                         f"mk.mesh_quality(geom, 'domain', {example}).")
-    if measure not in MEASURES:
-        raise ValueError(f'measure must be one of {list(MEASURES)}, not '
-                         f'{measure!r}.')
+    if quality not in MEASURES:
+        raise ValueError(f'quality must be one of {list(MEASURES)}, not '
+                         f'{quality!r}.')
     if mesh is True:
         mesh = None
     if mesh is not None and not isinstance(mesh, (Node, str)):
@@ -124,35 +126,35 @@ def mesh_quality(geom: Node, entity: str = 'domain', /, selection=None, *,
         raise ValueError(message + '.')
     sequence = _sequence(geom, mesh)
     kinds, points, owners, numbers = _elements(sequence, level, entities)
-    variable = MEASURES[measure]
+    variable = MEASURES[quality]
     if len(owners):
         values = _evaluate(geom, sequence, level, variable, points, owners,
                            numbers, entities)
     else:
         values = numpy.zeros((0, 2))
-    quality, size = values[:, 0], values[:, 1]
+    rated, size = values[:, 0], values[:, 1]
     result: dict[str, Any] = {
-        'mesh': _comsol.name_of(sequence), 'measure': measure,
+        'mesh': _comsol.name_of(sequence), 'quality': quality,
         'level': 'domain' if level == sdim else 'boundary',
         'elements': {kind: int(numpy.count_nonzero(kinds == kind))
                      for kind in dict.fromkeys(kinds.tolist())}}
-    if len(quality):
-        result['min'] = float(quality.min())
-        result['mean'] = float(quality.mean())
+    if len(rated):
+        result['min'] = float(rated.min())
+        result['mean'] = float(rated.mean())
     else:
         result['min'] = result['mean'] = None
-    lowest = numpy.argsort(quality, kind='stable')[:WORST]
+    lowest = numpy.argsort(rated, kind='stable')[:WORST]
     result['worst'] = [
-        {'quality': float(quality[i]),
+        {'quality': float(rated[i]),
          'position': tuple(float(x) for x in points[:, i]),
          'entity': int(owners[i])} for i in lowest]
     # bins of exactly 0.1 width: 0.3 counts in 0.3-0.4, 1 in the last
-    bins = numpy.clip(numpy.floor(quality * BINS), 0, BINS - 1).astype(int)
+    bins = numpy.clip(numpy.floor(rated * BINS), 0, BINS - 1).astype(int)
     result['histogram'] = [int(n) for n in numpy.bincount(bins,
                                                           minlength=BINS)]
     result['size'] = ({'min': float(size.min()), 'max': float(size.max())}
                       if len(size) else None)
-    result['by_entity'] = _by_entity(quality, owners)
+    result['by_entity'] = _by_entity(rated, owners)
     result['unmeshed'] = sorted(set(entities) - set(owners.tolist()))
     result['messages'] = _messages(geom, sequence)
     return result

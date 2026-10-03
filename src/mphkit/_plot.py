@@ -52,27 +52,27 @@ def plot(geom: Node, expr: str, filename, /, selection: Node | None = None,
          *, unit: str | None = None, dataset=None, step: One = None,
          outer: OuterOne = None, x=None, y=None, z=None,
          view: View | None = None, color_range=None,
-         colortable: str | None = None, deform: bool | float = False,
+         color_table: str | None = None, deform: bool | float = False,
          size=(800, 600)) -> Path: ...
 @overload
 def plot(geom: Node, expr: str, filename, /, selection: Node | None = None,
          *, unit: str | None = None, dataset=None, step: One = None,
          outer: OuterMany, x=None, y=None, z=None,
          view: View | None = None, color_range=None,
-         colortable: str | None = None, deform: bool | float = False,
+         color_table: str | None = None, deform: bool | float = False,
          size=(800, 600)) -> list[Path]: ...
 @overload
 def plot(geom: Node, expr: str, filename, /, selection: Node | None = None,
          *, unit: str | None = None, dataset=None, step: One = None,
          outer: Outer = None, x=None, y=None, z=None,
          view: View | None = None, color_range=None,
-         colortable: str | None = None, deform: bool | float = False,
+         color_table: str | None = None, deform: bool | float = False,
          size=(800, 600)) -> Path | list[Path]: ...
 def plot(geom: Node, expr: str, filename, /, selection: Node | None = None,
          *, unit: str | None = None, dataset=None, step: One = None,
          outer: Outer = None, x=None, y=None, z=None,
          view: View | None = None, color_range=None,
-         colortable: str | None = None, deform: bool | float = False,
+         color_table: str | None = None, deform: bool | float = False,
          size=(800, 600)) -> Path | list[Path]:
     """
     Saves a picture of an expression on a solved model and returns the file
@@ -108,7 +108,7 @@ def plot(geom: Node, expr: str, filename, /, selection: Node | None = None,
     left out, the geometry's own view, isometric for a new model (in which
     entities hidden in that view stay hidden). The whole plot is always in
     the picture. `color_range=(min, max)` fixes the colours, in `unit` or
-    SI units, e.g. to compare pictures; `colortable` names a COMSOL colour
+    SI units, e.g. to compare pictures; `color_table` names a COMSOL colour
     table such as `'HeatCamera'`. `deform=True` draws on the deformed shape
     (solid mechanics: displacements u, v, w), exaggerated by a scale COMSOL
     picks and does not show; a number sets the scale, 1 for the true
@@ -151,9 +151,9 @@ def plot(geom: Node, expr: str, filename, /, selection: Node | None = None,
                          f'{view!r}.')
     scale = _scale(deform)
     limits = _limits(color_range)
-    if colortable is not None and not isinstance(colortable, str):
-        raise TypeError(f'colortable must be a name such as "HeatCamera", '
-                        f'not {colortable!r}.')
+    if color_table is not None and not isinstance(color_table, str):
+        raise TypeError(f'color_table must be a name such as "HeatCamera", '
+                        f'not {color_table!r}.')
     _results.check_geometry(name, geom)
     sdim = _comsol.sdim(geom)
     if sdim == 2 and (slices is not None or view is not None):
@@ -198,9 +198,9 @@ def plot(geom: Node, expr: str, filename, /, selection: Node | None = None,
                                        ('rangecolormin', repr(limits[0])),
                                        ('rangecolormax', repr(limits[1]))):
                         _comsol.set_property(feature, key, value)
-                if colortable is not None:
+                if color_table is not None:
                     _comsol.set_property(feature, 'colortable',
-                                         _colortable(feature, colortable))
+                                         _color_table(feature, color_table))
                 _draw(create, model, group, temporary, pixels, sdim, expr,
                       slices)
                 if picture.title is not None:
@@ -612,7 +612,7 @@ def _limits(color_range) -> tuple[float, float] | None:
     return low, high
 
 
-def _colortable(feature, name: str) -> str:
+def _color_table(feature, name: str) -> str:
     """
     Returns the colour table `name` as COMSOL spells it. COMSOL accepts
     any name and silently draws with its default, so unknown names raise.
@@ -624,4 +624,4 @@ def _colortable(feature, name: str) -> str:
     close = get_close_matches(name.lower(), list(lower), n=3, cutoff=0.6)
     hint = (f'did you mean {" or ".join(repr(lower[c]) for c in close)}?'
             if close else "e.g. 'Rainbow', 'HeatCamera' or 'GrayScale'.")
-    raise ValueError(f'No colortable {name!r}; {hint}')
+    raise ValueError(f'No color table {name!r}; {hint}')

@@ -69,7 +69,7 @@ LOG_KEYS = ('percent', 'task', 'parameter', 'block', 'block_open', 'dofs',
 # Problem size #
 ################
 
-def problem_size(model: Model, /, study=None) -> dict:
+def problem_size(model: Model, /, *, study=None) -> dict:
     """
     Returns the size of the problem a study solves, before solving it:
 
@@ -162,7 +162,7 @@ def _study(model: Model, study) -> Any:
             names = ', '.join(f'"{_comsol.name_of(s)}"' for s in active)
             raise ValueError(
                 f'The model has several studies: {names}; pass study= the '
-                'one to size, e.g. mk.problem_size(model, '
+                'one to size, e.g. mk.problem_size(model, study='
                 f'{_comsol.name_of(active[0])!r}), once for each '
                 '(model.solve() without a name solves them all).')
         return active[0]
@@ -433,7 +433,7 @@ def log_progress(path, /):
     return log
 
 
-def progress(path, /, pid: int | None = None) -> dict:
+def progress(path, /, *, pid: int | None = None) -> dict:
     """
     Returns the progress of a solve from COMSOL's progress log and the
     operating system, from any Python process (COMSOL is not needed):

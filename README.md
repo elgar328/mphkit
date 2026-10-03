@@ -206,7 +206,7 @@ best):
 ```python
 mk.mesh_quality(geom)                  # lowest (e.g. 0.065), the 5 worst elements and where, a histogram, COMSOL's messages
 mk.mesh_quality(geom, 'boundary', 3)   # the surface elements of boundary 3
-mk.mesh_quality(geom, measure='volcircum')  # another of COMSOL's quality measures
+mk.mesh_quality(geom, quality='volcircum')  # another of COMSOL's quality measures
 ```
 
 The `messages` are what COMSOL reported when building the mesh, e.g. an

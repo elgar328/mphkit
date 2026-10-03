@@ -44,8 +44,9 @@ until 1.0, a minor release (0.2, 0.3, ...) may change the API. See
   `model.evaluate`.
 - `mk.plot` saves a picture of an expression on a solved model: on the
   surface, on a selection, on slices (`x=`, `y=`, `z=`), seen from a side
-  (`view='top'`, ...) or on the deformed shape (`deform=True`), with the
-  checks of the results helpers, and leaves nothing in the model. With
+  (`view='top'`, ...) or on the deformed shape (`deform=True`), in
+  chosen colours (`color_range=`, `color_table=`), with the checks of the
+  results helpers, and leaves nothing in the model. With
   `outer=` it draws values of a parametric sweep stored as an outer
   loop, one picture each (`'T_{outer}.png'`), and checks that the title
   shows the value asked for. An error leaves existing files as they were.
@@ -94,9 +95,9 @@ until 1.0, a minor release (0.2, 0.3, ...) may change the API. See
 
 - `mk.mesh_quality(geom)` gives a mesh's quality in numbers (lowest and
   mean, a histogram, the worst elements with their positions, per entity,
-  in COMSOL's six quality measures) with the element sizes, the entities
-  left without elements and what COMSOL reported when building the mesh;
-  for all or some domains, or boundaries in 3D. It matches COMSOL's mesh
+  in COMSOL's six quality measures, `quality=`) with the element sizes,
+  the entities left without elements and what COMSOL reported when
+  building the mesh; for all or some domains, or boundaries in 3D. It matches COMSOL's mesh
   statistics for all element types and leaves nothing in the model.
   Unknown names such as `mk.mesh_stats`, `mk.quality_of_mesh` or
   `mk.mphmeshstats` suggest it, and mesh picture hints mention it.

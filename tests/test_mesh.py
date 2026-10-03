@@ -92,7 +92,7 @@ def test_plate(plate, tmp_path):
     model, geom = plate
     before = java_export(model, tmp_path/'state.java')
     quality = mk.mesh_quality(geom)
-    assert (quality['mesh'], quality['measure'], quality['level']) == \
+    assert (quality['mesh'], quality['quality'], quality['level']) == \
         ('mesh', 'skewness', 'domain')
     matches(quality, statistics(model, 'mesh1', VOLUMES))
     assert quality['mean'] == pytest.approx(
@@ -131,11 +131,11 @@ def statistics_mean(model, mesh, kind):
     return mean
 
 
-@pytest.mark.parametrize('measure', MEASURES)
-def test_measures(plate, measure):
+@pytest.mark.parametrize('name', MEASURES)
+def test_measures(plate, name):
     model, geom = plate
-    quality = mk.mesh_quality(geom, measure=measure)
-    matches(quality, statistics(model, 'mesh1', VOLUMES, measure))
+    quality = mk.mesh_quality(geom, quality=name)
+    matches(quality, statistics(model, 'mesh1', VOLUMES, name))
 
 
 def test_boundaries(plate):
@@ -320,8 +320,8 @@ def test_errors(plate, model):
     plate_model, geom = plate
     with pytest.raises(TypeError, match=r"mk.mesh_quality\(geom, 'domain', 3\)"):
         mk.mesh_quality(geom, 3)
-    with pytest.raises(ValueError, match='measure must be one of'):
-        mk.mesh_quality(geom, measure='quality')
+    with pytest.raises(ValueError, match='quality must be one of'):
+        mk.mesh_quality(geom, quality='bogus')
     with pytest.raises(ValueError, match='edge and point elements'):
         mk.mesh_quality(geom, 'edge')
     with pytest.raises(TypeError, match='mesh must be'):
@@ -418,4 +418,4 @@ def test_documented(plate):
     # the mesh, and so the numbers, vary a little from run to run
     assert 0.03 < whole['min'] < 0.2
     assert face['level'] == 'boundary' and list(face['by_entity']) == [3]
-    assert other['measure'] == 'volcircum'
+    assert other['quality'] == 'volcircum'

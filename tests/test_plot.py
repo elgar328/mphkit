@@ -105,7 +105,7 @@ def test_pictures(solved, tmp_path):
         'top face': {'z': 5},
         'slice in domain': {'selection': plate, 'x': 50},
         'range': {'color_range': (90, 100)},
-        'colors': {'colortable': 'HeatCamera'},
+        'colors': {'color_table': 'HeatCamera'},
         **{f'view {v}': {'view': v} for v in
            ('top', 'bottom', 'front', 'back', 'left', 'right', 'iso')},
     }
@@ -135,7 +135,7 @@ def test_pictures_change_with_the_options(solved, tmp_path):
     views = [picture(v, view=v) for v in ('top', 'bottom', 'front', 'iso')]
     assert len(set(views + [plain])) == 5
     assert picture('range', color_range=(90, 100)) != plain
-    assert picture('colors', colortable='HeatCamera') != plain
+    assert picture('colors', color_table='HeatCamera') != plain
 
 
 def test_view_camera_and_history_unchanged(solved, tmp_path):
@@ -191,9 +191,9 @@ def test_kinds_of_selections(solved, tmp_path):
     ({'view': 'side'}, ValueError, "view must be None or one of 'top'"),
     ({'color_range': (2, 1)}, ValueError, 'color_range must be'),
     ({'color_range': 'ab'}, ValueError, 'color_range must be'),
-    ({'colortable': 'Heatcamera'}, ValueError,
-     "No colortable 'Heatcamera'; did you mean 'HeatCamera'"),
-    ({'colortable': 3}, TypeError, 'colortable must be a name'),
+    ({'color_table': 'Heatcamera'}, ValueError,
+     "No color table 'Heatcamera'; did you mean 'HeatCamera'"),
+    ({'color_table': 3}, TypeError, 'color_table must be a name'),
     ({'deform': 0}, ValueError, 'positive scale factor'),
     ({'deform': -1.0}, ValueError, 'positive scale factor'),
     ({'deform': 'yes'}, TypeError, 'positive scale factor'),
