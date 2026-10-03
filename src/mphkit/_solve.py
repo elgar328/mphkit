@@ -465,9 +465,13 @@ def progress(path, /, *, pid: int | None = None) -> dict:
     From the log (written by `mk.log_progress` or `comsol batch
     -batchlog`; `None` where the log has no such line yet):
 
-    - `percent`, `task`: COMSOL's progress and what it does. The percent
-      belongs to the current task and may go back; over a parametric
-      sweep it covers the whole sweep.
+    - `percent`, `task`: COMSOL's progress and what it does. The percent is
+      of all that COMSOL is running at the time (a whole study, say), not
+      just of `task`, and may go back; over a parametric sweep it covers the
+      whole sweep, and in a single time-dependent solve it roughly follows
+      the time solved, barely moving during the first, small time steps. It
+      is `None` in a `block` until that block logs it; for a short solve
+      that may be only at 100.
     - `parameter`: the parameter value of a sweep being solved, e.g.
       `'hh = 300'` (the log does not say how many follow).
     - `block`, `block_open`: the solver step being run, e.g.
@@ -478,11 +482,13 @@ def progress(path, /, *, pid: int | None = None) -> dict:
     - `memory_mb`, `peak_memory_mb`: memory of the COMSOL process now and
       at most since it started.
     - `comsol_cores`: the cores COMSOL uses.
-    - `time`: the last output time of a time-dependent solve, and
-      `solver_time`, `step_size`: where the time stepper is and its last
-      step. All in seconds, whatever the study's time unit; `solver_time`
-      may pass the end time, and with free time stepping `time` lags
-      behind it.
+    - `time`, `solver_time`, `step_size`: in a Time-Dependent Solver `block`
+      (`None` in other blocks), the last output time logged in it, and the
+      time and size of its last logged time step. All in seconds, whatever
+      the study's time unit. `time` may be behind `solver_time` (between
+      output times, with output times COMSOL does not log, or past the end
+      time) or ahead of it: output times that fall within a time step are
+      logged before that step's line.
     - `last_lines`: the last lines of the current step, without the
       progress and memory lines, e.g. nonlinear iterations or time steps.
     - `updated_s_ago`: seconds since the log last changed.
@@ -569,11 +575,20 @@ def progress(path, /, *, pid: int | None = None) -> dict:
     uv run python -c "import time, mphkit as mk; time.sleep(60); print(mk.progress('/abs/path/solve.log'))"
     ```
 
-    While
-    COMSOL starts, `exists` is `False` and `alive` `True`. The solve is
-    over when `alive` is `False` and `processes` is empty; it succeeded
+    On Windows, in a virtual environment made by venv or uv, the ID
+    `launch.py` prints is that of the environment's `python.exe`, a launcher
+    that starts the real Python running `solve.py` and ends with it.
+    `mk.progress` gives that ID as `pid` until `solve.py` calls
+    `mk.log_progress`, and the real Python's ID after that, leaving the
+    launcher out of `processes`; `pid=` with the printed ID lists the
+    launcher too.
+
+    While COMSOL starts, `exists` is `False` and `alive` `True`. The solve
+    is over when `alive` is `False` and `processes` is empty; it succeeded
     if `solve.out` has the line `saved`, else `solve.out` says why.
-    `percent` 100 with `alive` `True` means saving or quitting.
+    `percent` 100 alone does not mean it is over: the last time steps may
+    still be logged, and `solve.py` may be saving, quitting or doing more
+    work, which may log progress again.
 
     To stop it on macOS and Linux, end the Python process only:
     `os.kill(pid, signal.SIGTERM)`; COMSOL ends with it, and `m.mph`
@@ -596,11 +611,9 @@ def progress(path, /, *, pid: int | None = None) -> dict:
     ```
 
     The list is checked against start times, so an ID used again is not
-    ended. The ID `launch.py` prints is Python's launcher there (a
-    virtual environment's python.exe starts the real one); `pid=` with it
-    lists them all too. If `launch.py` cannot delete one of its files and
-    `processes` is empty, a COMSOL server was left behind: end
-    `comsolmphserver.exe` in the Task Manager, or all of yours with
+    ended. If `launch.py` cannot delete one of its files and `processes`
+    is empty, a COMSOL server was left behind: end `comsolmphserver.exe`
+    in the Task Manager, or all of yours with
     `taskkill /im comsolmphserver.exe /f`.
 
     Batch mode works the same with, in `launch.py`, the command
