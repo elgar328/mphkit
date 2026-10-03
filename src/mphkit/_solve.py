@@ -575,9 +575,9 @@ def progress(path, /, *, pid: int | None = None) -> dict:
     if `solve.out` has the line `saved`, else `solve.out` says why.
     `percent` 100 with `alive` `True` means saving or quitting.
 
-    To stop it on macOS and Linux, end the Python process only: `os.kill(pid,
-    signal.SIGTERM)`; COMSOL ends with it, and `m.mph` stays as it was
-    (Java may leave an `hs_err_pid*.log` file next to it).
+    To stop it on macOS and Linux, end the Python process only:
+    `os.kill(pid, signal.SIGTERM)`; COMSOL ends with it, and `m.mph`
+    stays as it was (Java may leave an `hs_err_pid*.log` file next to it).
     Do not signal the whole process group: the COMSOL server then may
     hang without its client. If `processes` is not empty some ten seconds
     later (e.g. when stopped while COMSOL was starting),
