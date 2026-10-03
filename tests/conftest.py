@@ -2,6 +2,7 @@
 Shared fixtures. Tests needing COMSOL are skipped when it is unavailable,
 and marked `comsol`: `pytest -m "not comsol"` runs the others in seconds.
 """
+import os
 import sys
 from pathlib import Path
 
@@ -32,6 +33,24 @@ def pytest_sessionfinish(session):
         raise RuntimeError('mph.session.exit_code is gone (MPh changed): '
                            'pytest may exit with 0 after failed tests.')
     mph_session.exit_code = int(session.exitstatus)
+
+
+@pytest.hookimpl(trylast=True)
+def pytest_unconfigure(config):
+    """
+    On macOS, ends the process once pytest is done, before MPh's clean-up:
+    disconnecting the client and ending Java there crash more often than
+    not, with exit status 139 or 138 after passing tests (seen 2026-10-04
+    in 10 of 19 test files). The COMSOL server ends once its client is
+    gone. Not used elsewhere: Windows exits cleanly, Linux is untried.
+    """
+    mph_session = sys.modules.get('mph.session')
+    if (sys.platform != 'darwin' or mph_session is None
+            or getattr(mph_session, 'client', None) is None):
+        return
+    sys.stdout.flush()
+    sys.stderr.flush()
+    os._exit(mph_session.exit_code)
 
 
 @pytest.fixture(scope='session')
