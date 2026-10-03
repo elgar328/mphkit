@@ -232,8 +232,9 @@ def test_by_study(fresh):
     study = transient(model, values='100 200')
     other = (model/'studies').create(name='other')
     other.create('Stationary')
-    with pytest.raises(ValueError, match=r'Study "other" has no solved '
-                                         r'dataset for geometry'):
+    with pytest.raises(RuntimeError, match=r'Study "other" is not solved; '
+                                           r'run model.solve\(\) with its '
+                                           'name first'):
         outer_values(geom, dataset=other)
     with pytest.raises(LookupError, match=r'No dataset "nothing"; the model '
                        r"has .*\. No study \"nothing\" either; the model has "
@@ -1257,6 +1258,50 @@ def test_settle(tmp_path):
     os.chmod(drawn, 0o444)
     mk._plot._remove(drawn)
     assert not drawn.exists()
+
+
+def test_label_parts():
+    parts = mk._sweep.label_parts
+    assert parts('Material Switch 1=Water, liquid, k=2') == \
+        ['Material Switch 1=Water, liquid', 'k=2']
+    assert parts('Th=100, k=2') == ['Th=100', 'k=2']
+    assert parts('Material Switch 1=Water, vapor') == \
+        ['Material Switch 1=Water, vapor']
+    assert parts('') == ['']
+
+
+def test_folders_made_and_removed(tmp_path):
+    make, remove = mk._plot._make_folder, mk._plot._remove_folders
+    made: list = []
+    make(tmp_path/'new'/'sub'/'T.png', made)
+    assert made == [tmp_path/'new', tmp_path/'new'/'sub']
+    remove(made)
+    assert list(tmp_path.iterdir()) == []
+    # a folder holding a file stays, and those above it
+    made = []
+    make(tmp_path/'new'/'sub'/'T.png', made)
+    (tmp_path/'new'/'sub'/'T.png').write_bytes(b'png')
+    remove(made)
+    assert (tmp_path/'new'/'sub'/'T.png').exists()
+    # '..' in the path: the folder that existed stays
+    (tmp_path/'old').mkdir()
+    made = []
+    make(tmp_path/'other'/'..'/'old'/'sub'/'T.png', made)
+    assert made == [tmp_path/'other', tmp_path/'other'/'..'/'old'/'sub']
+    remove(made)
+    assert sorted(p.name for p in tmp_path.iterdir()) == ['new', 'old']
+    assert list((tmp_path/'old').iterdir()) == []
+    # failing halfway, as with a name too long: what was made is recorded
+    made = []
+    with pytest.raises(OSError, match='Could not write the picture'):
+        make(tmp_path/'top'/('x'*300)/'T.png', made)
+    assert made == [tmp_path/'top']
+    remove(made)
+    assert not (tmp_path/'top').exists()
+    # a file in the way
+    (tmp_path/'file').write_text('', encoding='utf-8')
+    with pytest.raises(OSError, match='Could not write the picture'):
+        make(tmp_path/'file'/'T.png', [])
 
 
 def test_file_names(tmp_path):

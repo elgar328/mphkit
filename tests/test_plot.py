@@ -240,6 +240,10 @@ def test_more_plot_errors(solved, tmp_path):
     (tmp_path/'file').write_text('', encoding='utf-8')
     with pytest.raises(OSError, match='[Cc]ould not write the picture'):
         mk.plot(geom, 'T', tmp_path/'file'/'x.png')
+    # an error removes the folders made for the picture, not others
+    with pytest.raises(RuntimeError, match='Undefined variable'):
+        mk.plot(geom, 'nothing_here', tmp_path/'new'/'sub'/'x.png')
+    assert not (tmp_path/'new').exists() and tmp_path.is_dir()
     nothing = mk.sel.box(geom, 'boundary', z=50, name='nothing')
     with pytest.raises(ValueError, match='is empty; nothing to draw'):
         mk.plot(geom, 'T', tmp_path/'x.png', nothing)

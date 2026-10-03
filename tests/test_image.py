@@ -1,6 +1,7 @@
 """Tests for pictures of geometries and selections."""
 import struct
 
+import numpy
 import pytest
 
 import mphkit as mk
@@ -26,6 +27,16 @@ def plate(model, geom):
 def wall(plate):
     return mk.sel.cylinder(plate, 'boundary', (20, 15, 0), 5, rin=4.95,
                            bottom=0, top=5, name='wall')
+
+
+def test_picture_size():
+    size = mk._image.picture_size
+    assert size((800, 600)) == (800, 600)
+    width, height = size([numpy.int64(800), numpy.int32(600)])
+    assert (width, height) == (800, 600) and type(width) is int
+    for wrong in ((True, 600), (numpy.float64(800), 600), (800, -1)):
+        with pytest.raises(ValueError, match='size must be'):
+            size(wrong)
 
 
 def test_image_files(plate, wall, tmp_path):

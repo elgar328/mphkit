@@ -6,8 +6,8 @@ COMSOL's libraries, looks up COMSOL's names, and reads and draws results;
 physics, mesh and studies stay plain MPh (or COMSOL's Java API through
 `node.java`). Helpers take MPh nodes, and those that create something
 return one. This overview names every helper (Index, at the end);
-`help(mk.<name>)` has the details, and `help(mphkit)` appends all of
-them, at length.
+`help(mk.<name>)` has the details of one, `help(mk.sel)` those of the
+selections.
 
     import mph
     import mphkit as mk
@@ -45,6 +45,7 @@ them, at length.
                       step='last')
     table = [dict(values, Tmax=value)             # a row per Th
              for values, value in zip(mk.outer_values(geom), tmax)]
+    # {outer} below: a plain string, not an f-string
     mk.plot(geom, 'T', 'T_{outer}.png', unit='degC', outer='all',
             step='last')                          # a picture per Th
     # a stationary sweep is stored as steps: mk.outer_values raises
@@ -79,6 +80,10 @@ Rules:
   `mk.properties` call that lists them.
 - Objects that touch or overlap stay separate domains, also after
   `mk.union`; `mk.union(geom, [a, b], intbnd=False)` merges them.
+- A geometry not built, a mesh missing or changed since it was built,
+  and results not solved raise a RuntimeError; a node removed from the
+  model raises a LookupError. Before solving, mk.check lists problems
+  instead of raising.
 
 Existing models: `old = client.load('file.mph')`, then `old.reset()` (it
 keeps the solutions) and `old.save('old.java')` show it as Java

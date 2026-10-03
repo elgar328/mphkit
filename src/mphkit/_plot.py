@@ -131,8 +131,11 @@ def plot(geom: Node, expr: str, filename, /, selection: Node | None = None,
 
     Pictures are drawn to temporary files next to them and replace the
     files once checked, so an error leaves existing files as they were
-    (unless replacing several fails halfway). The model is left as it
-    was.
+    (unless replacing several fails halfway). Missing folders are made;
+    an error removes those it made, when still empty. The model is left
+    as it was. COMSOL writes the pictures and they are moved on this
+    computer, so the COMSOL server must run on it, as `mph.start()` has
+    it.
     """
     name = 'plot'
     if (isinstance(expr, os.PathLike) or isinstance(filename, Node)
@@ -183,7 +186,10 @@ def plot(geom: Node, expr: str, filename, /, selection: Node | None = None,
         else:
             view_tag = _temporary_view(create, geom, facts, view)
         drawn: list[Path] = []
+        made: list[Path] = []
+        done = False
         try:
+            _make_folder(files[0], made)
             for picture, file in zip(pictures, files):
                 # the file is replaced once every picture is checked
                 temporary = _temporary(file)
@@ -212,10 +218,13 @@ def plot(geom: Node, expr: str, filename, /, selection: Node | None = None,
             for temporary, file in zip(drawn, files):
                 _settle(temporary, file)
             for temporary, file in zip(drawn, files):
-                os.replace(temporary, file)
+                _replace(temporary, file)
+            done = True
         finally:
             for temporary in drawn:
                 _remove(temporary)
+            if not done:
+                _remove_folders(made)
     return files if many else files[0]
 
 
@@ -311,14 +320,57 @@ def _settle(temporary: Path, file: Path):
     os.chmod(temporary, mode)
 
 
+def _make_folder(file: Path, made: list[Path]):
+    """
+    Makes the folder of `file` and those above it that are missing, from
+    the top, adding each to `made` once made: those are the folders to
+    remove if drawing fails. Recording what was made, not guessing what
+    is missing, keeps a folder that existed, also on paths with '..'.
+    """
+    for folder in reversed([file.parent, *file.parent.parents]):
+        if os.path.isdir(folder):
+            continue
+        try:
+            os.mkdir(folder)
+        except OSError as error:
+            if os.path.isdir(folder):   # made meanwhile
+                continue
+            raise OSError(f'Could not write the picture "{file}": '
+                          f'{error.strerror or error}') from error
+        made.append(folder)
+
+
+def _remove_folders(made: list[Path]):
+    """
+    Removes the folders `_make_folder()` made, deepest first, if empty:
+    not one holding a picture replaced before an error, or put there by
+    another program. Errors pass.
+    """
+    for folder in reversed(made):
+        try:
+            os.rmdir(folder)
+        except OSError:
+            pass
+
+
+def _replace(temporary: Path, file: Path):
+    """Replaces `file` with the picture drawn into `temporary`."""
+    try:
+        os.replace(temporary, file)
+    except OSError as error:
+        why = (' (open in another program, or read-only?)'
+               if os.name == 'nt' and isinstance(error, PermissionError)
+               else '')
+        raise OSError(f'Could not write the picture "{file}": '
+                      f'{error.strerror or error}{why}') from error
+
+
 def _temporary(file: Path) -> Path:
     """
     Creates an empty file next to `file`, of the same type, to draw into
-    before replacing `file`; makes the folder if needed. It gets the
-    permissions of a new file.
+    before replacing `file`. It gets the permissions of a new file.
     """
     try:
-        file.parent.mkdir(parents=True, exist_ok=True)
         for _ in range(100):
             name = file.with_name(f'.{file.stem}.{secrets.token_hex(4)}'
                                   f'{file.suffix}')

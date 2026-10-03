@@ -83,7 +83,9 @@ def check(model: Model, /) -> list[dict]:
       given has another unit than COMSOL expects, e.g. `T0 = 5[m]` for a
       temperature; COMSOL solves with the number in the expected unit.
       Only expressions of numbers, constants and parameters are checked;
-      array elements are counted from 0, as in Python.
+      array elements are counted from 0, as in Python. Material values
+      are matched by their text, so one that COMSOL rewrote (`1e3` as
+      `1000`) may be skipped.
     - `'no_material'`: a feature takes properties from a material (e.g.
       k, rho, Cp of a solid) on domains that have none. The solve then
       fails with "Undefined material property", unless the study does not

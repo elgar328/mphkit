@@ -628,6 +628,10 @@ def test_documented(client, tmp_path, monkeypatch, logging):
     code = re.search(r'Before a long solve.*?```python\n(.*?)```', readme,
                      re.S).group(1).splitlines()
     assert len(code) == 3, 'update the checks below with the README'
+    # the other process gives the log's full path
+    assert "'/abs/path/solve.log'" in code[2]
+    code[2] = code[2].replace("'/abs/path/solve.log'",
+                              repr(str(tmp_path.resolve()/'solve.log')))
     monkeypatch.chdir(tmp_path)
     model, geom, _ = plate_with_holes.build_model(client, 2)
     try:

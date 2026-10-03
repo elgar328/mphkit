@@ -45,13 +45,17 @@ def select(geom: Node, dataset) -> Chosen:
         return _only(geom, solutions, own, None)
     java, what = _lookup(geom, dataset)
     if what == 'study':
-        own = [found for found in _solved_datasets(model)
-               if geometry_tag(found) == geom.tag()
-               and study_of(solution_of(model, found)) == str(java.tag())]
+        solved = [found for found in _solved_datasets(model)
+                  if study_of(solution_of(model, found)) == str(java.tag())]
+        own = [found for found in solved if geometry_tag(found) == geom.tag()]
+        if not solved:
+            raise RuntimeError(f'Study "{_comsol.name_of(java)}" is not '
+                               'solved; run model.solve() with its name '
+                               'first.')
         if not own:
             raise ValueError(f'Study "{_comsol.name_of(java)}" has no solved '
-                             f'dataset for geometry "{geom}"; solve it, or '
-                             'pass a study that includes the geometry.')
+                             f'dataset for geometry "{geom}"; pass a study '
+                             'that includes the geometry.')
         return _only(geom, solutions, own, java)
     name = _comsol.name_of(java)
     kind = str(java.getType())

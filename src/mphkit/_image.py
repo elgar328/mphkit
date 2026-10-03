@@ -10,9 +10,11 @@ export instead (`export()` below), removed the same way.
 """
 from __future__ import annotations
 
+import numbers
 import os
 from pathlib import Path
 
+import numpy
 from mph.node import Node
 
 from . import _comsol, _mesh
@@ -169,11 +171,12 @@ def picture_path(filename) -> Path:
 def picture_size(size) -> tuple[int, int]:
     """Returns `(width, height)` in pixels, checked."""
     if (not isinstance(size, (list, tuple)) or len(size) != 2
-            or not all(isinstance(v, int) and not isinstance(v, bool)
-                       and v > 0 for v in size)):
+            or not all(isinstance(v, numbers.Integral)
+                       and not isinstance(v, (bool, numpy.bool_))
+                       and int(v) > 0 for v in size)):
         raise ValueError(f'size must be (width, height) in pixels, not '
                          f'{size!r}.')
-    return size[0], size[1]
+    return int(size[0]), int(size[1])
 
 
 def export(create, model, group, path: Path, size: tuple[int, int],

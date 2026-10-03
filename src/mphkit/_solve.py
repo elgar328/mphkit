@@ -90,9 +90,10 @@ def problem_size(model: Model, /, *, study=None) -> dict:
 
     For each study step: `dofs`, the number of degrees of freedom
     including internal ones, and `fields`, the same per dependent
-    variable (they add up to `dofs`); `None` for steps that need the
-    solution of the one before (e.g. a time-dependent step after a
-    stationary one), which COMSOL cannot compile before solving. COMSOL's log says
+    variable (they add up to `dofs`); `None` for steps COMSOL cannot
+    compile before solving: those that need the solution of the one
+    before (e.g. a time-dependent step after a stationary one), or that
+    cannot be compiled at all (solving shows why). COMSOL's log says
     "solved for N (plus M internal DOFs)" with `dofs` = N + M;
     `mk.progress` gives N as `solved_dofs`. `solver` is `'direct'`,
     `'iterative'`, `'segregated'` or `None` (not known), as in the solver
@@ -479,7 +480,8 @@ def progress(path, /, *, pid: int | None = None) -> dict:
     - `updated_s_ago`: seconds since the log last changed.
 
     From the info file `<path>.json` and the operating system: `started`
-    and `elapsed_s` of the solving process, its `pid`, whether it is
+    and `elapsed_s` of the solving process (counted from `started`, also
+    after the process ended), its `pid`, whether it is
     `alive`, and `processes`, its own and its children's and those of its
     process group, with `cpu_percent` and `rss_mb` (memory, also of the
     Python running MPh) and their sums; `free_memory_mb` and
@@ -497,7 +499,10 @@ def progress(path, /, *, pid: int | None = None) -> dict:
     time steps).
 
     Long solves in the background (each shell command of an agent runs in
-    a new process). `solve.py`, next to the input `m.mph`:
+    a new process); the launch and stop below are for macOS and Linux. On
+    Windows `alive` and `processes` are always `None`: whether the solve
+    is over shows in `solve.out` (the line `saved`) and the log.
+    `solve.py`, next to the input `m.mph`:
 
     ```python
     from pathlib import Path

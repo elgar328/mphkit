@@ -46,15 +46,16 @@ mix freely. Physics, mesh and study stay plain MPh (or the COMSOL Java
 API through `node.java`); mphkit looks up the COMSOL names they need.
 
 `print(mphkit.__doc__)` shows the workflow as one script, the rules and
-an index of every helper; each helper has its own `help()` with the
-details. `help(mphkit)` shows both, at length. Point an AI assistant to
+an index of every helper; `help(mk.<name>)` has the details of one,
+`help(mk.sel)` those of the selections. Point an AI assistant to
 `print(mphkit.__doc__)` first.
 
 ## Requirements
 
 - COMSOL Multiphysics with a license, installed where MPh can find it
   (see the [MPh documentation](https://mph.readthedocs.io)).
-- Python 3.10 or newer, MPh 1.4 or newer.
+- Python 3.10 or newer, MPh 1.4 or newer (below 2: mphkit uses some of
+  its internals).
 - Importing CAD files (`mk.import_` with STEP, IGES, ...) needs a license
   for CAD import (CAD Import Module, Design Module or a LiveLink).
   Everything else needs COMSOL only.
@@ -141,7 +142,7 @@ another process (an agent runs it in the background):
 ```python
 mk.problem_size(model)        # degrees of freedom, solver, mesh elements, memory and cores
 mk.log_progress('solve.log')  # in the solving script, before loading the model
-mk.progress('solve.log')      # elsewhere: percent, task, memory, time steps, alive, CPU
+mk.progress('/abs/path/solve.log')  # elsewhere: percent, task, memory, time steps, alive, CPU
 ```
 
 `mk.problem_size` compiles the equations without solving (it needs a

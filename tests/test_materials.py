@@ -293,8 +293,10 @@ def test_selection_rules(model):
 
 def test_unknown_names(model):
     geom = blocks(model, 1)
-    with pytest.raises(ValueError, match=r'Did you mean "Aluminum" '
-                                         r'\(basic_material\)'):
+    with pytest.raises(ValueError, match=r'in the libraries mk.materials '
+                       r'reads \(not the optical library or the Material '
+                       r'Library product\)\. Did you mean "Aluminum" '
+                       r'\(basic_material\)'):
         mk.material(geom, 'Aluminium')
     with pytest.raises(ValueError, match="in the 'acdc' library: pass "
                                          "library='acdc'"):

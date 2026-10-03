@@ -365,7 +365,8 @@ class Sweep:
 
     def materials(self) -> bool:
         """Tells whether it sweeps materials only (no geometry change)."""
-        return all(name.startswith('matsw.') for name in self.names)
+        return bool(self.names) and all(name.startswith('matsw.')
+                                        for name in self.names)
 
     def setting(self, k: int) -> str:
         """
@@ -404,7 +405,7 @@ class Sweep:
                  if not name.startswith(SWITCHES)]
         label = str(self.model.sol(self.children[k - 1]).label())
         switches = []
-        for part in label.split(', '):
+        for part in label_parts(label):
             left, _, right = part.partition('=')
             if left not in plain and right:
                 switches.append((left, right))
@@ -708,6 +709,15 @@ def pictures(create, geom: Node, dataset, step, outer,
                     sweep.title(k, drawn[k]), sweep.count(k),
                     tuple(_names(model.sol(sweep.children[k - 1]))))
             for k in prepared.positions], prepared.many
+
+
+def label_parts(label: str) -> list[str]:
+    """
+    Splits the label of an outer value's solution into its `name=value`
+    parts, e.g. 'Material Switch 1=Water, liquid, k=2' into two: only at
+    commas before the next name, as material names may hold commas.
+    """
+    return re.split(r', (?=[^,=]+=)', label)
 
 
 def title_problem(indicator: str, title: Title) -> str | None:

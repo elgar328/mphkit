@@ -19,24 +19,26 @@ until 1.0, a minor release (0.2, 0.3, ...) may change the API. See
   model. `dataset=` also takes the study that made it. They refuse the
   results of a study whose last solve failed, and the copy of a
   parametric sweep's last value, pointing to the sweep's dataset.
-  Parametric sweeps that COMSOL stores as an outer loop (around a
+- Parametric sweeps that COMSOL stores as an outer loop (around a
   time-dependent or eigenvalue study or a list of frequencies, or over
   the geometry, mesh, materials or functions) are read with `outer=`, in
   the forms of `step=` or by value (`{'Th': '200[degC]'}`, or a number
-  in SI units), each value from its own solution; `mk.outer_values` gives
+  in SI units), each value from its own solution. `mk.outer_values` gives
   their parameter values and `mk.step_values` the times, frequencies or
   parameter values of the steps by name, both in SI units; `step=` also
-  picks a step by value, e.g. `{'t': 10}`, in each outer value. A number
-  given as `step=` or `outer=` is a position; one that is also the value
-  of another position, such as `step=10` on times 0, 1, ..., 10 (the
-  tenth step is t = 9), gives an `mk.StepWarning`, a `UserWarning`; pick
-  by value to mean the time, `step={'t': 10}`, or turn it off with
-  `warnings.filterwarnings('ignore', category=mk.StepWarning)`. Numbers
-  for `outer=` are compared with the values as swept, e.g. Th in degC. A sweep that changes the geometry is read over
-  selection nodes or all entities, evaluated on each value's geometry;
-  entity numbers, explicit selections and selections that are empty for
-  a value raise. Unknown names such as
-  `mk.time_values` or `mk.sweep_values` suggest them; `mk.sweep`,
+  picks a step by value, e.g. `{'t': 10}`, in each outer value.
+- A number given as `step=` or `outer=` is a position; one that is also
+  the value of another position, such as `step=10` on times 0, 1, ..., 10
+  (the tenth step is t = 9), gives an `mk.StepWarning`, a `UserWarning`.
+  Pick by value to mean the time, `step={'t': 10}`, or turn it off with
+  `warnings.filterwarnings('ignore', category=mk.StepWarning)`. For the
+  warning, numbers given as `outer=` are compared with the values as
+  swept, e.g. Th in degC.
+- A sweep that changes the geometry is read over selection nodes or all
+  entities, evaluated on each value's geometry; entity numbers, explicit
+  selections and selections that are empty for a value raise.
+- Unknown names such as `mk.time_values` or `mk.sweep_values` suggest
+  `mk.step_values` and `mk.outer_values`; `mk.sweep`,
   `mk.parametric_sweep` and `mk.solve` say how to make a sweep or solve
   with plain MPh.
 - Unknown names such as `mk.volume_integral`, `mk.mphint2` or `mk.probe`
@@ -49,8 +51,10 @@ until 1.0, a minor release (0.2, 0.3, ...) may change the API. See
   results helpers, and leaves nothing in the model. With
   `outer=` it draws values of a parametric sweep stored as an outer
   loop, one picture each (`'T_{outer}.png'`), and checks that the title
-  shows the value asked for. An error leaves existing files as they were.
-  Numbers given as `step=` or `outer=` warn as in the results helpers.
+  shows the value asked for. An error leaves existing files as they were
+  (unless replacing several fails halfway) and removes the folders made
+  for the pictures. Numbers given as `step=` or `outer=` warn as in the
+  results helpers.
 - `mk.image(geom, filename, mesh=True)` saves a picture of the mesh,
   coloured by element quality, also of a selection only.
 - Unknown names such as `mk.mphplot`, `mk.slice` or `mk.surface_plot`
@@ -66,7 +70,6 @@ until 1.0, a minor release (0.2, 0.3, ...) may change the API. See
   code-completion data of the installed COMSOL, raise if it is missing or
   changed, and leave nothing in the model. Unknown names such as
   `mk.list_features`, `mk.property_values` or `mk.vars` suggest them.
-
 - `mk.materials` lists the materials in COMSOL's material libraries
   (names, property groups and basic properties, with `search=`), and
   `mk.material` inserts one into the component of a geometry, on all
@@ -74,14 +77,12 @@ until 1.0, a minor release (0.2, 0.3, ...) may change the API. See
   Unknown material names suggest close ones or the library to pass.
   Unknown names such as `mk.list_materials` or `mk.matlib` suggest them.
   The example script takes its structural steel from the library.
-
 - `mk.check(model)` lists, before solving, what COMSOL would get wrong
   silently or vaguely: expressions in the wrong unit, domains without
   material, conditions that select nothing or apply nowhere, a component
   without mesh, physics no study step solves, and (as info) boundaries
   left at the default condition. It leaves nothing in the model. Unknown
   names such as `mk.validate` or `mk.lint` suggest it.
-
 - `mk.problem_size(model)` gives, before solving, the degrees of freedom
   of each study step, the solver COMSOL would use, the mesh elements and
   the computer's memory and cores, and leaves nothing in the model.
@@ -92,26 +93,27 @@ until 1.0, a minor release (0.2, 0.3, ...) may change the API. See
   in the background; `help(mk.progress)` shows how to start and stop one.
   Unknown names such as `mk.dofs`, `mk.show_progress` or `mk.stop_solve`
   suggest them.
-
 - `mk.mesh_quality(geom)` gives a mesh's quality in numbers (lowest and
   mean, a histogram, the worst elements with their positions, per entity,
   in COMSOL's six quality measures, `quality=`) with the element sizes,
   the entities left without elements and what COMSOL reported when
-  building the mesh; for all or some domains, or boundaries in 3D. It matches COMSOL's mesh
-  statistics for all element types and leaves nothing in the model.
+  building the mesh; for all or some domains, or boundaries in 3D. It
+  matches COMSOL's mesh statistics for all element types and leaves
+  nothing in the model.
   Unknown names such as `mk.mesh_stats`, `mk.quality_of_mesh` or
   `mk.mphmeshstats` suggest it, and mesh picture hints mention it.
-
 - Unknown names such as `mk.load`, `mk.import_model` or `mk.java` say
   how to open an existing model with MPh and what `node.java` is.
 
 ### Changed
 
+- mphkit requires MPh below 2 (`mph>=1.4,<2`): it uses some of MPh's
+  internals, which a major release may change.
 - The package overview, `print(mphkit.__doc__)`, is half as long: one
   runnable script, the rules and an index of every helper, with the
   details in each helper's `help()`. Errors for unknown names end with
   "print(mphkit.__doc__) lists all helpers." instead of pointing to
-  `help(mphkit)`, which appends every helper's documentation.
+  `help(mphkit)`.
 - `sel.union`, `sel.intersection`, `sel.difference`, `sel.complement` and
   `sel.adjacent` raise a `TypeError` that says to select by location when
   given entity numbers, instead of "'int' object is not iterable", a
@@ -132,15 +134,13 @@ until 1.0, a minor release (0.2, 0.3, ...) may change the API. See
 
 ### Fixed
 
-- `mk.plot` and mesh pictures (`mk.image(..., mesh=True)`) no longer open
-  a window of the COMSOL server for every picture, which piled up on
-  Windows.
 - `mk.measure`, `mk.bounding_box` and `mk.sel.find` no longer leave lines
   in the model's history, which showed up in a Java export of the model.
 - An entity number given as a 0-d numpy array, e.g. `numpy.array(2)`, is
   taken as a selection by `mk.measure`, `mk.bounding_box`,
-  `mk.coordinates`, `mk.material`, `mk.mesh_quality` and
-  `mk.sel.neighbors`, instead of raising "iteration over a 0-d array".
+  `mk.coordinates` and `mk.sel.neighbors`, instead of raising "iteration
+  over a 0-d array".
+- `mk.image` takes numpy integers in `size`, e.g. `numpy.int64(800)`.
 
 ## [0.2.0] - 2026-09-29
 

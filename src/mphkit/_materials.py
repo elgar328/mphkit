@@ -194,6 +194,10 @@ def materials(*, search: str | None = None, library: str | list[str] |
     name, also when `library` lists them in another order), then by
     material name.
 
+    These are the `.mph` libraries in COMSOL's `data` folder; the optical
+    library (`comsol_optical_lib.xml`, refractive indices) and the
+    separate Material Library product are not read.
+
     Reads the library files of the running COMSOL (call `mph.start()`
     first) and leaves nothing in any model.
     """
@@ -222,7 +226,8 @@ def material(geom: Node, material: str, /, selection=None, *,
              name: str | None = None) -> Node:
     """
     Inserts a material from COMSOL's material libraries into the
-    component of the geometry (`mk.materials` lists them), e.g.
+    component of the geometry (`mk.materials` lists them; not the optical
+    library or the Material Library product), e.g.
 
     ```python
     steel = mk.material(geom, 'Structural steel')      # all domains
@@ -341,7 +346,9 @@ def _find(material: str, library) -> tuple[Path, Item]:
         raise ValueError(f'No material "{material}" in {_scope(chosen)}; it '
                          f'is in {_scope(names)}: pass '
                          f'library={names[0]!r}.')
-    message = f'No material "{material}" in the material libraries.'
+    message = (f'No material "{material}" in the libraries mk.materials '
+               'reads (not the optical library or the Material Library '
+               'product).')
     close = _close(installed, key)
     if close:
         message += f' Did you mean {", ".join(close)}?'
