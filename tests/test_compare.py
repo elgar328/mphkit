@@ -322,14 +322,15 @@ def test_geometry_differs_folds():
                         {'T0': '500[K]'}, {'T0': '293.15[K]'})],
                   geometries=[thick])
     found = mk.compare(a, b)
-    # the one temperature of each is paired as a guess: all it differs in
-    # follows the geometry
-    assert kinds(found) == ['geometry']
-    geometry_item = found[0]
-    assert sorted(c['kind'] for c in geometry_item['consequences']) == \
-        ['property', 'selection']
-    assert all(c['matched_by_order'] for c in geometry_item['consequences'])
+    # the one temperature of each is paired as a guess: the face it
+    # selects moved with the geometry, its value stays a difference
+    assert kinds(found) == ['geometry', 'property']
+    geometry_item, value = found[:2]
+    assert [c['kind'] for c in geometry_item['consequences']] == \
+        ['selection']
     assert 'fix the geometry first' in geometry_item['message']
+    assert value['matched_by_order'] is True
+    assert value['message'].endswith('(paired by order)')
 
 
 def test_parameters():
@@ -462,16 +463,163 @@ def test_materials():
                'density': {'value': 8960, 'unit': 'kg/m^3'}}}}
     a = described(materials=[material('mat1', library)])
     b = described(materials=[material('mat5', own)])
-    found = mk.compare(a, b)
+    # the library's own entries are hidden unless shown
+    assert kinds(mk.compare(a, b)) == ['property']
+    found = mk.compare(a, b, show={'material_info'})
     assert kinds(found) == ['property', 'property']
     info = [i for i in found if i.get('material_info')]
     assert info and info[0]['a'] == {'sys': 'x'}
+    # an old ignore= of it is accepted and changes nothing
     assert kinds(mk.compare(a, b, ignore={'material_info'})) == ['property']
     # a link to a global material against a material of the component
     linked = described(materials=[
         material('lnk1', {}, kind='Link', properties={'link': 'gm1'}),
         material('gm1', own, component=None)])
     assert kinds(mk.compare(linked, b)) == []
+
+
+def thick_plate():
+    """The cube made 2 high: the bottom face is the same, the rest moved."""
+    return geometry([box((0, 1), (0, 1), (0, 2), 2.0)],
+                    [box((0, 0), (0, 1), (0, 2), 2.0),
+                     box((1, 1), (0, 1), (0, 2), 2.0),
+                     box((0, 1), (0, 0), (0, 2), 2.0),
+                     box((0, 1), (1, 1), (0, 2), 2.0),
+                     box((0, 1), (0, 1), (0, 0), 1.0),
+                     box((0, 1), (0, 1), (2, 2), 1.0)])
+
+
+def test_geometry_keeps_real_selection_differences():
+    # a selects the bottom (the same in both) and a moved side face; b
+    # only the moved side face: the bottom is a real difference
+    a = described([node('hf1', 'HeatFluxBoundary', faces(2, 5))])
+    side = thick_plate()['entities']['boundary'][1]
+    b = described([node('hf1', 'HeatFluxBoundary',
+                        {'level': 'boundary', 'geometry': 'geom1',
+                         'entities': [side]})], geometries=[thick_plate()])
+    found = mk.compare(a, b)
+    assert kinds(found) == ['geometry', 'selection']
+    selection = found[1]
+    assert selection['numbers'] == {'a': [5], 'b': []}
+    assert selection['elsewhere'] == 2
+    assert '+2 entities without a counterpart' in selection['message']
+    # the geometry item has the geometry's path
+    assert found[0]['path'] == {'a': 'comp1/geom1', 'b': 'comp1/geom1'}
+
+
+def test_used_only():
+    # custom on in a (its sizes count), off in b (its hauto counts)
+    a = described([node('sz', 'Size', None,
+                        {'custom': 'on', 'hmax': 15.0, 'hmin': 4.86},
+                        {'custom': 'off', 'hmax': 6.0, 'hmin': 1.0},
+                        unused=['hauto'])])
+    b = described([node('sz', 'Size', None, {'hauto': 3.0},
+                        {'hauto': 5.0},
+                        unused=['hmax', 'hmaxactive', 'hmin'])])
+    found = [i for i in mk.compare(a, b) if i['kind'] == 'property']
+    assert [i.get('name') for i in found] == ['custom', None]
+    used = found[1]
+    assert used['used_only'] is True
+    assert used['a'] == {'hmax': 15.0, 'hmin': 4.86}
+    assert used['b'] == {'hauto': 3.0}
+    assert 'used only in a: hmax 15.0, hmin 4.86; used only in b: ' \
+        'hauto 3.0' in used['message']
+    # not where defaults are unknown
+    b['components'][0]['physics'][0]['features'][0]['all_properties'] = True
+    assert not [i for i in mk.compare(a, b) if i.get('used_only')]
+
+
+def test_empty_selection_pairs_by_tag():
+    empty = {'level': 'boundary', 'geometry': 'geom1', 'entities': []}
+    a = described([node('pc1', 'PeriodicHeat', faces(1, 2)),
+                   node('pc2', 'PeriodicHeat', empty)])
+    b = described([node('pc1', 'PeriodicHeat', empty),
+                   node('pc2', 'PeriodicHeat', empty)])
+    found = mk.compare(a, b)
+    assert kinds(found) == ['selection']
+    assert found[0]['path'] == {'a': 'comp1/ht/pc1', 'b': 'comp1/ht/pc1'}
+
+
+def test_mass_properties_by_name():
+    def mass(tag, name):
+        return {'tag': tag, 'path': f'comp1/{tag}', 'type': 'MassProperties',
+                'label': 'Mass Properties 1', 'active': True, 'name': [name],
+                'properties': {'name': name} if name != tag else {},
+                'defaults': {'name': tag} if name != tag else {},
+                'selection': {'level': 'domain', 'geometry': 'geom1',
+                              'entities': 'all'},
+                'selections': {}, 'features': []}
+
+    def variables(expression):
+        return [{'tag': 'var1', 'path': 'comp1/var1', 'label': 'Variables 1',
+                 'active': True, 'component': 'comp1',
+                 'variables': {'m': expression},
+                 'selection': {'level': 'global'}}]
+
+    a = described(variables=variables('mp.mass*2+comp1.mp.I11'))
+    a['components'][0]['mass_properties'] = [mass('mass1', 'mp')]
+    b = described(variables=variables('mass1.mass*2+comp1.mass1.I11'))
+    b['components'][0]['mass_properties'] = [mass('mass1', 'mass1')]
+    assert kinds(mk.compare(a, b)) == []
+    b['components'][0]['mass_properties'] = []
+    assert kinds(mk.compare(a, b)) == ['only_in_a', 'variable']
+
+
+def test_messages():
+    a = described([node('temp1', 'TemperatureBoundary', faces(1),
+                        {'T0': '400[K]'}, {'T0': '293.15[K]'})])
+    b = described([node('temp3', 'TemperatureBoundary', faces(1)),
+                   node('hf1', 'HeatFluxBoundary', faces(3))])
+    found = mk.compare(a, b)
+    # paths without the component, each side named by its own letter
+    assert found[0]['message'].startswith(
+        'TemperatureBoundary (a ht/temp1, b ht/temp3): T0')
+    assert found[1]['message'].startswith('HeatFluxBoundary (b ht/hf1)')
+
+
+def test_material_coordinate_system():
+    def material(sys):
+        return {'tag': 'mat1', 'path': 'comp1/mat1', 'type': 'Common',
+                'label': 'Air', 'active': True,
+                'properties': {'sys': sys} if sys != 'sys1' else {},
+                'defaults': {'sys': 'sys1'} if sys != 'sys1' else {},
+                'component': 'comp1',
+                'selection': {'level': 'domain', 'geometry': 'geom1',
+                              'entities': 'all'},
+                'selections': {}, 'features': [], 'groups': {}}
+
+    # the library's 'none': hidden unless shown
+    a, b = described(materials=[material('sys1')]), \
+        described(materials=[material('none')])
+    assert kinds(mk.compare(a, b)) == []
+    assert kinds(mk.compare(a, b, show={'material_info'})) == ['property']
+    # two real coordinate systems: a difference
+    b = described(materials=[material('sys2')])
+    assert kinds(mk.compare(a, b)) == ['property']
+
+
+def test_material_function_keys():
+    def material(function):
+        return {'tag': 'mat1', 'path': 'comp1/mat1', 'type': 'Common',
+                'label': 'Air', 'active': True, 'properties': {},
+                'defaults': {}, 'component': 'comp1',
+                'selection': {'level': 'domain', 'geometry': 'geom1',
+                              'entities': 'all'},
+                'selections': {}, 'features': [],
+                'groups': {'def': {'properties': {},
+                                   'functions': {'rho': function}}}}
+
+    plain = {'type': 'Analytic', 'expr': 'pA*0.02897/R_const/T'}
+    a = described(materials=[material({**plain, 'argders': [['pA', 'd']]})])
+    b = described(materials=[material(plain)])
+    # only the derivatives differ: a library entry
+    assert kinds(mk.compare(a, b)) == []
+    [item] = [i for i in mk.compare(a, b, show={'material_info'})
+              if i['kind'] == 'property']
+    assert 'functions/rho: argders is' in item['message']
+    b = described(materials=[material({**plain, 'expr': 'pA/R_const/T'})])
+    [item] = [i for i in mk.compare(a, b) if i['kind'] == 'property']
+    assert 'expr is' in item['message'] and 'argders' in item['message']
 
 
 def test_ignore_and_format():
@@ -929,7 +1077,7 @@ def test_library_material(two):
     group.set('thermalconductivity', ['400[W/(m*K)]'])
     group.set('density', '8960[kg/m^3]')
     group.set('heatcapacity', '385[J/(kg*K)]')
-    found = mk.compare(a, b)
+    found = mk.compare(a, b, show={'material_info'})
     names = [i.get('name') for i in found if i['kind'] == 'property'
              and not i.get('material_info')]
     assert not {'thermalconductivity', 'density', 'heatcapacity'} & \
@@ -960,9 +1108,13 @@ def test_physics_controlled_mesh(two):
     layers.java.selection().geom(str(geom.java.tag()), 3)
     layers.java.selection().all()
     found = mk.compare(a, b)
-    messages = [i['message'] for i in found]
-    assert not any('hmax' in m and 'in a' in m and 'from_default' in i
-                   for m, i in zip(messages, found)), messages
+    # the physics-controlled size node against the script's own: hauto 4
+    # against 5; the script's Size is another type, so it is extra
+    assert kinds(found) == ['property', 'only_in_b', 'only_in_b',
+                            'only_in_b'], [i['message'] for i in found]
+    assert (found[0]['name'], found[0]['a'], found[0]['b']) == \
+        ('hauto', 4.0, 5.0)
+    assert not [i for i in found if i.get('name') == 'hmax']
 
 
 def test_material_in_expression(two):

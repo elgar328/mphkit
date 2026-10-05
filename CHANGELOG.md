@@ -33,7 +33,8 @@ until 1.0, a minor release (0.2, 0.3, ...) may change the API. See
   the place of their selections rather than by tags or order, with
   values compared after translating tags and in SI units. Each item
   has a kind, both paths and a one-line message; what follows from a
-  differing geometry is grouped under it.
+  differing geometry is grouped under it. Labels and library entries of
+  materials are hidden unless shown.
 
 ### Fixed
 
