@@ -852,11 +852,14 @@ def test_readme(solved):
     readme = read(root/'README.md')
     code = re.search(r'A model rebuilt by a script.*?```python\n(.*?)```',
                      readme, re.S).group(1)
-    assert len(code.splitlines()) == 2, 'update the checks with the README'
+    assert len(code.splitlines()) == 3, 'update the checks with the README'
     namespace = {'mk': mk, 'old': model, 'model': model}
     exec(code, namespace)
     assert namespace['old_settings'] == namespace['new_settings'] == \
         mk.describe(model)
+    # the same model: only what compare leaves out
+    assert {d['kind'] for d in namespace['differences']} == \
+        {'unchecked', 'note'}
 
 
 def test_docstring_example(solved, monkeypatch, tmp_path):

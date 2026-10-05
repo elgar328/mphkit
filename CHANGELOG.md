@@ -28,6 +28,12 @@ until 1.0, a minor release (0.2, 0.3, ...) may change the API. See
   model saved by another COMSOL version or build may update its solver
   sequences and build empty meshes of layered materials (listed in the
   result's `notes`).
+- `mk.compare(a, b)` lists how two models (or results of `mk.describe`)
+  differ: parameters, geometry, and nodes paired by name or by type and
+  the place of their selections rather than by tags or order, with
+  values compared after translating tags and in SI units. Each item
+  has a kind, both paths and a one-line message; what follows from a
+  differing geometry is grouped under it.
 
 ### Fixed
 

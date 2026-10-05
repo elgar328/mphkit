@@ -70,6 +70,9 @@ def check(geom: Node, flag: bool, step: int | str) -> None:
     assert_type(mk.problem_size(geom.model), dict)
     assert_type(mk.describe(geom.model), dict)
     assert_type(mk.describe(geom.model, solver=False), dict)
+    assert_type(mk.compare(geom.model, geom.model), list[dict])
+    assert_type(mk.compare({}, {}, tolerance=1e-6, ignore={'empty'},
+                           show={'label'}), list[dict])
     assert_type(mk.mesh_quality(geom, 'boundary', [1, 2]), dict)
     assert_type(mk.log_progress('solve.log'), Path)
     assert_type(mk.log_progress(Path('solve.log')), Path)

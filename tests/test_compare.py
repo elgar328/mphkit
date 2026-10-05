@@ -1,0 +1,956 @@
+"""
+Checks mk.compare: the plain functions on made-up descriptions without
+COMSOL, then pairs of models built here that differ in one way each.
+"""
+import copy
+import json
+
+import pytest
+
+import mphkit as mk
+from mphkit import _compare
+from mphkit._compare import Table, Tolerance, match_tables, same_value
+
+# The stage-1 notice that applied entities and order are not compared yet
+LATER = 'not compared yet'
+
+
+def kinds(items):
+    """The kinds of the items that are differences."""
+    return [i['kind'] for i in items if i['kind'] != 'note'
+            and not (i['kind'] == 'unchecked' and LATER in i['message'])]
+
+
+###################
+# Made-up models  #
+###################
+
+def box(x, y, z, size=None):
+    found = {'x': list(x), 'y': list(y), 'z': list(z)}
+    if size is not None:
+        found['size'] = size
+    return found
+
+
+def cube_faces(low=0.0, high=1.0):
+    """The six faces of a cube."""
+    lo, hi = (low, low), (high, high)
+    span = (low, high)
+    area = (high - low)**2
+    return [box(lo, span, span, area), box(hi, span, span, area),
+            box(span, lo, span, area), box(span, hi, span, area),
+            box(span, span, lo, area), box(span, span, hi, area)]
+
+
+def geometry(domains, boundaries, tag='geom1', unit='m', scale=1.0,
+             finalize='union'):
+    lows = [min(d[a][0] for d in domains) for a in 'xyz']
+    highs = [max(d[a][1] for d in domains) for a in 'xyz']
+    return {'tag': tag, 'label': 'Geometry 1', 'dimension': 3,
+            'axisymmetric': False, 'length_unit': unit,
+            'length_scale': scale, 'finalize': finalize, 'voids': 0,
+            'bounding_box': {a: [lo, hi] for a, lo, hi in
+                             zip('xyz', lows, highs)},
+            'entities': {'domain': domains, 'boundary': boundaries,
+                         'edge': [], 'point': []}}
+
+
+def node(tag, kind, selection=None, properties=None, defaults=None,
+         **extra):
+    return {'tag': tag, 'path': f'comp1/ht/{tag}', 'type': kind,
+            'label': kind, 'active': True,
+            'properties': properties or {}, 'defaults': defaults or {},
+            'selection': selection, 'selections': {}, 'features': [],
+            **extra}
+
+
+def described(features=(), geometries=None, parameters=None, **extra):
+    """A format-2 description with one component and one interface."""
+    if geometries is None:
+        geometries = [geometry([box((0, 1), (0, 1), (0, 1), 1.0)],
+                               cube_faces())]
+    interface = {'tag': 'ht', 'path': 'comp1/ht', 'identifier': 'ht',
+                 'type': 'HeatTransfer', 'label': 'Heat', 'active': True,
+                 'settings': {}, 'defaults': {}, 'selection':
+                 {'level': 'domain', 'geometry': 'geom1',
+                  'entities': 'all'},
+                 'features': list(features)}
+    found = {'format': 2, 'parameters': parameters or {}, 'functions': [],
+             'variables': [], 'couplings': [], 'coordinates': [],
+             'materials': [], 'definitions': [], 'probes': [],
+             'components': [{'tag': 'comp1', 'label': 'Component 1',
+                             'geometries': geometries, 'pairs': [],
+                             'physics': [interface], 'multiphysics': [],
+                             'meshes': []}],
+             'studies': [], 'solutions': [], 'notes': []}
+    found.update(extra)
+    return found
+
+
+def faces(*numbers, geometries=None):
+    """A boundary selection of cube faces (1 to 6)."""
+    every = cube_faces()
+    return {'level': 'boundary', 'geometry': 'geom1',
+            'entities': [every[n - 1] for n in numbers]}
+
+
+###################
+# Plain functions #
+###################
+
+def test_spaced():
+    assert _compare.spaced(' 1 +  2 ') == '1+2'
+    assert _compare.spaced('0 10 20') == '0 10 20'
+    assert _compare.spaced('0 10 20') != _compare.spaced('0 1020')
+    assert _compare.spaced('range(0, 0.1, 1)') == 'range(0,0.1,1)'
+    assert _compare.spaced('0 -1') == '0 -1'
+    assert _compare.spaced('a - 1') == 'a-1'
+
+
+@pytest.mark.parametrize('text, expected', [
+    # as COMSOL lists them (measured: the output times of a solve)
+    ('range(0,0.3,1)', [0, 0.3, 0.6, 0.9]),
+    ('range(0,0.25,1)', [0, 0.25, 0.5, 0.75, 1]),
+    ('range(0,0.1,0.35)', [0, 0.1, 0.2, 0.3]),
+    ('range(1,-0.3,0)', [1, 0.7, 0.4, 0.1]),
+    ('range(-0.3,0.1,0)', [-0.3, -0.2, -0.1, 0]),
+    ('0 0.1 0.2', [0, 0.1, 0.2]),
+    ('0,0.1', [0, 0.1]),
+    ('0 range(1,1,3)', [0, 1, 2, 3]),
+    ('range(0,dt,1)', None), ('1[s] 2[s]', None), ('x', None)])
+def test_numbers(text, expected):
+    found = _compare.numbers(text)
+    if expected is None:
+        assert found is None
+    else:
+        assert found == pytest.approx(expected, abs=1e-12)
+
+
+def si(value, unit):
+    return {'value': value, 'unit': unit}
+
+
+def test_same_value():
+    parameters = frozenset({'Th', 'h0'})
+    assert same_value(' 1 + 2', '1+2') is None
+    assert same_value('0 10 20', '0 1020') == 'property'
+    # the same SI value and unit, no parameters: equal
+    assert same_value('100[degC]', '373.15[K]', si(373.15, 'K'),
+                      si(373.15, 'K'), parameters) is None
+    # a parameter or a missing unit matters
+    assert same_value('Th', '100[degC]', si(373.15, 'K'), si(373.15, 'K'),
+                      parameters) == 'expression'
+    assert same_value('373.15', '100[degC]', si(373.15, '1'),
+                      si(373.15, 'K'), parameters) == 'expression'
+    assert same_value('ht.Th', '100[degC]', si(373.15, 'K'),
+                      si(373.15, 'K'), parameters) is None
+    assert same_value('2*Th', '100[degC]', si(746.3, 'K'), si(373.15, 'K'),
+                      parameters) == 'property'
+    # only one side evaluates
+    assert same_value('T', '1', None, si(1, '1')) == 'property'
+    # lists of numbers, also as ranges
+    assert same_value('range(0,0.1,0.3)', '0 0.1 0.2 0.3') is None
+    assert same_value('range(-0.3,0.1,0)', '-0.3 -0.2 -0.1 0') is None
+    assert same_value('range(0,0.1,1)', 'range(0,0.1,2)') == 'property'
+    # isotropic tensors: one value or its diagonal
+    assert same_value(['7'], ['7', '7', '7.0'], [si(7, '1')],
+                      [si(7, '1')] * 3) is None
+    assert same_value(['7'], ['7', '8', '7'], [si(7, '1')],
+                      [si(7, '1'), si(8, '1'), si(7, '1')]) == 'property'
+    assert same_value(['1', '1', '1'], '1') == 'property'
+    assert same_value(0.15, 0.15 + 1e-12) is None
+    assert same_value(True, 1) == 'property'
+    # complex values
+    assert same_value('1+2*i', '(1+2*i)', si([1, 2], '1'),
+                      si([1, 2], '1')) is None
+
+
+def test_places_text():
+    assert _compare.place_text(box((100, 100), (0, 50), (0, 10), 500)) == \
+        'x=100, y 0..50, z 0..10'
+    assert _compare.places_text([box((0, 0), (0, 0), (0, 0))] * 5) == \
+        'x=0, y=0, z=0; x=0, y=0, z=0; x=0, y=0, z=0; +2 more'
+
+
+def table(places, scale=1.0, dim=2):
+    return Table(places, scale, dim)
+
+
+def test_tables():
+    tol = Tolerance(1e-6, 2.0)
+    one = table(cube_faces())
+    # the same faces in another order
+    cells, left_a, left_b = match_tables(one, table(cube_faces()[::-1]),
+                                         tol)
+    assert len(cells) == 6 and not left_a and not left_b
+    # the face at z = 1 split into four pieces
+    split = cube_faces()[:5] + [
+        box(x, y, (1, 1), 0.25) for x in ((0, 0.5), (0.5, 1))
+        for y in ((0, 0.5), (0.5, 1))]
+    cells, left_a, left_b = match_tables(one, table(split), tol)
+    assert sorted(len(b) for _, b in cells) == [1, 1, 1, 1, 1, 4]
+    assert not left_a and not left_b
+    # a face of a millimetre geometry against metres
+    millimetres = table([box((0, 1000), (0, 1000), (0, 0), 1e6)], 1e-3)
+    cells, _, _ = match_tables(table([box((0, 1), (0, 1), (0, 0), 1)]),
+                               millimetres, tol)
+    assert len(cells) == 1
+
+
+def test_tables_tell_faces_apart():
+    tol = Tolerance(1e-6, 2.0)
+    # two x faces against two z faces of the same cube: same total area
+    x_faces = table(cube_faces()[:2])
+    z_faces = table(cube_faces()[4:])
+    cells, left_a, left_b = match_tables(x_faces, z_faces, tol)
+    assert not cells and len(left_a) == 2 and len(left_b) == 2
+    assert not _compare.same_region(x_faces, left_a, z_faces, left_b, tol)
+
+
+def test_same_place_is_one_row():
+    # the two faces of a pair in an assembly
+    face = box((1, 1), (0, 1), (0, 1), 1.0)
+    rows = table([face, face, box((0, 0), (0, 1), (0, 1), 1.0)])
+    assert len(rows.rows) == 2
+    assert rows.row_of == {1: 0, 2: 0, 3: 1}
+    assert rows.size([0]) == 1.0
+
+
+def test_translator():
+    translator = _compare.Translator({'ht', 'comp1', 'intop1'},
+                                     {'ht', 'ht2', 'comp2', 'intop2', 'x'})
+    translator.add('component', 'comp2', 'comp1')
+    translator.add('identifier', 'ht2', 'ht')
+    translator.add('physics', 'ht2', 'ht')
+    translator.features['ht2'] = {'pc6': 'pc1'}
+    translator.names[None] = {'intop2': 'intop1'}
+    assert translator.value('ht2.q0+comp2.ht2.T') == 'ht.q0+comp1.ht.T'
+    assert translator.value('ht2.pc6.T') == 'ht.pc1.T'
+    assert translator.value('intop2(T)') == 'intop1(T)'
+    assert translator.value('comp2.intop2(T)') == 'comp1.intop1(T)'
+    assert translator.value('h0*comp2.intop2(1)/2') == 'h0*comp1.intop1(1)/2'
+    # a parameter named like a tag stays: only prefixes and calls change
+    assert translator.value('ht2*2') == 'ht2*2'
+    # whole values, paths and step maps
+    assert translator.value('ht2') == 'ht'
+    assert translator.value('ht2/pc6') == 'ht/pc1'
+    assert translator.value({'ht2': 'off', 'frame:spatial2': 'x'}) == \
+        {'ht': 'off', 'frame:spatial1': 'x'}
+    # a b tag without a partner that a has too is marked
+    assert translator.value('ht.T') == '<b only:ht>.T'
+
+
+#####################
+# Made-up compares  #
+#####################
+
+def test_same():
+    model = described([node('temp1', 'TemperatureBoundary', faces(1),
+                            {'T0': '300[K]'}, {'T0': '293.15[K]'})])
+    assert kinds(mk.compare(model, model)) == []
+    assert kinds(mk.compare(model, json.loads(json.dumps(model)))) == []
+
+
+def test_tags_and_order_do_not_matter():
+    a = described([node('temp1', 'TemperatureBoundary', faces(1)),
+                   node('temp2', 'TemperatureBoundary', faces(2),
+                        {'T0': '400[K]'}, {'T0': '293.15[K]'})])
+    b = described([node('temp7', 'TemperatureBoundary', faces(2),
+                        {'T0': '400[K]'}, {'T0': '293.15[K]'}),
+                   node('temp3', 'TemperatureBoundary', faces(1))])
+    assert kinds(mk.compare(a, b)) == []
+    labels = mk.compare(a, b, show={'label'})
+    assert kinds(labels) == []
+
+
+def test_property_and_default():
+    a = described([node('temp1', 'TemperatureBoundary', faces(1),
+                        {'T0': '400[K]'}, {'T0': '293.15[K]'})])
+    b = described([node('temp1', 'TemperatureBoundary', faces(1))])
+    [item] = [i for i in mk.compare(a, b) if i['kind'] == 'property']
+    assert item['from_default'] is True
+    assert item['a'] == '400[K]' and item['b'] == '293.15[K]'
+    assert item['path'] == {'a': 'comp1/ht/temp1', 'b': 'comp1/ht/temp1'}
+    assert 'T0 is 400[K] in a, 293.15[K] in b' in item['message']
+
+
+def test_selection_and_only():
+    a = described([node('temp1', 'TemperatureBoundary', faces(1, 2))])
+    b = described([node('temp1', 'TemperatureBoundary', faces(1)),
+                   node('hf1', 'HeatFluxBoundary',
+                        {'level': 'boundary', 'geometry': 'geom1',
+                         'entities': []})])
+    found = mk.compare(a, b)
+    assert kinds(found) == ['selection', 'only_in_b']
+    selection = found[0]
+    assert selection['numbers'] == {'a': [2], 'b': []}
+    assert 'x=1' in selection['message']
+    assert found[1]['empty'] is True
+    assert kinds(mk.compare(a, b, ignore={'empty'})) == ['selection']
+
+
+def test_unused_and_unknown():
+    a = described([node('sz', 'Size', None, {'hmax': 1.0}, {'hmax': 2.0},
+                        unused=['hmax'])])
+    b = described([node('sz', 'Size', None, {}, {})])
+    assert kinds(mk.compare(a, b)) == []
+    a = described([node('x1', 'Thing', None, {'p': '1'}, {},
+                        unknown_defaults=['p'])])
+    b = described([node('x1', 'Thing', None, {}, {})])
+    assert kinds(mk.compare(a, b)) == ['unchecked']
+
+
+def test_geometry_differs_folds():
+    thick = geometry([box((0, 1), (0, 1), (0, 2), 2.0)],
+                     cube_faces()[:4] + [box((0, 1), (0, 1), (0, 0), 1),
+                                         box((0, 1), (0, 1), (2, 2), 1)])
+    a = described([node('temp1', 'TemperatureBoundary', faces(6),
+                        {'T0': '400[K]'}, {'T0': '293.15[K]'})])
+    top = box((0, 1), (0, 1), (2, 2), 1)
+    b = described([node('temp1', 'TemperatureBoundary',
+                        {'level': 'boundary', 'geometry': 'geom1',
+                         'entities': [top]},
+                        {'T0': '500[K]'}, {'T0': '293.15[K]'})],
+                  geometries=[thick])
+    found = mk.compare(a, b)
+    # the one temperature of each is paired as a guess: all it differs in
+    # follows the geometry
+    assert kinds(found) == ['geometry']
+    geometry_item = found[0]
+    assert sorted(c['kind'] for c in geometry_item['consequences']) == \
+        ['property', 'selection']
+    assert all(c['matched_by_order'] for c in geometry_item['consequences'])
+    assert 'fix the geometry first' in geometry_item['message']
+
+
+def test_parameters():
+    a = described(parameters={
+        'Th': {'expression': '100[degC]', 'value': 373.15, 'unit': 'K'},
+        'L': {'expression': '1', 'value': 1, 'unit': '1'}})
+    b = described(parameters={
+        'Th': {'expression': '373.15[K]', 'value': 373.15, 'unit': 'K'},
+        'w': {'expression': '2', 'value': 2, 'unit': '1'}})
+    found = mk.compare(a, b)
+    assert kinds(found) == ['only_in_a', 'only_in_b']
+    assert found[0]['path'] == {'a': 'parameters/L', 'b': None}
+
+
+def test_variables_by_name():
+    def variables(*nodes):
+        return [{'tag': tag, 'path': f'comp1/{tag}', 'label': tag,
+                 'active': True, 'component': 'comp1', 'variables': names,
+                 'selection': {'level': 'global'}}
+                for tag, names in nodes]
+
+    a = described(variables=variables(
+        ('var1', {'p': '1', 'q': '2', 'r': '3', 's': '4'})))
+    b = described(variables=variables(('var2', {'r': '3', 's': '4'}),
+                                      ('var1', {'p': '1', 'q': '2'})))
+    assert kinds(mk.compare(a, b)) == []
+    b['variables'][0]['variables']['r'] = '5'
+    [item] = [i for i in mk.compare(a, b) if i['kind'] == 'variable']
+    assert item['name'] == 'r'
+    b['variables'][0]['active'] = False
+    assert kinds(mk.compare(a, b)).count('variable') == 3
+
+
+def test_named_operators():
+    def coupling(tag, names):
+        return {'tag': tag, 'path': f'comp1/{tag}', 'type': 'Integration',
+                'label': tag, 'active': True, 'name': names,
+                'properties': {}, 'defaults': {}, 'selection': None,
+                'selections': {}, 'features': [], 'component': 'comp1'}
+
+    # paired by name, the tag and default name do not matter
+    a = described([node('hf1', 'HeatFluxBoundary', faces(1),
+                        {'q0': 'total(T)'}, {'q0': '0'})],
+                  couplings=[coupling('intop1', ['total'])])
+    b = described([node('hf1', 'HeatFluxBoundary', faces(1),
+                        {'q0': 'total(T)'}, {'q0': '0'})],
+                  couplings=[coupling('intop2', ['total'])])
+    assert kinds(mk.compare(a, b)) == []
+    # names that are the tags pair as the one left of a type
+    a['couplings'] = [coupling('intop1', ['intop1'])]
+    a['components'][0]['physics'][0]['features'][0]['properties'] = \
+        {'q0': 'intop1(T)'}
+    b['couplings'] = [coupling('intop2', ['intop2'])]
+    b['components'][0]['physics'][0]['features'][0]['properties'] = \
+        {'q0': 'intop2(T)'}
+    assert kinds(mk.compare(a, b)) == []
+
+
+def test_global_equations_by_row():
+    def equations(tag, names, eqs):
+        return node(tag, 'GlobalEquations', {'level': 'global'},
+                    rows={'name': names, 'equation': eqs},
+                    row_defaults={'name': '', 'equation': '',
+                                  'initialValueU': '0'})
+
+    a = described([equations('ge1', ['u1', 'u2'], ['u1t+u1', 'u2-1'])])
+    b = described([equations('ge2', ['u2'], ['u2-1']),
+                   equations('ge1', ['u1'], ['u1t+u1'])])
+    assert kinds(mk.compare(a, b)) == []
+    b['components'][0]['physics'][0]['features'][0]['rows']['equation'] = \
+        ['u2-2']
+    [item] = [i for i in mk.compare(a, b) if i['kind'] == 'property']
+    assert item['name'] == 'u2'
+
+
+def test_step_maps():
+    def step(activate, defaults):
+        return {'tag': 'stat', 'path': 'std1/stat', 'type': 'Stationary',
+                'label': 'Stationary', 'active': True,
+                'properties': {'activate': activate} if activate else {},
+                'defaults': {'activate': defaults} if defaults else {},
+                'selection': None, 'selections': {}, 'features': []}
+
+    def study(*steps):
+        return [{'tag': 'std1', 'path': 'std1', 'label': 'Study 1',
+                 'active': True, 'steps': list(steps),
+                 'solver': {'status': 'automatic', 'sequence': None}}]
+
+    a = described(studies=study(step({'ec': 'off'}, {'ec': 'on'})))
+    b = described(studies=study(step({'ec': 'off', 'ht': 'off'},
+                                     {'ec': 'on', 'ht': 'on'})))
+    [item] = [i for i in mk.compare(a, b) if i['kind'] == 'property']
+    assert item['name'] == 'activate[ht]'
+    assert (item['a'], item['b']) == ('on', 'off')
+
+
+def test_solver_not_asked():
+    def study(status):
+        return [{'tag': 'std1', 'path': 'std1', 'label': 'Study 1',
+                 'active': True, 'steps': [],
+                 'solver': {'status': status, 'sequence': 'sol1'}}]
+
+    a = described(studies=study('not asked'))
+    b = described(studies=study('compared'))
+    found = mk.compare(a, b)
+    assert kinds(found) == []
+    assert any('solver=True' in i['message'] for i in found
+               if i['kind'] == 'note')
+
+
+def test_materials():
+    def material(tag, groups, component='comp1', kind='Common',
+                 properties=None):
+        return {'tag': tag, 'path': tag, 'type': kind, 'label': tag,
+                'active': True, 'properties': properties or {},
+                'defaults': {}, 'component': component,
+                'selection': {'level': 'domain', 'geometry': 'geom1',
+                              'entities': 'all'} if component else None,
+                'selections': {}, 'features': [], 'groups': groups}
+
+    library = {'def': {'properties': {
+        'thermalconductivity': ['400[W/(m*K)]'], 'density': '8960[kg/m^3]',
+        'sys': 'x', 'relpermittivity': ['1']},
+        'si': {'thermalconductivity': [{'value': 400, 'unit': 'W/(m*K)'}],
+               'density': {'value': 8960, 'unit': 'kg/m^3'}}}}
+    own = {'def': {'properties': {
+        'thermalconductivity': ['400[W/(m*K)]'],
+        'density': '8960[kg/m^3]'},
+        'si': {'thermalconductivity': [{'value': 400, 'unit': 'W/(m*K)'}],
+               'density': {'value': 8960, 'unit': 'kg/m^3'}}}}
+    a = described(materials=[material('mat1', library)])
+    b = described(materials=[material('mat5', own)])
+    found = mk.compare(a, b)
+    assert kinds(found) == ['property', 'property']
+    info = [i for i in found if i.get('material_info')]
+    assert info and info[0]['a'] == {'sys': 'x'}
+    assert kinds(mk.compare(a, b, ignore={'material_info'})) == ['property']
+    # a link to a global material against a material of the component
+    linked = described(materials=[
+        material('lnk1', {}, kind='Link', properties={'link': 'gm1'}),
+        material('gm1', own, component=None)])
+    assert kinds(mk.compare(linked, b)) == []
+
+
+def test_ignore_and_format():
+    model = described()
+    with pytest.raises(ValueError, match='does not know'):
+        mk.compare(model, model, ignore={'labels'})
+    with pytest.raises(ValueError, match='describe the model again'):
+        mk.compare({**model, 'format': 1}, model)
+    with pytest.raises(TypeError, match='models or results'):
+        mk.compare(model, 'old.json')
+    old = copy.deepcopy(model)
+    assert kinds(mk.compare(old, model, ignore={'unchecked'})) == []
+
+
+##########
+# Models #
+##########
+
+@pytest.fixture
+def two(client):
+    """Two fresh models, removed after the test."""
+    models = [client.create('cmpa'), client.create('cmpb')]
+    yield models
+    for model in models:
+        client.remove(model)
+
+
+def heat_plate(model, *, unit='mm', thickness=10, halves=False,
+               reverse=False, T0='Th', h='h0', extra=None):
+    """
+    A 100 × 50 × thickness plate (in `unit`, as 0.1 × 0.05 m), hot at
+    x = 0 and cooled on top, made of one block or two halves, its
+    features made in either order.
+    """
+    model.parameter('Th', '100[degC]')
+    model.parameter('h0', '10[W/(m^2*K)]')
+    size = 100 if unit == 'mm' else 0.1
+    geom = mk.geometry(model, 3, length_unit=unit)
+    depth = thickness if unit == 'mm' else thickness / 1000
+    if halves:
+        parts = [mk.block(geom, (size / 2, size / 2, depth)),
+                 mk.block(geom, (size / 2, size / 2, depth),
+                          (size / 2, 0, 0))]
+        mk.union(geom, parts, intbnd=False)
+    else:
+        mk.block(geom, (size, size / 2, depth))
+    model.build(geom)
+    heat = (model/'physics').create('HeatTransfer', geom)
+
+    def hot():
+        node = heat.create('TemperatureBoundary', 2)
+        node.java.selection().set(mk.sel.entities(
+            geom, mk.sel.box(geom, 'boundary', x=0)))
+        node.property('T0', T0)
+
+    def cool():
+        node = heat.create('HeatFluxBoundary', 2)
+        node.java.selection().set(mk.sel.entities(
+            geom, mk.sel.box(geom, 'boundary', z=depth)))
+        node.property('HeatFluxType', 'ConvectiveHeatFlux')
+        node.property('h', h)
+
+    for make in ((cool, hot) if reverse else (hot, cool)):
+        make()
+    if extra:
+        extra(model, geom, heat)
+    return geom
+
+
+def test_same_plate_built_otherwise(two):
+    a, b = two
+    heat_plate(a)
+    heat_plate(b, halves=True, reverse=True)
+    old, new = mk.describe(a), mk.describe(b)
+    found = mk.compare(old, new)
+    assert kinds(found) == [], [i['message'] for i in found]
+    assert not [i for i in found if i['kind'] == 'unchecked'
+                and LATER not in i['message']]
+    # read back from JSON: the same result
+    again = mk.compare(json.loads(json.dumps(old)),
+                       json.loads(json.dumps(new)))
+    assert again == found
+
+
+def test_one_property(two):
+    a, b = two
+    heat_plate(a)
+    heat_plate(b, h='20[W/(m^2*K)]')
+    [item] = [i for i in mk.compare(a, b) if i['kind'] != 'note'
+              and LATER not in i['message']]
+    assert item['kind'] == 'property'
+    assert item['name'] == 'h'
+    assert (item['a'], item['b']) == ('h0', '20[W/(m^2*K)]')
+
+
+def test_empty_feature(two):
+    a, b = two
+    heat_plate(a)
+
+    def empty(model, geom, heat):
+        heat.create('HeatFluxBoundary', 2)
+
+    heat_plate(b, extra=empty)
+    found = mk.compare(a, b)
+    assert kinds(found) == ['only_in_b']
+    assert found[0]['empty'] is True
+    assert kinds(mk.compare(a, b, ignore={'empty'})) == []
+    # the other way round
+    assert kinds(mk.compare(b, a)) == ['only_in_a']
+
+
+def test_units_of_length(two):
+    a, b = two
+    heat_plate(a, unit='mm')
+    heat_plate(b, unit='m')
+    found = mk.compare(a, b)
+    assert kinds(found) == [], [i['message'] for i in found]
+
+
+@pytest.mark.parametrize('one, other, expected', [
+    ('100[degC]', '373.15[K]', []), ('Th', '100[degC]', ['expression']),
+    ('100[degC]', '373.15', ['expression']), ('Th', '2*Th', ['property'])])
+def test_values_in_si(two, one, other, expected):
+    a, b = two
+    heat_plate(a, T0=one)
+    heat_plate(b, T0=other)
+    assert kinds(mk.compare(a, b)) == expected
+
+
+def test_thicker_plate(two):
+    a, b = two
+    heat_plate(a)
+    heat_plate(b, thickness=12)
+    old, new = mk.describe(a), mk.describe(b)
+    found = mk.compare(old, new)
+    assert kinds(found) == ['geometry']
+    back = mk.compare(new, old)
+    assert len(back[0]['consequences']) == len(found[0]['consequences'])
+    [item] = found[:1]
+    assert item['consequences']
+    assert all(c['kind'] in ('selection', 'property', 'only_in_a',
+                             'only_in_b') for c in item['consequences'])
+
+
+def test_moved_condition(two):
+    # the hot face moves to x = 100: same area, other face
+    a, b = two
+    heat_plate(a)
+
+    def moved(model, geom, heat):
+        hot = heat/'Temperature 1'
+        hot.java.selection().set(mk.sel.entities(
+            geom, mk.sel.box(geom, 'boundary', x=100)))
+
+    heat_plate(b, extra=moved)
+    found = mk.compare(a, b)
+    assert kinds(found) == ['selection']
+    assert found[0]['numbers']['a'] and found[0]['numbers']['b']
+    assert 'x=0' in found[0]['message'] and 'x=100' in found[0]['message']
+
+
+def test_operators_by_name(two):
+    # operators with other tags (and names) called in expressions
+    for model, tag in zip(two, ('intop1', 'intop2')):
+        def operator(model, geom, heat, tag=tag):
+            component = mk.component_of(geom).java
+            made = component.cpl().create(tag, 'Integration')
+            made.selection().all()
+            (heat/'Heat Flux 1').property('h', f'h0*comp1.{tag}(1)/5e-4')
+        heat_plate(model, extra=operator)
+    found = mk.compare(*two)
+    assert kinds(found) == [], [i['message'] for i in found]
+
+
+def cylinder_model(model, rotated):
+    geom = mk.geometry(model, 3)
+    made = mk.cylinder(geom, 1, 2)
+    if rotated:
+        mk.rotate(geom, [made], 37)
+    model.build(geom)
+    heat = (model/'physics').create('HeatTransfer', geom)
+    side = heat.create('HeatFluxBoundary', 2)
+    side.java.selection().set([
+        n for n in mk.sel.entities(geom, mk.sel.box(geom, 'boundary'))
+        if n not in mk.sel.entities(geom, mk.sel.box(geom, 'boundary', z=0))
+        and n not in mk.sel.entities(geom, mk.sel.box(geom, 'boundary',
+                                                      z=2))])
+    return geom
+
+
+def test_curved_faces(two):
+    # the side of a cylinder has its seams elsewhere when rotated
+    a, b = two
+    cylinder_model(a, False)
+    cylinder_model(b, True)
+    found = mk.compare(a, b)
+    assert kinds(found) == [], [i['message'] for i in found]
+
+
+def test_hole(two):
+    a, b = two
+    heat_plate(a)
+    geom = mk.geometry(b, 3, length_unit='mm')
+    plate = mk.block(geom, (100, 50, 10))
+    mk.difference(geom, plate, [mk.cylinder(geom, 5, 10, (30, 25, 0))])
+    b.build(geom)
+    b.parameter('Th', '100[degC]')
+    b.parameter('h0', '10[W/(m^2*K)]')
+    found = mk.compare(a, b)
+    assert kinds(found)[0] == 'geometry'
+
+
+def two_blocks(model):
+    geom = mk.geometry(model, 3)
+    mk.block(geom, (1, 1, 1))
+    mk.block(geom, (1, 1, 1), (1, 0, 0))
+    model.build(geom)
+    return geom
+
+
+def test_material_level_and_variable(two):
+    for model, on_boundary in zip(two, (False, True)):
+        geom = two_blocks(model)
+        component = mk.component_of(geom).java
+        made = component.material().create('mat1', 'Common')
+        made.propertyGroup('def').set('density', '1000[kg/m^3]')
+        if on_boundary:
+            made.selection().geom(str(geom.java.tag()), 2)
+            made.selection().set([1])
+        variables = component.variable().create('var1')
+        variables.set('q', '2')
+        if on_boundary:
+            variables.selection().geom(str(geom.java.tag()), 3)
+            variables.selection().all()
+    found = mk.compare(*two)
+    assert sorted(kinds(found)) == ['selection', 'variable']
+
+
+def test_study_steps(two):
+    for model, off in zip(two, ((0,), (0, 1))):
+        geom = two_blocks(model)
+        for name in ('HeatTransfer', 'HeatTransfer'):
+            (model/'physics').create(name, geom)
+        study = (model/'studies').create()
+        step = study.create('Stationary')
+        tags = [str(t) for t in mk.component_of(geom).java.physics().tags()]
+        pairs = []
+        for i, tag in enumerate(tags):
+            pairs += [tag, 'off' if i in off else 'on']
+        step.java.set('activate', pairs)
+    found = mk.compare(*two)
+    assert kinds(found) == ['property']
+    assert found[0]['name'] == f'activate[{tags[1]}]'
+
+
+def test_disabled_physics_by_tag(two):
+    # the same study, physics made in another order (other tags)
+    for model, order in zip(two, (('ht', 'ec'), ('ec', 'ht'))):
+        geom = two_blocks(model)
+        made = {}
+        for name in order:
+            kind = 'HeatTransfer' if name == 'ht' else 'ConductiveMedia'
+            node = (model/'physics').create(kind, geom)
+            made[name] = node.tag()
+        study = (model/'studies').create()
+        step = study.create('Stationary')
+        step.java.set('disabledphysics', [made['ec']])
+    found = mk.compare(*two)
+    assert kinds(found) == [], [i['message'] for i in found]
+
+
+def test_swapped_interfaces(two):
+    # two heat interfaces on all domains, tags swapped
+    for model, swap in zip(two, (False, True)):
+        geom = two_blocks(model)
+        first = (model/'physics').create('HeatTransfer', geom)
+        second = (model/'physics').create('HeatTransfer', geom)
+        hot, cold = (second, first) if swap else (first, second)
+        hot.create('TemperatureBoundary', 2).java.selection().set([1])
+        cold.create('HeatFluxBoundary', 2).java.selection().set([4])
+        cold.java.feature('init1').set('Tinit', '300[K]')
+    found = mk.compare(*two)
+    assert kinds(found) == [], [i['message'] for i in found]
+
+
+def test_linked_material(two):
+    a, b = two
+    geom = two_blocks(a)
+    made = a.java.material().create('gm1', 'Common', '')
+    made.propertyGroup('def').set('density', '1000[kg/m^3]')
+    link = mk.component_of(geom).java.material().create('lnk1', 'Link')
+    link.set('link', 'gm1')
+    geom = two_blocks(b)
+    own = mk.component_of(geom).java.material().create('mat1', 'Common')
+    own.propertyGroup('def').set('density', '1000[kg/m^3]')
+    found = mk.compare(a, b)
+    assert kinds(found) == [], [i['message'] for i in found]
+
+
+def test_same_applied(two):
+    # a material on everything overridden on block 2, against two
+    # materials on one block each
+    for model, everything in zip(two, (True, False)):
+        geom = two_blocks(model)
+        component = mk.component_of(geom).java
+        first = component.material().create('mat1', 'Common')
+        first.propertyGroup('def').set('density', '1')
+        if not everything:
+            first.selection().set([1])
+        second = component.material().create('mat2', 'Common')
+        second.propertyGroup('def').set('density', '2')
+        second.selection().set([2])
+    found = mk.compare(*two)
+    assert kinds(found) == ['selection']
+    assert found[0]['same_applied'] is True
+    assert kinds(mk.compare(*two, ignore={'same_applied'})) == []
+
+
+def test_interpolation_from_file(two, tmp_path):
+    table = tmp_path/'table.txt'
+    table.write_text('0 1\n1 2\n2 5\n')
+    for model, source in zip(two, ('table', 'file')):
+        geom = two_blocks(model)
+        function = model.java.func().create(f'int{len(source)}',
+                                            'Interpolation')
+        if source == 'table':
+            function.set('funcname', 'Tdep')
+            function.set('table', [['0', '1'], ['1', '2'], ['2', '5']])
+        else:
+            function.set('source', 'file')
+            function.set('filename', str(table))
+            function.set('funcs', [['Tdep', '1']])
+        variables = mk.component_of(geom).java.variable().create('var1')
+        variables.set('w', 'Tdep(1.5)')
+    found = mk.compare(*two)
+    # the function itself is set up differently; its calls are the same
+    assert 'variable' not in kinds(found)
+    assert all(i['path']['a'] == 'int5' for i in found
+               if i['kind'] == 'property')
+
+
+def test_probes(two):
+    for model, tag in zip(two, ('dom1', 'dom7')):
+        geom = two_blocks(model)
+        component = mk.component_of(geom).java
+        probe = component.probe().create(tag, 'Domain')
+        probe.set('probename', 'average')
+    assert kinds(mk.compare(*two)) == []
+    points = []
+    for model in two:
+        component = mk.component_of(model/'geometries'/'Geometry 1').java
+        points.append(component.probe().create('pt1', 'DomainPoint'))
+    assert kinds(mk.compare(*two)) == []
+    points[1].set('coords3', ['0.5', '0.5', '0.5'])
+    found = [i for i in mk.compare(*two) if i['kind'] == 'property']
+    # COMSOL keeps the point in `coords` too
+    assert sorted(i['name'] for i in found) == ['coords', 'coords3']
+    points[1].set('coords3', points[0].getStringArray('coords3'))
+    expression = points[1].feature(points[1].feature().tags()[0])
+    expression.set('expr', 'T^2')
+    found = [i for i in mk.compare(*two) if i['kind'] == 'property']
+    # (COMSOL follows the expression with the unit)
+    assert 'expr' in [i['name'] for i in found]
+    assert all(i['path']['b'].endswith('/ppb1') for i in found)
+    mk.component_of(two[1]/'geometries'/'Geometry 1').java.probe().create(
+        'bnd1', 'Boundary')
+    assert 'only_in_b' in kinds(mk.compare(*two))
+
+
+def test_time_list(two):
+    for model, times in zip(two, ('range(0,0.1,1)',
+                                  ' '.join(f'{i / 10:g}'
+                                           for i in range(11)))):
+        two_blocks(model)
+        study = (model/'studies').create()
+        study.create('Transient').property('tlist', times)
+    assert kinds(mk.compare(*two)) == []
+    (two[1]/'studies'/'Study 1'/'Time Dependent').property(
+        'tlist', 'range(0,0.1,2)')
+    assert kinds(mk.compare(*two)) == ['property']
+
+
+def test_global_equations(two):
+    for model, split in zip(two, (False, True)):
+        geom = two_blocks(model)
+        physics = mk.component_of(geom).java.physics().create(
+            'ge', 'GlobalEquations', str(geom.java.tag()))
+        first = physics.feature('ge1')
+        rows = [('u1', 'u1t+u1'), ('u2', 'u2-1')]
+        if split:
+            second = physics.create('ge2', 'GlobalEquations', -1)
+            for feature, (name, equation) in zip((second, first), rows):
+                feature.setIndex('name', name, 0, 0)
+                feature.setIndex('equation', equation, 0, 0)
+        else:
+            for i, (name, equation) in enumerate(rows):
+                first.setIndex('name', name, i, 0)
+                first.setIndex('equation', equation, i, 0)
+    found = mk.compare(*two)
+    assert kinds(found) == [], [i['message'] for i in found]
+
+
+def test_two_geometries(two):
+    # a selection on the second geometry of a component
+    for model, face in zip(two, (1, 1)):
+        geom = two_blocks(model)
+        component = mk.component_of(geom).java
+        other = component.geom().create('geom2', 3)
+        other.create('blk1', 'Block').set('size', ['2', '2', '2'])
+        other.run()
+        heat = component.physics().create('ht', 'HeatTransfer', 'geom2')
+        heat.create('temp1', 'TemperatureBoundary', 2).selection().set(
+            [face])
+    assert kinds(mk.compare(*two)) == []
+    heat = mk.component_of(two[1]/'geometries'/'Geometry 1').java \
+        .physics('ht')
+    heat.feature('temp1').selection().set([2])
+    found = mk.compare(*two)
+    assert kinds(found) == ['selection']
+    assert 'x=2' in found[0]['message'] or 'x 0..2' in found[0]['message']
+
+
+@pytest.mark.parametrize('partial', [False, True])
+def test_assembly(two, partial):
+    # a chip on a plate: an assembly with pairs against a union
+    for model, action in zip(two, ('assembly', 'union')):
+        geom = mk.geometry(model, 3)
+        mk.block(geom, (10, 10, 1))
+        size = 2 if partial else 10
+        offset = 4 if partial else 0
+        mk.block(geom, (size, size, 1), (offset, offset, 1))
+        geom.java.feature('fin').set('action', action)
+        model.build(geom)
+        heat = (model/'physics').create('HeatTransfer', geom)
+        heat.create('TemperatureBoundary', 2).java.selection().set(
+            mk.sel.entities(geom, mk.sel.box(geom, 'boundary', z=0)))
+    found = mk.compare(*two)
+    first = found[0]
+    assert first['kind'] == 'geometry'
+    assert first['a'] == 'assembly' and first['b'] == 'union'
+    assert 'consequences' not in first
+    rest = kinds(found)[1:]
+    if partial:
+        assert 'unchecked' in rest
+    assert 'selection' not in rest
+
+
+def test_library_material(two):
+    a, b = two
+    geom = two_blocks(a)
+    mk.material(geom, 'Copper')
+    geom = two_blocks(b)
+    own = mk.component_of(geom).java.material().create('mat1', 'Common')
+    group = own.propertyGroup('def')
+    group.set('thermalconductivity', ['400[W/(m*K)]'])
+    group.set('density', '8960[kg/m^3]')
+    group.set('heatcapacity', '385[J/(kg*K)]')
+    found = mk.compare(a, b)
+    names = [i.get('name') for i in found if i['kind'] == 'property'
+             and not i.get('material_info')]
+    assert not {'thermalconductivity', 'density', 'heatcapacity'} & \
+        set(names)
+    for item in found:
+        if item['kind'] == 'property' and 'name' not in item:
+            # only the library's own entries, one item per group
+            assert 'thermalconductivity' not in (item['a'] or {})
+    # the library's coordinate system entry is marked as such
+    assert all(i.get('material_info') for i in found
+               if i.get('name') == 'sys')
+    assert not [i for i in mk.compare(a, b, ignore={'material_info'})
+                if i.get('name') == 'sys']
+
+
+def test_physics_controlled_mesh(two):
+    a, b = two
+    geom = two_blocks(a)
+    mesh = (a/'meshes').create(geom)
+    mesh.java.automatic(True)
+    mesh.java.autoMeshSize(4)
+    geom = two_blocks(b)
+    mesh = (b/'meshes').create(geom)
+    size = mesh.create('Size')
+    mk.set(size, custom='on', hmax=0.3)
+    mesh.create('FreeTet')
+    layers = mesh.create('BndLayer')
+    layers.java.selection().geom(str(geom.java.tag()), 3)
+    layers.java.selection().all()
+    found = mk.compare(a, b)
+    messages = [i['message'] for i in found]
+    assert not any('hmax' in m and 'in a' in m and 'from_default' in i
+                   for m, i in zip(messages, found)), messages

@@ -105,6 +105,9 @@ MEANINGS: dict[str, str | tuple[str, ...]] = {
     'list_physics': 'mphkit.physics_types',
     'physics_list': 'mphkit.physics_types',
     'physics_interfaces': 'mphkit.physics_types',
+    # Comparing models
+    'model_diff': 'mphkit.compare', 'compare_models': 'mphkit.compare',
+    'diff_models': 'mphkit.compare',
     # The check before solving
     'validate': 'mphkit.check', 'diagnose': 'mphkit.check',
     'precheck': 'mphkit.check', 'check_model': 'mphkit.check',

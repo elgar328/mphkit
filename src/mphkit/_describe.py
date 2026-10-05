@@ -189,9 +189,8 @@ def describe(model: Model, /, *, solver: bool = False) -> dict:
     a model may also show changes that are only version differences.
     Without `solver=True`, nothing in the model is changed.
 
-    To compare two results by hand: tags and order differ, so look nodes
-    up by `type` and selection, not by their position in the lists. Not
-    described: named selections themselves (nodes show the
+    `mk.compare` lists the differences between two results (or
+    models). Not described: named selections themselves (nodes show the
     entities they select), node groups, batch jobs and results.
     Expressions are kept as written; `si` makes the evaluable ones
     comparable. The two faces of a pair in an assembly have the same box

@@ -159,11 +159,13 @@ lists.
 A model rebuilt by a script can be checked against the one made in the
 COMSOL Desktop: `mk.describe` returns a model's settings as plain values,
 with selections described by the location of their entities, so nodes
-can be matched by type and place, whatever their tags and order:
+can be matched by type and place, whatever their tags and order, and
+`mk.compare` lists what differs:
 
 ```python
 old_settings = mk.describe(old)    # settings that differ from the defaults, by node
-new_settings = mk.describe(model)  # JSON-ready: save both and compare them
+new_settings = mk.describe(model)  # JSON-ready, e.g. to keep with the script
+differences = mk.compare(old_settings, new_settings)  # also takes models
 ```
 
 Results of the solved
