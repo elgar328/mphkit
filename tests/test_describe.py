@@ -554,6 +554,23 @@ def test_physics_on_part(model):
     assert len(insulation['selection']['applied']) == 6
 
 
+def test_derived_named_selection(model):
+    # a derived named selection: inputEntities() gives its input (the
+    # domains), not the boundaries it selects
+    geom = blocks(model, 3)
+    right = mk.sel.box(geom, 'domain', x=(1, 3))
+    around = mk.sel.adjacent(geom, right, name='around')
+    heat = (model/'physics').create('HeatTransfer', geom)
+    hot = heat.create('TemperatureBoundary', 2)
+    hot.java.selection().named(str(around.tag()))
+    selected = find(mk.describe(model), 'TemperatureBoundary')['selection']
+    assert selected['named'] == 'around'
+    assert len(selected['entities']) == len(mk.sel.entities(geom, around))
+    assert 'applied' not in selected
+    # the outer faces of domains 2 and 3: not the face between them
+    assert not any(place['x'] == [2, 2] for place in selected['entities'])
+
+
 def test_activate(model):
     geom = blocks(model, 1)
     (model/'physics').create('HeatTransfer', geom)

@@ -591,22 +591,37 @@ class _Reader:
                     'levels': [_comsol.entity_level_name(d, sdim)
                                for d in dims], 'entities': 'unknown'}
         dim = dims[0]
-        try:
-            given = selection.inputEntities()
-        except Exception:
-            given = None
         applied = [int(e) for e in selection.entities()]
-        chosen = applied if given is None else [int(e) for e in given]
+        try:
+            named = str(selection.named())
+        except Exception:
+            named = ''
+        chosen: list[int] | None = None
+        if named:
+            # inputEntities() gives the input of a derived named selection
+            # (the domains of an Adjacent), not what it selects
+            try:
+                chosen = [int(e) for e in
+                          self.java.selection(named).entities(dim)]
+            except Exception:
+                chosen = applied
+        else:
+            try:
+                given = selection.inputEntities()
+                chosen = None if given is None else [int(e) for e in given]
+            except Exception:
+                chosen = None
+        if chosen is None:
+            chosen = applied
         found: dict = {'level': _comsol.entity_level_name(dim, sdim),
                        'entities': self.located(gtag, dim, chosen, path)}
         if sorted(set(chosen)) != sorted(set(applied)):
             found['applied'] = self.located(gtag, dim, applied, path)
-        try:
-            named = str(selection.named())
-            if named:
+        if named:
+            try:
                 found['named'] = _label(self.java.selection(named)) or named
-        except Exception:
-            pass
+            except Exception:
+                found['named'] = named
         return found
 
     def located(self, gtag: str, dim: int, numbers: list[int], path: str):
