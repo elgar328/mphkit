@@ -9,11 +9,29 @@ until 1.0, a minor release (0.2, 0.3, ...) may change the API. See
 
 ## [Unreleased]
 
+### Added
+
+- `mk.describe(model)` returns a model's settings as plain, JSON-ready
+  values that do not depend on tags, feature order or entity numbers:
+  parameters, definitions, materials, physics, multiphysics, meshes and
+  studies, with only the properties that differ from the defaults and
+  the selections described by the location and size of their entities;
+  with `solver=True` also the solver settings that differ from the ones
+  COMSOL would choose. It is meant for checking a model rebuilt by a
+  script against the one made in the COMSOL Desktop. It leaves the model
+  as it was; with `solver=True` it compiles the equations, which in a
+  model saved by another COMSOL version or build may update its solver
+  sequences (listed in the result's `notes`).
+
 ### Fixed
 
-- `mk.problem_size` leaves the model's solver sequences as they were; it
-  changed a note the COMSOL Desktop keeps in a sequence that had not been
-  solved yet.
+- `mk.problem_size` leaves the model as it was. It changed a note the
+  COMSOL Desktop keeps in a solver sequence not solved yet, left nodes of
+  COMSOL's own (derived variables `iexpr1`, ..., operators `maxOp1`, ...)
+  in a model not solved since it was made or loaded, and the first time
+  also set the study steps' values of variables not solved for from `1`
+  to `auto`. In a model saved by another COMSOL version or build,
+  compiling may still update its solver sequences, as solving would.
 
 ## [0.3.0] - 2026-10-04
 

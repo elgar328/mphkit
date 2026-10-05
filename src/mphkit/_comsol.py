@@ -7,6 +7,7 @@ here, so that a change in either needs a fix in one place only.
 from __future__ import annotations
 
 import numbers
+import re
 from collections.abc import Callable, Iterable, Iterator
 from contextlib import contextmanager
 from difflib import get_close_matches
@@ -1103,25 +1104,112 @@ def scratch(model) -> Iterator[Callable[[Any, str], Any]]:
 
 # A note the GUI keeps on solver sequence nodes
 NOTE = 'lastchangedproperty'
+# Variables COMSOL derives when it compiles the equations ('Derived
+# Variables 1', iexpr1, iexpr_root_freq, ...): not in the Java export,
+# gone once saved and loaded
+DERIVED_VARIABLES = re.compile(r'iexpr(\d+|_root_freq)')
+# Lists where compiling adds nodes of COMSOL's own
+COMPILED = ('variable', 'cpl', 'func')
 
 
 @contextmanager
-def solver_notes_kept(model) -> Iterator[None]:
+def compiled_traces_removed(model) -> Iterator[list[str]]:
     """
-    Keeps the notes of the GUI in a Java model's solver sequences: making
-    a temporary sequence with `createAutoSequence` can rewrite the
+    Leaves a Java model as it was after a temporary solver sequence, as
+    far as COMSOL lets it, and yields a list that tells afterwards what
+    stayed changed. Call it with the history off.
+
+    Making a sequence with `createAutoSequence` can rewrite the
     'lastchangedproperty' note of an existing one (seen on a Variables
-    node), which a Java export does not show. Call it with the history
-    off.
+    node). In a model not compiled since it was made or loaded, compiling
+    adds nodes of COMSOL's own (derived variables iexpr1, ...; operators
+    maxOp1, minOp1) and sets study steps' `solnum` and `notsolnum` from
+    '1' to 'auto'; none of it shows in a Java export, and solving makes
+    them again. Notes and steps are set back and the new nodes removed.
+    Left as COMSOL does it: the operators a physics interface makes for
+    itself (builder_*) are numbered anew with the same contents. Not
+    undone, and listed: in a model saved by another COMSOL version or
+    build (6.4 build 258 against 293 was enough), COMSOL may add nodes to
+    the existing sequences (a field node, which cannot be removed) and
+    build empty meshes of layered materials.
     """
     notes = _solver_notes(model)
+    steps = _first_compile(model)
+    nodes = {name: {str(t) for t in getattr(model, name)().tags()}
+             for name in COMPILED}
+    sequences = set(_sequence_nodes(model))
+    empty = [str(t) for t in model.mesh().tags()
+             if model.mesh(t).isEmpty()]
+    changed: list[str] = []
     try:
-        yield
+        yield changed
     finally:
+        # each step on its own: one that fails leaves the others to run
         for node, value in notes.values():
-            now = _note(node)
-            if now is not None and now != value:
-                node.set(NOTE, value)
+            _undo(changed, 'a solver note', lambda: (
+                _note(node) not in (None, value) and node.set(NOTE, value)))
+        for (step, name), setting in steps.items():
+            _undo(changed, f'the study step setting {name!r}', lambda: (
+                str(step.getString(name)) != setting
+                and step.set(name, setting)))
+        for name, before in nodes.items():
+            container = getattr(model, name)()
+            for tag in [str(t) for t in container.tags()]:
+                if tag not in before and not tag.startswith('builder_'):
+                    _undo(changed, f'the new node {tag!r}',
+                          lambda: container.remove(tag))
+        added = sorted(set(_sequence_nodes(model)) - sequences)
+        if added:
+            changed.append('COMSOL added ' + ', '.join(added) + ' to the '
+                           'solver sequences (an update for this version)')
+        built = [tag for tag in empty if not model.mesh(tag).isEmpty()]
+        if built:
+            changed.append('COMSOL built the empty meshes '
+                           + ', '.join(built))
+
+
+def _undo(changed: list[str], what: str, step: Callable[[], Any]):
+    """Runs one step of setting a model back; notes it if it fails."""
+    try:
+        step()
+    except Exception as error:
+        changed.append(f'could not set back {what}: {reason(error)}')
+
+
+def _sequence_nodes(model) -> list[str]:
+    """Returns the tag paths of all nodes of the solver sequences."""
+    found: list[str] = []
+
+    def walk(node, path: str):
+        for tag in node.feature().tags():
+            own = f'{path}/{tag}'
+            found.append(own)
+            walk(node.feature(tag), own)
+
+    for tag in model.sol().tags():
+        walk(model.sol(tag), str(tag))
+    return found
+
+
+# Study step settings that the first compile of a model sets from '1' to
+# 'auto' (values of variables not solved for)
+FIRST_COMPILE = ('solnum', 'notsolnum')
+
+
+def _first_compile(model) -> dict[tuple[Any, str], str]:
+    """Returns the study step settings the first compile changes."""
+    found = {}
+    for stag in model.study().tags():
+        steps = model.study(stag).feature()
+        for tag in steps.tags():
+            step = steps.get(tag)
+            for name in FIRST_COMPILE:
+                try:
+                    if step.hasProperty(name):
+                        found[(step, name)] = str(step.getString(name))
+                except Exception:
+                    pass
+    return found
 
 
 def _solver_notes(model) -> dict[str, tuple[Any, list[list[str]]]]:

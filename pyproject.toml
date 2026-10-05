@@ -1,7 +1,7 @@
 [project]
 name = "mphkit"
 version = "0.4.0.dev0"
-description = "Helpers on top of MPh for COMSOL in Python: build geometry, select by location, insert library materials, check a model before solving, and read results as numbers or pictures."
+description = "Helpers on top of MPh for COMSOL in Python: build geometry, select by location, insert library materials, check a model before solving, summarize its settings, and read results as numbers or pictures."
 readme = "README.md"
 authors = [{ name = "elgar328" }]
 license = "MIT"

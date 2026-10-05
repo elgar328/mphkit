@@ -4,10 +4,10 @@ Helpers on top of MPh for COMSOL; overview: print(mphkit.__doc__), not help().
 mphkit builds geometry and named selections, inserts materials from
 COMSOL's libraries, looks up COMSOL's names, and reads and draws results;
 physics, mesh and studies stay plain MPh (or COMSOL's Java API through
-`node.java`). Helpers take MPh nodes, and those that create something
-return one. This overview names every helper (Index, at the end);
-`help(mk.<name>)` has the details of one, `help(mk.sel)` those of the
-selections.
+`node.java`); `mk.describe` reads them. Helpers take MPh nodes, and those
+that create something return one. This overview names every helper
+(Index, at the end); `help(mk.<name>)` has the details of one,
+`help(mk.sel)` those of the selections.
 
     import mph
     import mphkit as mk
@@ -100,6 +100,8 @@ keeps the solutions) and `old.save('old.java')` show it as Java
 (`old.save()` without a path overwrites the .mph); `help(mk.sel.find)`
 moves numbered selections and tells how to inspect the old model.
 Its nodes: `old/'geometries'/'Geometry 1'` (names: `old.geometries()`).
+To check a script that rebuilds it, `mk.describe` both models: settings
+without tags, selections by location.
 
 Index:
 
@@ -127,6 +129,7 @@ Index:
 - Results: mk.integral, mk.average, mk.maximum, mk.minimum, mk.value,
   mk.plot; sweeps: mk.outer_values, mk.step_values (values of the outer
   loop and of the steps, also eigenfrequencies).
+- Compare models: mk.describe (settings, selections by location).
 - Other: mk.set (properties of any node or Java object), mk.component_of
   (a geometry's component), mk.coordinate_system (e.g. for perfectly
   matched layers), mk.LicenseError (no CAD license), mk.StepWarning
@@ -137,6 +140,7 @@ import sys as _sys
 from . import sel
 from ._catalog import feature_types, physics_types, properties, variables
 from ._check import check
+from ._describe import describe
 from ._hints import HintModule as _HintModule
 from ._image import image
 from ._materials import material, materials
@@ -160,8 +164,8 @@ __version__ = '0.4.0.dev0'
 
 __all__ = ['LicenseError', 'StepWarning', 'array', 'average', 'block', 'bounding_box',
            'chamfer', 'check', 'circle', 'component_of', 'coordinate_system',
-           'coordinates', 'cylinder', 'delete', 'difference', 'extrude',
-           'feature', 'feature_types', 'fillet', 'geometry', 'image',
+           'coordinates', 'cylinder', 'delete', 'describe', 'difference',
+           'extrude', 'feature', 'feature_types', 'fillet', 'geometry', 'image',
            'import_', 'integral', 'intersection', 'interval', 'line_segment',
            'log_progress', 'material', 'materials', 'maximum', 'measure',
            'mesh_quality', 'minimum', 'mirror', 'move', 'outer_values',

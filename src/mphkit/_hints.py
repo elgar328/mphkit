@@ -51,7 +51,7 @@ MEANINGS: dict[str, str | tuple[str, ...]] = {
     'line': 'mphkit.line_segment', 'polyline': 'mphkit.polygon',
     'info': 'mphkit.summary', 'geominfo': 'mphkit.summary',
     'geometry_info': 'mphkit.summary', 'geom_info': 'mphkit.summary',
-    'describe': 'mphkit.summary', 'stats': 'mphkit.summary',
+    'stats': 'mphkit.summary',
     'picture': 'mphkit.image',
     'screenshot': 'mphkit.image', 'snapshot': 'mphkit.image',
     'render': 'mphkit.image', 'show': 'mphkit.image', 'draw': 'mphkit.image',

@@ -166,7 +166,14 @@ def model_state(model):
             tags = [str(t) for t in container.tags()]
         except Exception:
             return
+        # operators a physics interface makes for itself: the first compile
+        # numbers them anew, so they compare by contents
+        own = sorted(t for t in tags if t.startswith('builder_'))
+        tags = [t for t in tags if t not in own]
         found[path] = tags
+        if own:
+            found[f'{path}/builder_*'] = sorted(
+                repr(sorted(node(container.get(t)).items())) for t in own)
         for tag in tags:
             try:
                 item = container.get(tag)

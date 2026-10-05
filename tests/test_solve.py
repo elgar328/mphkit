@@ -540,6 +540,15 @@ def test_solver_notes(plate):
     assert model_state(model) == before
 
 
+def test_derived_variables(plate):
+    # Compiling the equations makes COMSOL's 'Derived Variables' nodes
+    # (iexpr1, ...) in a model not solved since it was made or loaded.
+    model, geom = plate
+    before = model_state(model)
+    mk.problem_size(model)
+    assert model_state(model) == before
+
+
 def test_two_plate(client, tmp_path, logging):
     # the size, and the same numbers in the solve's log (the mesh, and so
     # the numbers, vary a little from run to run: 4767 = 2849 + 1918)

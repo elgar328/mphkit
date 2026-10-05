@@ -43,7 +43,8 @@ model.save('demo.mph')
 Helpers take MPh `Node`s (`mk.geometry` the model, `mk.set` also Java
 objects), and those that create something return one, so mphkit and MPh
 mix freely. Physics, mesh and study stay plain MPh (or the COMSOL Java
-API through `node.java`); mphkit looks up the COMSOL names they need.
+API through `node.java`); mphkit looks up the COMSOL names they need and
+`mk.describe` reads them.
 
 `print(mphkit.__doc__)` shows the workflow as one script, the rules and
 an index of every helper; `help(mk.<name>)` has the details of one,
@@ -155,6 +156,15 @@ and how to stop it: on macOS (Linux not tried) end its Python process only,
 `os.kill(pid, signal.SIGTERM)`; on Windows every process `mk.progress`
 lists.
 
+A model rebuilt by a script can be checked against the one made in the
+COMSOL Desktop: `mk.describe` returns a model's settings as plain values,
+without tags, with selections described by the location of their entities:
+
+```python
+old_settings = mk.describe(old)    # settings that differ from the defaults, by node
+new_settings = mk.describe(model)  # JSON-ready: save both and compare them
+```
+
 Results of the solved
 [example script](https://github.com/elgar328/mphkit/blob/main/examples/plate_with_holes.py),
 over entities or at points, in SI units unless `unit` is given; they
@@ -262,7 +272,8 @@ a plate with a row of cooling holes, for one or more holes.
 
 - Physics, mesh and study setup, and plots beyond `mk.plot` (arrows,
   streamlines, graphs, animations), stay plain MPh; mphkit looks up the
-  names they need and checks them before solving.
+  names they need, checks them before solving and `mk.describe` reads
+  them.
 - A parametric sweep that changes the geometry is read over selection
   nodes or all entities, each value in its own geometry, and not drawn;
   a box at fixed coordinates picks what lies there in each value. With

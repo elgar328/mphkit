@@ -123,7 +123,10 @@ def problem_size(model: Model, /, *, study=None) -> dict:
     compiling the equations would rebuild them silently; a component
     with physics needs a mesh. It compiles the equations once, which
     takes seconds for large models. Imported or copied meshes were not
-    tried. Returns plain values and leaves nothing in the model.
+    tried. Returns plain values and leaves nothing in the model, except
+    in a model saved by another COMSOL version or build, where compiling
+    may update its solver sequences and build the empty meshes of
+    layered materials, as solving would.
     """
     if not isinstance(model, Model):
         raise TypeError(f'mk.problem_size takes a model, not {model!r}.')
@@ -132,8 +135,9 @@ def problem_size(model: Model, /, *, study=None) -> dict:
     std = str(study_java.tag())
     interfaces = _check.active_physics(model)
     meshes = _check_meshes(model, study_java, interfaces)
-    with _comsol.history_off(java), _comsol.solver_notes_kept(java):
-        attached = _attached(java, std)
+    with _comsol.history_off(java), \
+            _comsol.compiled_traces_removed(java):
+        attached = attached_sequence(java, std)
         steps, solvers = _sizes(java, study_java)
         if attached is not None:
             # a step added after the sequence was made is not in it
@@ -181,6 +185,34 @@ def _check_meshes(model: Model, study, interfaces) -> dict[str, int]:
     an empty or changed mesh, or one of a changed geometry, silently.
     """
     java = model.java
+    pairs = used_meshes(study, interfaces)
+    with_physics = {str(p.geometry.tag()): p.geometry for p in interfaces}
+    for gtag, mtag in pairs:
+        if mtag == 'nomesh' and gtag in with_physics:
+            name = _comsol.name_of(with_physics[gtag])
+            raise RuntimeError(
+                f'Geometry "{name}" has physics but no mesh; the solve would '
+                "give an empty solution. Create one, e.g. (model/'meshes')"
+                '.create(geom), and run model.mesh().')
+    used = [(g, m) for g, m in pairs if m != 'nomesh']
+    for gtag in dict.fromkeys(g for g, _ in used):
+        geometry = java.geom(gtag)
+        _comsol.check_geometry_built(
+            geometry, 'geometries/' + _comsol.name_of(geometry))
+    sequences = [java.mesh(m) for _, m in used]
+    for sequence in sequences:
+        _comsol.check_mesh_built(sequence)
+    names = [_comsol.name_of(s) for s in sequences]
+    return {(n if names.count(n) == 1 else f'{n} ({s.tag()})'):
+            int(s.getNumElem()) for n, s in zip(names, sequences)}
+
+
+def used_meshes(study, interfaces) -> list[tuple[str, str]]:
+    """
+    Returns the (geometry, mesh) tags the active steps of a Java study
+    use, 'nomesh' for a geometry without one; without such steps, the
+    meshes of the components of the physics interfaces.
+    """
     pairs: list[tuple[str, str]] = []
     found = False
     for tag in study.feature().tags():
@@ -201,25 +233,7 @@ def _check_meshes(model: Model, study, interfaces) -> dict[str, int]:
             for mtag in physics.component.mesh().tags():
                 if (gtag, str(mtag)) not in pairs:
                     pairs.append((gtag, str(mtag)))
-    with_physics = {str(p.geometry.tag()): p.geometry for p in interfaces}
-    for gtag, mtag in pairs:
-        if mtag == 'nomesh' and gtag in with_physics:
-            name = _comsol.name_of(with_physics[gtag])
-            raise RuntimeError(
-                f'Geometry "{name}" has physics but no mesh; the solve would '
-                "give an empty solution. Create one, e.g. (model/'meshes')"
-                '.create(geom), and run model.mesh().')
-    used = [(g, m) for g, m in pairs if m != 'nomesh']
-    for gtag in dict.fromkeys(g for g, _ in used):
-        geometry = java.geom(gtag)
-        _comsol.check_geometry_built(
-            geometry, 'geometries/' + _comsol.name_of(geometry))
-    sequences = [java.mesh(m) for _, m in used]
-    for sequence in sequences:
-        _comsol.check_mesh_built(sequence)
-    names = [_comsol.name_of(s) for s in sequences]
-    return {(n if names.count(n) == 1 else f'{n} ({s.tag()})'):
-            int(s.getNumElem()) for n, s in zip(names, sequences)}
+    return pairs
 
 
 def _sizes(java, study) -> tuple[list[dict], dict[str, dict]]:
@@ -271,7 +285,7 @@ def _sizes(java, study) -> tuple[list[dict], dict[str, dict]]:
         sequences.remove(tag)
 
 
-def _attached(java, std: str) -> Any:
+def attached_sequence(java, std: str) -> Any:
     """
     Returns the first solver sequence of the study (the one model.solve()
     runs, also if the user changed it), or None.
