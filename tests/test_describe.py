@@ -6,6 +6,7 @@ studies, solvers) together with leaving the model as it was.
 import json
 import math
 import re
+import textwrap
 from pathlib import Path
 
 import pytest
@@ -84,6 +85,8 @@ def test_solver_changes():
         's1': ('Stationary', 'Stationary Solver 1', {'stol': 1e-6}),
         's1/su1': ('StoreSolution', 'Store 1', {'sol': 'sol2'}),
         's1/se1': ('Segregated', 'Segregated 1', {}),
+        's1/l1': ('Lists', 'Lists 1', {'both': ['sol1', 'x'],
+                                       'stores': ['sol2', 'y']}),
     }
     automatic = {
         'st1': ('StudyStep', 'Compile Equations', {'study': 'std1'}),
@@ -91,6 +94,9 @@ def test_solver_changes():
         's1': ('Stationary', 'Stationary Solver 1', {'stol': 1e-3}),
         's1/su1': ('StoreSolution', 'Store 1', {'sol': 'sol3'}),
         's1/fc1': ('FullyCoupled', 'Fully Coupled 1', {}),
+        # the temporary tag and other solution tags inside lists too
+        's1/l1': ('Lists', 'Lists 1', {'both': ['mkdesc1', 'x'],
+                                       'stores': ['sol3', 'y']}),
     }
     found = _describe.solver_changes(model_nodes, automatic,
                                      {'mkdesc1': 'sol1'},
@@ -102,6 +108,122 @@ def test_solver_changes():
          'change': 'only_in_model'},
         {'path': 's1/fc1', 'labels': 'Fully Coupled 1',
          'type': 'FullyCoupled', 'change': 'only_in_automatic'}]
+
+
+class Fake:
+    """A node with string properties and no selection or subnodes."""
+
+    def __init__(self, kind, **values):
+        self.kind, self.values = kind, values
+
+    def tag(self):
+        return 'f1'
+
+    def getType(self):
+        return self.kind
+
+    def label(self):
+        return self.kind
+
+    def isActive(self):
+        return True
+
+    def properties(self):
+        return list(self.values)
+
+    def getValueType(self, name):
+        return 'StringArray' if isinstance(self.values[name], list) \
+            else 'String'
+
+    def getStringArray(self, name):
+        return self.values[name]
+
+    def getString(self, name):
+        return self.values[name]
+
+    def selection(self, name=None):
+        raise RuntimeError('no selection')
+
+    def getExtraSelectionNames(self):
+        return []
+
+
+def reader(context=''):
+    """A reader without a model, for the parts that need none."""
+    found = object.__new__(_describe._Reader)
+    found.notes, found.context, found.java = [], context, None
+
+    class Geometry:
+        def getSDim(self):
+            return 3
+
+    found.geometries = {'geom1': Geometry()}
+    return found
+
+
+def test_step_maps_on_steps_only():
+    own = Fake('Stationary', activate=['ht', 'on', 'ec', 'off'])
+    new = Fake('Stationary', activate=['ht', 'on', 'ec', 'on'])
+    other = reader().node(own, new, 'f1')
+    assert other['properties'] == {'activate': ['ht', 'on', 'ec', 'off']}
+    step = reader('study').node(own, new, 'std1/f1')
+    assert step['properties'] == {'activate': {'ec': 'off'}}
+    assert step['defaults'] == {'activate': {'ec': 'on'}}
+    unknown = reader('study').node(own, None, 'std1/f1')
+    assert unknown['properties'] == {'activate': {'ht': 'on', 'ec': 'off'}}
+
+
+def test_levels():
+    class Selection:
+        def geom(self):
+            return 'geom1'
+
+    selection = Selection()
+    mesh, other = reader('mesh'), reader()
+    assert mesh.described(selection, [], 'p') == {'level': 'remaining'}
+    assert mesh.described(selection, [0, 1, 2, 3], 'p') == \
+        {'level': 'remaining'}
+    assert other.described(selection, [0, 1, 2, 3], 'p') == \
+        {'level': 'geometry'}
+    assert other.described(selection, [], 'p') == {'level': 'none'}
+    several = other.described(selection, [2, 3], 'p')
+    assert several == {'level': 'several', 'levels': ['boundary', 'domain'],
+                       'entities': 'unknown'}
+    assert other.notes[0]['kind'] == 'levels_unknown'
+
+
+def test_set_back_step_by_step():
+    # a step that fails is noted, the others still run
+    class List:
+        def __init__(self, tags=()):
+            self.items = list(tags)
+
+        def tags(self):
+            return list(self.items)
+
+        def remove(self, tag):
+            if tag == 'stuck':
+                raise RuntimeError('Object cannot be removed.')
+            self.items.remove(tag)
+
+    class Model:
+        def __init__(self):
+            self.lists = {name: List() for name in
+                          ('sol', 'study', 'mesh', 'variable', 'cpl',
+                           'func')}
+            self.lists['variable'] = List(['var1'])
+
+        def __getattr__(self, name):
+            return lambda: self.lists[name]
+
+    model = Model()
+    with _comsol.compiled_traces_removed(model) as changed:
+        model.lists['variable'].items += ['stuck', 'iexpr1']
+        model.lists['cpl'].items += ['maxOp1', 'builder_integrate9']
+    assert model.lists['variable'].items == ['var1', 'stuck']
+    assert model.lists['cpl'].items == ['builder_integrate9']
+    assert changed == ["could not set back the new node 'stuck': "
+                       'Object cannot be removed.']
 
 
 ##########
@@ -351,10 +473,10 @@ def test_solver_failing(client, solved, monkeypatch):
 
     read = _describe._Reader.solver_nodes
 
-    def failing(self, sequence):
+    def failing(self, sequence, *args, **kwargs):
         if str(sequence.tag()).startswith(_describe.SCRATCH):
             raise RuntimeError('made to fail')
-        return read(self, sequence)
+        return read(self, sequence, *args, **kwargs)
 
     monkeypatch.setattr(_describe._Reader, 'solver_nodes', failing)
     before = model_state(model)
@@ -601,6 +723,7 @@ def test_definitions(model):
     assert 'component' not in variables['gvar']
     assert variables['gvar']['selection'] == {'level': 'global'}
     assert variables['cvar']['component'] == 'comp1'
+    assert variables['cvar']['selection'] == {'level': 'global'}
     assert variables['cvar']['variables'] == {'C': 'x'}
     functions = {f['tag']: f for f in described['functions']}
     assert sorted(functions) == ['can', 'gan']
@@ -674,3 +797,18 @@ def test_readme(solved):
     exec(code, namespace)
     assert namespace['old_settings'] == namespace['new_settings'] == \
         mk.describe(model)
+
+
+def test_docstring_example(solved, monkeypatch, tmp_path):
+    # the example at the top of help(mk.describe) runs as written
+    model, geom, described = solved
+    code = re.search(r'```python\n(.*?)```', mk.describe.__doc__,
+                     re.S).group(1)
+    code = textwrap.dedent(code)    # Python 3.13 dedents docstrings
+    monkeypatch.chdir(tmp_path)
+    namespace = {'mk': mk, 'json': json, 'model': model}
+    exec(code, namespace)
+    assert namespace['hot']['tag'] == 'temp1'
+    assert namespace['hot']['properties'] == {'T0': 'Th'}
+    assert json.loads((tmp_path/'old.json').read_text('utf-8')) == \
+        namespace['d']

@@ -136,8 +136,9 @@ def describe(model: Model, /, *, solver: bool = False) -> dict:
     the entities it shares, and default features apply where nothing else
     does. `named` is the label of a named selection it uses. Mesh
     operations on the whole geometry or on what is left have the level
-    'remaining' (COMSOL tells them apart only before meshing); global
-    nodes 'global'. Boxes are single precision (1.1 reads
+    'remaining' (COMSOL tells them apart only before meshing); other
+    nodes on the whole geometry 'geometry', global nodes 'global', and a
+    selection on several levels 'several' (its entities 'unknown'). Boxes are single precision (1.1 reads
     1.100000023841858) and curved entities are measured on a rendering
     mesh: compare with a tolerance. Geometries list all their entities
     this way under `entities`.
@@ -313,12 +314,17 @@ def solver_changes(model_nodes: dict, automatic: dict, tags: dict,
             return [mapped(item) for item in value]
         return tags.get(value, value) if isinstance(value, str) else value
 
-    def same(own, auto) -> bool:
-        auto = mapped(auto)
+    def alike(own, auto) -> bool:
+        if isinstance(own, list) and isinstance(auto, list):
+            return len(own) == len(auto) and \
+                all(alike(a, b) for a, b in zip(own, auto))
         if own == auto:
             return True
         return (isinstance(own, str) and isinstance(auto, str)
                 and own in solutions and auto in solutions)
+
+    def same(own, auto) -> bool:
+        return alike(own, mapped(auto))
 
     found = []
     for path, (kind, labels, values) in model_nodes.items():
@@ -572,14 +578,17 @@ class _Reader:
         # A mesh operation on what is left reads like one on the whole
         # geometry once the mesh is built, and has no levels before
         whole = sorted(dims) == list(range(sdim + 1))
-        if not dims or whole and self.context == 'mesh':
+        if self.context == 'mesh' and (not dims or whole):
             return {'level': 'remaining'}
         if whole:
             return {'level': 'geometry'}
+        if not dims:
+            return {'level': 'none'}
         if len(dims) > 1:
             self.note(path, 'levels_unknown', 'a selection on several '
                       f'levels {dims}: its entities are not described')
-            return {'levels': [_comsol.entity_level_name(d, sdim)
+            return {'level': 'several',
+                    'levels': [_comsol.entity_level_name(d, sdim)
                                for d in dims], 'entities': 'unknown'}
         dim = dims[0]
         try:
@@ -927,7 +936,11 @@ class _Reader:
         base = None
         if scomp is not None and mtag in _tags(scomp.mesh()):
             base = scomp.mesh(mtag)
-        geometries = _tags(component.geom())
+        try:
+            geometry: str | None = str(java.geom())
+        except Exception:
+            geometries = _tags(component.geom())
+            geometry = geometries[0] if geometries else None
         try:
             size_level: Any = float(java.autoMeshSize())
             size_level = int(size_level) if size_level.is_integer() \
@@ -940,7 +953,7 @@ class _Reader:
         finally:
             self.context = ''
         return {'tag': mtag, 'path': path, 'label': _label(java),
-                'geometry': geometries[0] if geometries else None,
+                'geometry': geometry,
                 'automatic': bool(java.isAutomatic()),
                 'size_level': size_level, 'features': features}
 
@@ -977,7 +990,7 @@ class _Reader:
         if reason is not None:
             return self.not_compared(stag, tag, reason)
         # the model's own nodes first: compiling may update them
-        own = self.solver_nodes(sequence)
+        own = self.solver_nodes(sequence, f'{stag}/{tag}')
         sequences = java.sol()
         automatic: dict | None = None
         with _comsol.history_off(java), \
@@ -987,7 +1000,7 @@ class _Reader:
                 made = sequences.create(temporary)
                 made.study(stag)
                 made.createAutoSequence(stag)
-                automatic = self.solver_nodes(made)
+                automatic = self.solver_nodes(made, '', noted=False)
             except Exception as error:
                 reason = ('COMSOL could not make its own solver sequence: '
                           f'{_comsol.reason(error)}')
@@ -1032,8 +1045,13 @@ class _Reader:
                 return (f'{_comsol.reason(error)} Then describe again.')
         return None
 
-    def solver_nodes(self, sequence) -> dict:
-        """Returns the active nodes of a solver sequence by tag path."""
+    def solver_nodes(self, sequence, prefix: str,
+                     noted: bool = True) -> dict:
+        """
+        Returns the active nodes of a solver sequence by tag path;
+        properties that cannot be read are noted under `prefix` (the
+        study and sequence) unless `noted` is off.
+        """
         found: dict = {}
 
         def walk(node, path: str, labels: str):
@@ -1045,8 +1063,8 @@ class _Reader:
                 label = f'{labels}/{_label(child)}' if labels \
                     else _label(child)
                 found[own] = (_type(child), label,
-                              self.read(child, own,
-                                        SKIPPED | SOLVER_SKIPPED))
+                              self.read(child, f'{prefix}/{own}',
+                                        SKIPPED | SOLVER_SKIPPED, noted))
                 walk(child, own, label)
 
         walk(sequence, '', '')
@@ -1124,15 +1142,12 @@ def _skeleton(reader: _Reader) -> Iterator[Any]:
                                                     gtag, level)
                 except Exception:
                     pass
-            geometries = _tags(component.geom())
             for mtag in _tags(component.mesh()):
                 try:
-                    if geometries:
-                        scomp.mesh().create(mtag, geometries[0])
-                    else:
-                        scomp.mesh().create(mtag)
+                    scomp.mesh().create(mtag,
+                                        str(component.mesh(mtag).geom()))
                 except Exception:
-                    pass
+                    pass        # its features list all their properties
         for stag in _tags(java.study()):
             scratch.study().create(stag)
         yield scratch

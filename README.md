@@ -158,7 +158,8 @@ lists.
 
 A model rebuilt by a script can be checked against the one made in the
 COMSOL Desktop: `mk.describe` returns a model's settings as plain values,
-without tags, with selections described by the location of their entities:
+with selections described by the location of their entities, so nodes
+can be matched by type and place, whatever their tags and order:
 
 ```python
 old_settings = mk.describe(old)    # settings that differ from the defaults, by node

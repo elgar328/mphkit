@@ -12,7 +12,8 @@ until 1.0, a minor release (0.2, 0.3, ...) may change the API. See
 ### Added
 
 - `mk.describe(model)` returns a model's settings as plain, JSON-ready
-  values that do not depend on tags, feature order or entity numbers:
+  values in which nodes can be matched by type and place rather than by
+  tags, feature order or entity numbers:
   parameters, definitions, materials, physics, multiphysics, meshes and
   studies, with only the properties that differ from the defaults and
   the selections described by the location and size of their entities;
@@ -21,7 +22,8 @@ until 1.0, a minor release (0.2, 0.3, ...) may change the API. See
   script against the one made in the COMSOL Desktop. It leaves the model
   as it was; with `solver=True` it compiles the equations, which in a
   model saved by another COMSOL version or build may update its solver
-  sequences (listed in the result's `notes`).
+  sequences and build empty meshes of layered materials (listed in the
+  result's `notes`).
 
 ### Fixed
 
