@@ -28,7 +28,7 @@ from mph.node import get
 from . import _catalog, _check, _comsol, _solve
 
 # Version of the result's layout; raise it when the layout changes
-FORMAT = 1
+FORMAT = 2
 # Tag prefix of the temporary model and solver sequences
 SCRATCH = 'mkdesc'
 AXES = 'xyz'
@@ -72,6 +72,16 @@ SOLVER_SKIPPED = frozenset({'message', 'lastchangedproperty',
                             'physicsselectionmain', 'physicsselectionmg'})
 # Values that leave a material property unset
 EMPTY: tuple = ('', [], [''], [[]], [['']], None)
+# Metres per length unit, for the units COMSOL accepts for a geometry
+LENGTH_SCALES = {'m': 1.0, 'mm': 1e-3, 'cm': 1e-2, 'dm': 0.1, 'km': 1e3,
+                 'µm': 1e-6, 'nm': 1e-9, 'Å': 1e-10, 'in': 0.0254,
+                 'ft': 0.3048, 'yd': 0.9144, 'mi': 1609.344, 'nmi': 1852.0,
+                 'mil': 2.54e-5, 'µin': 2.54e-8}
+# Properties that hold the name expressions call a node by (default: the
+# tag); a file interpolation names its functions in `funcnametable`
+NAMES = ('funcname', 'opname', 'probename')
+# Properties of a global equations feature with one entry per equation
+ROWS = ('name', 'equation', 'initialValueU', 'initialValueUt', 'description')
 
 
 def describe(model: Model, /, *, solver: bool = False) -> dict:
@@ -91,21 +101,24 @@ def describe(model: Model, /, *, solver: bool = False) -> dict:
     #  'type': 'TemperatureBoundary', 'label': 'Temperature 1',
     #  'active': True, 'properties': {'T0': 'Th'},
     #  'defaults': {'T0': '293.15[K]'},
-    #  'selection': {'level': 'boundary', 'entities': [
-    #      {'x': [0.0, 0.0], 'y': [0.0, 50.0], 'z': [0.0, 10.0],
-    #       'size': 500.0}]},
+    #  'si': {'T0': {'value': 373.15, 'unit': 'K'}},
+    #  'si_defaults': {'T0': {'value': 293.15, 'unit': 'K'}},
+    #  'selection': {'level': 'boundary', 'geometry': 'geom1',
+    #      'entities': [{'x': [0.0, 0.0], 'y': [0.0, 50.0],
+    #                    'z': [0.0, 10.0], 'size': 500.0}]},
     #  'selections': {}, 'features': []}
     ```
 
-    The result has `parameters` (expression and SI value), the model's
-    `functions`, `variables`, `couplings` (operators), `coordinates`,
-    `materials` and `definitions` (each with `component` unless global),
-    `components` with their `geometries`, `pairs`, `physics`,
-    `multiphysics` and `meshes`, and `studies` with their steps and
-    solver; `notes` list ({'path', 'kind', 'message'}) what could not be
-    read, which defaults are unknown, why a solver was not compared and
-    what COMSOL changed for good. Results (plots, datasets, evaluations,
-    tables) are left out.
+    The result has `parameters` (expression, SI value and SI unit), the
+    model's `functions`, `variables`, `couplings` (operators),
+    `coordinates`, `materials`, `definitions` and `probes` (each with
+    `component` unless global), `components` with their `geometries`,
+    `pairs`, `physics`, `multiphysics` and `meshes`, `studies` with their
+    steps and solver, and the tags of the model's `solutions`; `notes`
+    list ({'path', 'kind', 'message'}) what could not be read, which
+    defaults are unknown, why a solver was not compared and what COMSOL
+    changed for good. Results (plots, datasets, evaluations, tables) are
+    left out.
 
     A node (feature, step, operator, ...) has `tag`, `path` (tags from
     the component or study down, e.g. 'comp1/ht/temp1'), `type`, `label`,
@@ -116,39 +129,52 @@ def describe(model: Model, /, *, solver: bool = False) -> dict:
     new node of that type, and `defaults` the default values of the same
     keys. Where no default is known, `unknown_defaults` lists the keys;
     a node whose type could not be created for defaults has
-    `all_properties: True` and all its values. Study step properties
-    that pair tags with values (`activate`, ...) become a dict of the
-    pairs that differ, e.g. {'ec': 'off'}; `solnum` and `notsolnum` count
-    '1' and 'auto' as the default (solving sets one to the other).
+    `all_properties: True` and all its values. `si` and `si_defaults`
+    give the values COMSOL can evaluate with the model's parameters as
+    {'value', 'unit'} in SI units (a list of them for a list), so that
+    '100[degC]' and '373.15[K]' compare equal; choices among named
+    options are not evaluated. `unused` lists properties the node's
+    other settings leave unused (alternatives a choice does not pick,
+    values whose switch is off, mesh sizes COMSOL derives); they are left
+    out. `name` lists the names expressions call a function, operator or
+    probe by. Global equations keep their per-equation lists under
+    `rows` (and the defaults of one row under `row_defaults`). Study
+    step properties that pair tags with values (`activate`, ...) become a
+    dict of the pairs that differ, e.g. {'ec': 'off'}; `solnum` and
+    `notsolnum` count '1' and 'auto' as the default (solving sets one to
+    the other).
     Other entries differ from nodes: a physics interface has
     `identifier` (its name in expressions, e.g. 'ht'), `settings` and
-    `defaults` (by 'group/name') instead of `properties`; a variables
+    `defaults` (by 'group/name') instead of `properties`, with `si`,
+    `si_defaults` and `unknown_defaults` the same way; a variables
     node has `variables` (name to expression) and no `type`; a material
-    has `groups` (property groups with their values and functions); a
-    pair has `type`, `source` and `destination`.
+    has `groups` (property groups with their values, `si` and
+    functions); a pair has `type`, `source` and `destination`.
 
-    A selection is `{'level': 'boundary', 'entities': [...]}`: one entry
-    per entity with its bounding box per axis and its `size` (volume,
-    area or length; none for points, whose box is their coordinates), in
-    the geometry's length unit (`length_unit` of the geometry), or 'all'
-    for all entities of that level. `applied` is where the node applies,
+    A selection is `{'level': 'boundary', 'geometry': 'geom1',
+    'entities': [...]}`: one entry per entity with its bounding box per
+    axis and its `size` (volume, area or length; none for points, whose
+    box is their coordinates), in the geometry's length unit
+    (`length_unit` of the geometry, `length_scale` metres), or 'all' for
+    all entities of that level. `applied` is where the node applies,
     if that differs: a node later in the same physics overrides it on
     the entities it shares, and default features apply where nothing else
     does. `named` is the label of a named selection it uses. Mesh
     operations on the whole geometry or on what is left have the level
     'remaining' (COMSOL tells them apart only before meshing); other
     nodes on the whole geometry 'geometry', global nodes 'global', and a
-    selection on several levels 'several' (its entities 'unknown'). Boxes are single precision (1.1 reads
-    1.100000023841858) and curved entities are measured on a rendering
-    mesh: compare with a tolerance. Geometries list all their entities
-    this way under `entities`.
+    selection on several levels 'several' (its entities 'unknown').
+    Boxes are single precision (1.1 reads 1.100000023841858) and curved
+    entities are measured on a rendering mesh: compare with a tolerance.
+    Geometries list all their entities this way under `entities`, and
+    `finalize` tells whether they form a union or an assembly.
 
     A mesh has `automatic` (controlled by the physics, the COMSOL
     Desktop's default; meshes made through MPh are not) and
     `size_level`. A study's `solver` has the tag of its solver
     `sequence` and a `status`: 'automatic' when it has none yet (a
-    script model before solving), else 'not compared' with the `reason`.
-    With `solver=True`, the sequence is compared with the one COMSOL
+    script model before solving), else 'not asked'. With
+    `solver=True`, the sequence is compared with the one COMSOL
     would create now: 'compared' with the `changes` (by tag path), or
     'not compared' with the reason: a mesh the study uses is not built
     (run `model.mesh()` and describe again), a component with physics
@@ -165,10 +191,10 @@ def describe(model: Model, /, *, solver: bool = False) -> dict:
 
     To compare two results by hand: tags and order differ, so look nodes
     up by `type` and selection, not by their position in the lists. Not
-    described: named selections themselves (nodes show the entities they
-    select), node groups, batch jobs and results.
-    Expressions are kept as written ('100[degC]' and '373.15[K]'
-    differ). The two faces of a pair in an assembly have the same box
+    described: named selections themselves (nodes show the
+    entities they select), node groups, batch jobs and results.
+    Expressions are kept as written; `si` makes the evaluable ones
+    comparable. The two faces of a pair in an assembly have the same box
     and size. `comsol` is the version running, `saved_with` the one that
     last saved the model. The geometries must be built
     (`model.build(geom)`).
@@ -191,10 +217,12 @@ def describe(model: Model, /, *, solver: bool = False) -> dict:
             'coordinates': reader.listed('coordSystem'),
             'materials': reader.materials(),
             'definitions': reader.listed('common', subnodes=_create),
+            'probes': reader.listed('probe', subnodes=_create),
             'components': [reader.component(tag)
                            for tag in reader.components],
             'studies': [reader.study(tag, solver)
                         for tag in _tags(model.java.study())],
+            'solutions': _tags(model.java.sol()),
         }
     result['notes'] = reader.notes
     return result
@@ -284,6 +312,58 @@ def owner(scope: str, components: set[str], tag: str | None = None
     if len(parts) == 2 and parts[0] == 'root' and parts[1] in components:
         return parts[1]
     return False
+
+
+def names_of(values: dict) -> list[str]:
+    """
+    Returns the names expressions call a node by: its function, operator
+    or probe name, and for an interpolation read from a file the names of
+    its functions.
+    """
+    found = [values[key] for key in NAMES
+             if isinstance(values.get(key), str) and values[key]]
+    table = values.get('funcnametable')
+    if values.get('source') == 'file' and isinstance(table, list):
+        found += [row[0] for row in table if isinstance(row, list) and row
+                  and isinstance(row[0], str) and row[0]]
+    return found
+
+
+def has_rows(values: dict) -> bool:
+    """Tells whether a node lists equations by row (global equations)."""
+    return isinstance(values.get('name'), list) and \
+        isinstance(values.get('equation'), list)
+
+
+def unused_of(values: dict, allowed, kind: str = '') -> set[str]:
+    """
+    Returns the properties of a node that its other settings leave
+    unused: the alternatives a choice property does not pick (its allowed
+    values, from `allowed(name)`, are all names of the node's
+    properties), a property `p` whose switch `pactive` is off, and the
+    mesh sizes COMSOL derives while `custom` is off.
+    """
+    unused: set[str] = set()
+    for name, value in values.items():
+        switched = name[:-len('active')]
+        if name.endswith('active') and switched in values and \
+                value in ('off', False):
+            unused.add(switched)
+        if isinstance(value, str) and value != name and value in values:
+            options = allowed(name)
+            if len(options) > 1 and value in options and \
+                    all(option in values for option in options):
+                unused.update(o for o in options if o != value)
+    if kind in MESH_SIZES and values.get('custom') == 'off':
+        unused.update(name for name in DERIVED_SIZES if name in values)
+    return unused
+
+
+def unit_text(parts) -> str:
+    """Joins the parts of a unit from `evaluateUnit`; '1' for none."""
+    if parts is None:
+        return '1'
+    return ''.join(str(part) for part in parts) or '1'
 
 
 def hidden_component(tag: str, materials: set[str]) -> bool:
@@ -410,6 +490,13 @@ class _Reader:
         self.measures: dict[str, Any] = {}
         self.vertices: dict[str, list[list[float]]] = {}
         self.blanks: dict[tuple[str | None, str], Any] = {}
+        # SI values by expression, and the temporary parameter that
+        # evaluates them (a name the user's parameters do not use)
+        self.evaluations: dict[str, dict | None] = {}
+        names = {str(n) for n in self.java.param().varnames()}
+        self.expression_name = next(
+            f'mkexpr{i}' for i in range(len(names) + 1)
+            if f'mkexpr{i}' not in names)
 
     def note(self, path: str, kind: str, message: str):
         self.notes.append({'path': path, 'kind': kind, 'message': message})
@@ -460,12 +547,33 @@ class _Reader:
         kind = _type(java)
         entry: dict = {'tag': str(java.tag()), 'path': path, 'type': kind,
                        'label': _label(java), 'active': _active(java)}
+        base_values = None if base is None else \
+            self.read(base, path, noted=False)
+        # what the raw values tell before they are reduced to differences
+        names = names_of(values)
+        if names:
+            entry['name'] = names
+        if has_rows(values):
+            entry['rows'] = {name: values.pop(name) for name in ROWS
+                             if name in values}
+            if base_values is not None:
+                entry['row_defaults'] = {
+                    name: row[0] for name in ROWS
+                    if isinstance(row := base_values.pop(name, None), list)
+                    and row}
+        unused = unused_of(values,
+                           lambda name: _comsol.allowed_values(java, name),
+                           kind)
+        for name in unused:
+            values.pop(name, None)
+            if base_values is not None:
+                base_values.pop(name, None)
         properties: dict
         defaults: dict
         unknown: list[str]
         maps = STEP_MAPS & set(values) if self.context == 'study' \
             else set()
-        if base is None:
+        if base_values is None:
             for name in maps:
                 values[name] = pairs_of(values[name]) or values[name]
             properties, defaults, unknown = values, {}, []
@@ -474,7 +582,6 @@ class _Reader:
                       f'no new {kind} node could be made for defaults; '
                       'all properties are listed')
         else:
-            base_values = self.read(base, path, noted=False)
             for name in maps:
                 if pairs_of(values[name]) is None:
                     continue
@@ -488,23 +595,87 @@ class _Reader:
                         str(base_values.get(name)) in ('1', 'auto'):
                     base_values[name] = values[name]
             properties, defaults, unknown = differs(values, base_values)
-        if kind in MESH_SIZES and values.get('custom') == 'off':
-            for name in DERIVED_SIZES:
-                properties.pop(name, None)
-                defaults.pop(name, None)
-                if name in unknown:
-                    unknown.remove(name)
-        if unknown and base is not None:
+        if unknown:
             entry['unknown_defaults'] = unknown
             self.note(path, 'defaults_unknown', 'no default for '
                       + ', '.join(repr(name) for name in unknown))
+        if unused:
+            entry['unused'] = sorted(unused)
         entry['properties'] = properties
         entry['defaults'] = defaults
+        self.add_si(entry, java, properties, defaults)
         entry['selection'] = self.selection(java, path)
         entry['selections'] = self.extra_selections(java, path)
         entry['features'] = [] if subnodes is None else \
             self.nodes(java, base, path, subnodes)
         return entry
+
+    def add_si(self, entry: dict, java, properties: dict, defaults: dict,
+               names=None, java_of=None):
+        """
+        Adds the SI values of a node's values (`si`) and defaults
+        (`si_defaults`) to its entry, for those COMSOL can evaluate and
+        that are no choice among named options; `names` maps a key to the
+        property name on the Java node (`java`, or `java_of(key)`).
+        """
+        for key, values in (('si', properties), ('si_defaults', defaults)):
+            found = {}
+            for name, value in values.items():
+                si = self.si(value)
+                owner_java = java_of(name) if java_of else java
+                if si is not None and not _comsol.allowed_values(
+                        owner_java, names(name) if names else name):
+                    found[name] = si
+            if found:
+                entry[key] = found
+
+    def si(self, value):
+        """
+        Returns the SI value of a property value: {'value', 'unit'} for a
+        string, a list of those (or None) for a list of strings, or None.
+        """
+        if isinstance(value, str):
+            return self.evaluated(value)
+        if isinstance(value, list) and value and \
+                all(isinstance(item, str) for item in value):
+            found = [self.evaluated(item) for item in value]
+            return found if any(item is not None for item in found) \
+                else None
+        return None
+
+    def evaluated(self, expression: str) -> dict | None:
+        """
+        Returns {'value', 'unit'} of an expression in SI units, as the
+        temporary model with the user's parameters evaluates it, or None
+        if it cannot (variables, functions, lists, choices).
+        """
+        if expression in self.evaluations:
+            return self.evaluations[expression]
+        found: dict | None = None
+        text = expression.strip()
+        try:
+            found = {'value': json_value(float(text)), 'unit': '1'}
+        except ValueError:
+            if text and self.scratch is not None:
+                found = self.evaluate_scratch(expression)
+        self.evaluations[expression] = found
+        return found
+
+    def evaluate_scratch(self, expression: str) -> dict | None:
+        params = self.scratch.param()
+        name = self.expression_name
+        try:
+            params.set(name, expression)
+            try:
+                value: Any = json_value(float(params.evaluate(name)))
+            except Exception:       # e.g. a complex value
+                parts = params.evaluateComplex(name)
+                value = [json_value(float(parts[0])),
+                         json_value(float(parts[1]))]
+            return {'value': value,
+                    'unit': unit_text(params.evaluateUnit(name))}
+        except Exception:
+            return None
 
     def nodes(self, parent, base_parent, path: str, make) -> list[dict]:
         """
@@ -614,6 +785,7 @@ class _Reader:
         if chosen is None:
             chosen = applied
         found: dict = {'level': _comsol.entity_level_name(dim, sdim),
+                       'geometry': gtag,
                        'entities': self.located(gtag, dim, chosen, path)}
         if sorted(set(chosen)) != sorted(set(applied)):
             found['applied'] = self.located(gtag, dim, applied, path)
@@ -686,12 +858,22 @@ class _Reader:
         params = self.java.param()
         found = {}
         for name in [str(n) for n in params.varnames()]:
+            value: Any = None
             try:
                 value = json_value(float(params.evaluate(name)))
-            except Exception:       # e.g. a complex value
-                value = None
+            except Exception:
+                try:                # a complex value
+                    parts = params.evaluateComplex(name)
+                    value = [json_value(float(parts[0])),
+                             json_value(float(parts[1]))]
+                except Exception:
+                    pass
+            try:
+                unit: str | None = unit_text(params.evaluateUnit(name))
+            except Exception:
+                unit = None
             found[name] = {'expression': str(params.get(name)),
-                           'value': value}
+                           'value': value, 'unit': unit}
         return found
 
     def scratch_list(self, name: str, component: str | None):
@@ -722,6 +904,13 @@ class _Reader:
             base = self.counterpart(self.scratch_list(name, component),
                                     java, _create)
             entry = self.node(java, base, path, subnodes=subnodes)
+            if name == 'probe':
+                # a point probe names its expressions in subnodes
+                names = entry.get('name', []) + [
+                    n for sub in entry['features']
+                    for n in sub.get('name', [])]
+                if names:
+                    entry['name'] = names
             if component is not None:
                 entry['component'] = component
             found.append(entry)
@@ -777,6 +966,7 @@ class _Reader:
                       self.read(group, f'{path}/{gtag}').items()
                       if value not in EMPTY}
             described: dict = {'properties': values}
+            self.add_si(described, group, values, {})
             functions = {}
             try:
                 function_list = group.func()
@@ -872,9 +1062,19 @@ class _Reader:
             axisymmetric = bool(java.isAxisymmetric())
         except Exception:
             axisymmetric = False
+        unit = str(java.lengthUnit())
+        if unit not in LENGTH_SCALES:
+            self.note(gtag, 'length_unknown',
+                      f'length unit {unit!r} has no known size in metres')
+        try:
+            finalize: str | None = str(get(java.feature('fin'), 'action'))
+        except Exception:
+            finalize = None
         return {'tag': gtag, 'label': _label(java), 'dimension': sdim,
                 'axisymmetric': axisymmetric,
-                'length_unit': str(java.lengthUnit()),
+                'length_unit': unit,
+                'length_scale': LENGTH_SCALES.get(unit),
+                'finalize': finalize,
                 'voids': _count(java.getNFiniteVoids),
                 'bounding_box': None if box is None else
                 {AXES[i]: box[2*i:2*i + 2] for i in range(sdim)},
@@ -912,8 +1112,11 @@ class _Reader:
                 base = None
         settings: dict = {}
         defaults: dict = {}
+        unknown: list[str] = []
+        groups: dict = {}
         for group in java.prop():
             gtag = str(group.tag())
+            groups[gtag] = group
             values = {f'{gtag}/{name}': value for name, value in
                       self.read(group, path).items()}
             for name in SKIPPED_SETTINGS & set(values):
@@ -927,9 +1130,10 @@ class _Reader:
                                          noted=False).items()}
             except Exception:
                 base_values = {}
-            changed, default, _ = differs(values, base_values)
+            changed, default, missing = differs(values, base_values)
             settings.update(changed)
             defaults.update(default)
+            unknown += missing
         entry: dict = {'tag': ptag, 'path': path,
                        'identifier': str(java.identifier()),
                        'type': _type(java), 'label': _label(java),
@@ -939,8 +1143,18 @@ class _Reader:
             self.note(path, 'defaults_unknown', 'the physics interface '
                       'could not be made for defaults; all properties '
                       'are listed')
+        elif unknown:
+            entry['unknown_defaults'] = unknown
+            self.note(path, 'defaults_unknown', 'no default for '
+                      + ', '.join(repr(name) for name in unknown))
         entry['settings'] = settings
         entry['defaults'] = defaults
+
+        def on_group(key):
+            return groups[key.split('/', 1)[0]]
+
+        self.add_si(entry, None, settings, defaults,
+                    names=lambda key: key.split('/', 1)[1], java_of=on_group)
         entry['selection'] = self.selection(java, path)
         entry['features'] = self.nodes(java, base, path, _create_physics)
         return entry
@@ -996,9 +1210,7 @@ class _Reader:
         if sequence is None:
             return {'status': 'automatic', 'sequence': None}
         if not compare:
-            return self.not_compared(
-                stag, tag, 'not asked for: mk.describe(model, solver=True) '
-                'compares it', note=False)
+            return {'status': 'not asked', 'sequence': tag}
         if not _active(study):
             return self.not_compared(stag, tag, 'study disabled')
         reason = self.unready(study)
@@ -1127,6 +1339,13 @@ def _skeleton(reader: _Reader) -> Iterator[Any]:
     java = reader.java
     try:
         scratch = util.create(tag)
+        # the user's parameters, for SI values of expressions that use them
+        params = java.param()
+        for name in [str(n) for n in params.varnames()]:
+            try:
+                scratch.param().set(name, str(params.get(name)))
+            except Exception:
+                pass
         for ctag in reader.components:
             component = java.component(ctag)
             scomp = scratch.component().create(ctag, True)

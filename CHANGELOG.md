@@ -14,9 +14,13 @@ until 1.0, a minor release (0.2, 0.3, ...) may change the API. See
 - `mk.describe(model)` returns a model's settings as plain, JSON-ready
   values in which nodes can be matched by type and place rather than by
   tags, feature order or entity numbers:
-  parameters, definitions, materials, physics, multiphysics, meshes and
-  studies, with only the properties that differ from the defaults and
-  the selections described by the location and size of their entities;
+  parameters, definitions, probes, materials, physics, multiphysics,
+  meshes and studies, with only the properties that differ from the
+  defaults (leaving out those other settings make unused) and their SI
+  values where COMSOL can evaluate them, the names expressions call
+  functions, operators and probes by, and the selections described by
+  the location and size of their entities (with the geometry's length
+  in metres and whether it forms a union or an assembly);
   with `solver=True` also the solver settings that differ from the ones
   COMSOL would choose. It is meant for checking a model rebuilt by a
   script against the one made in the COMSOL Desktop. It leaves the model

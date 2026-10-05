@@ -78,6 +78,45 @@ def test_appearance():
     assert not _describe.appearance('sys')
 
 
+def test_names_of():
+    assert _describe.names_of({'opname': 'total', 'expr': 'x'}) == ['total']
+    # an interpolation from a file names its functions in a table
+    table = {'funcname': 'int1', 'source': 'file',
+             'funcnametable': [['Tdep', '1'], ['k', '2']]}
+    assert _describe.names_of(table) == ['int1', 'Tdep', 'k']
+    assert _describe.names_of({**table, 'source': 'table'}) == ['int1']
+    assert _describe.names_of({'expr': 'x'}) == []
+
+
+def test_unused_of():
+    def allowed(name):
+        return {'inittype': ['blhminfact', 'blhmin', 'blhtot'],
+                'type': ['a', 'b']}.get(name, [])
+
+    layers = {'inittype': 'blhminfact', 'blhminfact': '1',
+              'blhmin': '0.1', 'blhtot': '1', 'blnlayers': '8'}
+    assert _describe.unused_of(layers, allowed) == {'blhmin', 'blhtot'}
+    # a switch: p is unused while pactive is off
+    assert _describe.unused_of({'axisym': 'on', 'axisymactive': 'off'},
+                               allowed) == {'axisym'}
+    assert _describe.unused_of({'neigs': '6', 'neigsactive': True},
+                               allowed) == set()
+    # options that are not all properties of the node are no choice
+    assert _describe.unused_of({'type': 'a', 'a': '1'}, allowed) == set()
+    sizes = {'custom': 'off', 'hmax': '1', 'hauto': 5}
+    assert _describe.unused_of(sizes, allowed, 'Size') == {'hmax'}
+    assert _describe.unused_of(sizes, allowed, 'FreeTet') == set()
+
+
+def test_rows_and_units():
+    assert _describe.has_rows({'name': ['u'], 'equation': ['ut-1']})
+    assert not _describe.has_rows({'name': 'u', 'equation': ['ut-1']})
+    assert _describe.unit_text(None) == '1'
+    assert _describe.unit_text(['W', '/', 'm^2']) == 'W/m^2'
+    assert _describe.LENGTH_SCALES['µm'] == 1e-6
+    assert len(_describe.LENGTH_SCALES) == 15
+
+
 def test_solver_changes():
     model_nodes = {
         'st1': ('StudyStep', 'Compile Equations', {'study': 'std1'}),
@@ -152,6 +191,7 @@ def reader(context=''):
     """A reader without a model, for the parts that need none."""
     found = object.__new__(_describe._Reader)
     found.notes, found.context, found.java = [], context, None
+    found.scratch, found.evaluations = None, {}
 
     class Geometry:
         def getSDim(self):
@@ -316,7 +356,7 @@ def test_plate(solved):
     for default in ('SolidHeatTransferModel', 'init', 'ThermalInsulation'):
         assert find(described, default)['properties'] == {}
     assert described['parameters']['Th'] == {'expression': '100[degC]',
-                                             'value': 373.15}
+                                             'value': 373.15, 'unit': 'K'}
     [geometry] = described['components'][0]['geometries']
     assert geometry['length_unit'] == 'mm'
     assert len(geometry['entities']['boundary']) == \
@@ -327,7 +367,7 @@ def test_plate(solved):
     assert described['mphkit'] == mk.__version__
     assert described['comsol'].startswith('COMSOL')
     assert described['saved_with'].startswith('COMSOL')
-    assert described['format'] == 1
+    assert described['format'] == 2
     assert described['notes'] == []
 
 
@@ -396,7 +436,7 @@ def test_leaves_nothing(client, solved):
     # without solver=True nothing is compiled
     plain = mk.describe(model)
     assert model_state(model) == before
-    assert plain['studies'][0]['solver']['status'] == 'not compared'
+    assert plain['studies'][0]['solver']['status'] == 'not asked'
     assert plain['notes'] == []
 
 
@@ -514,9 +554,7 @@ def test_solver(model):
     assert sorted(change['properties']) == ['control', 'stol'], \
         change['properties']
     assert mk.describe(model)['studies'][0]['solver'] == {
-        'status': 'not compared', 'sequence': 'sol1',
-        'reason': 'not asked for: mk.describe(model, solver=True) compares '
-                  'it'}
+        'status': 'not asked', 'sequence': 'sol1'}
     # without a built mesh, a temporary sequence would build it silently
     mesh = model.java.mesh(model.java.mesh().tags()[0])
     mesh.clearMesh()
@@ -715,6 +753,10 @@ def test_materials(model):
     [member] = materials['sw1']['features']
     assert member['tag'] == 'mat9'
     assert member['groups']['def']['properties'] == {'density': '1'}
+    assert member['groups']['def']['si'] == \
+        {'density': {'value': 1.0, 'unit': '1'}}
+    assert materials['gm1']['groups']['def']['si'] == \
+        {'thermalconductivity': [{'value': 5.0, 'unit': '1'}]}
 
 
 def test_definitions(model):
@@ -733,8 +775,8 @@ def test_definitions(model):
     (model/'physics').create('HeatTransfer', geom)
     described = mk.describe(model)
     assert described['parameters']['b'] == {'expression': '2[mm]',
-                                            'value': 0.002}
-    assert described['parameters']['z']['value'] is None
+                                            'value': 0.002, 'unit': 'm'}
+    assert described['parameters']['z']['value'] == [1, 2]
     variables = {v['tag']: v for v in described['variables']}
     assert sorted(variables) == ['cvar', 'gvar']
     assert 'component' not in variables['gvar']
@@ -766,7 +808,8 @@ def test_multiphysics_and_coordinates(model):
     described = mk.describe(model)
     [coupling] = described['components'][0]['multiphysics']
     assert coupling['type'] == 'ElectromagneticHeating'
-    assert coupling['selection'] == {'level': 'domain', 'entities': 'all'}
+    assert coupling['selection'] == {'level': 'domain', 'geometry': 'geom1',
+                                     'entities': 'all'}
     assert 'all_properties' not in coupling
     systems = {c['tag']: c for c in described['coordinates']}
     assert systems['sys2']['properties'] == {'angle': ['0', '0', '30[deg]']}
@@ -827,5 +870,82 @@ def test_docstring_example(solved, monkeypatch, tmp_path):
     exec(code, namespace)
     assert namespace['hot']['tag'] == 'temp1'
     assert namespace['hot']['properties'] == {'T0': 'Th'}
+    assert namespace['hot']['si'] == {'T0': {'value': 373.15, 'unit': 'K'}}
+    assert namespace['hot']['si_defaults'] == \
+        {'T0': {'value': 293.15, 'unit': 'K'}}
+    assert namespace['hot']['selection']['geometry'] == 'geom1'
     assert json.loads((tmp_path/'old.json').read_text('utf-8')) == \
         namespace['d']
+
+
+def test_names_rows_probes(model, tmp_path):
+    # names expressions use, global equations by row, probes, and what the
+    # geometry adds: its length in metres, union or assembly
+    geom = blocks(model, 1)
+    java = model.java
+    component = mk.component_of(geom).java
+    operator = component.cpl().create('intop1', 'Integration')
+    operator.selection().all()
+    operator.set('opname', 'total')
+    java.func().create('an1', 'Analytic')
+    table = tmp_path/'table.txt'
+    table.write_text('0 1\n1 2\n')
+    interpolation = java.func().create('int1', 'Interpolation')
+    interpolation.set('source', 'file')
+    interpolation.set('filename', str(table))
+    interpolation.set('funcs', [['Tdep', '1']])
+    component.probe().create('dom1', 'Domain')
+    component.probe().create('pt1', 'DomainPoint')
+    equations = component.physics().create('ge', 'GlobalEquations')
+    rows = equations.feature('ge1')
+    rows.setIndex('name', 'u1', 0, 0)
+    rows.setIndex('equation', 'u1t+u1', 0, 0)
+    rows.setIndex('name', 'u2', 1, 0)
+    rows.setIndex('equation', 'u2-1', 1, 0)
+    described = mk.describe(model)
+    [total] = described['couplings']
+    assert total['name'] == ['total']
+    assert 'axisym' in total['unused']
+    assert 'axisym' not in total['properties']
+    functions = {f['tag']: f for f in described['functions']}
+    assert functions['an1']['name'] == ['an1']
+    assert functions['int1']['name'] == ['int1', 'Tdep']
+    probes = {p['tag']: p for p in described['probes']}
+    assert probes['dom1']['name'] == ['dom1']
+    assert probes['dom1']['component'] == 'comp1'
+    point = probes['pt1']
+    [expression] = point['features']
+    assert expression['type'] == 'PointExpr'
+    assert point['name'] == expression['name']
+    [physics] = [p for p in described['components'][0]['physics']
+                 if p['tag'] == 'ge']
+    [first] = physics['features']
+    assert first['rows']['name'] == ['u1', 'u2']
+    assert first['rows']['equation'] == ['u1t+u1', 'u2-1']
+    assert first['row_defaults']['name'] == ''
+    assert 'name' not in first['properties']
+    [geometry] = described['components'][0]['geometries']
+    assert geometry['length_scale'] == 1.0
+    assert geometry['finalize'] == 'union'
+    assert described['solutions'] == []
+    assert described['notes'] == []
+
+
+def test_unused_mesh_settings(model):
+    # sizes COMSOL derives and boundary-layer values the choice leaves out
+    geom = blocks(model, 1)
+    mesh = (model/'meshes').create(geom)
+    mesh.create('FreeTet')
+    layers = mesh.create('BndLayer')
+    layers.java.selection().geom(str(geom.java.tag()), 3)
+    layers.java.selection().all()
+    prop = layers.java.create('blp1', 'BndLayerProp')
+    prop.selection().set([1])
+    [described] = mk.describe(model)['components'][0]['meshes']
+    default = described['features'][0]
+    assert {'hmax', 'hmin'} <= set(default['unused'])
+    assert 'hmax' not in default['defaults']
+    [layer] = [f for f in described['features'] if f['type'] == 'BndLayer']
+    [prop] = layer['features']
+    assert prop['type'] == 'BndLayerProp'
+    assert {'blhmin', 'blhtot'} <= set(prop['unused'])
