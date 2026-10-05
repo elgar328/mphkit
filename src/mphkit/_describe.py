@@ -37,11 +37,13 @@ AXES = 'xyz'
 # for ('std1/stat'), when and how a mesh was built, the plot groups of a
 # study step, and its lists of physics, couplings and components by label
 # ('heat (ht)'); they follow what was solved, shown or named, while
-# `activate` and the like hold the settings.
+# `activate` and the like hold the settings. Also whether the COMSOL
+# Desktop shows the model inputs ('on' in models it saved, 'off' in new
+# ones).
 SKIPPED = frozenset({'StudyStep', 'buildinfo', 'buildoutput', 'buildtime',
                      'plotgrouparr', 'plotgroupdummy', 'physselection',
                      'outputInterface', 'multiphysicsSelection',
-                     'geomselection'})
+                     'geomselection', 'minpVisibility'})
 # Settings of a physics interface that follow its features
 SKIPPED_SETTINGS = frozenset({'PhysicalModelProperty/hasDG'})
 # Mesh sizes that COMSOL derives from the predefined size and the geometry
@@ -82,7 +84,9 @@ def describe(model: Model, /, *, solver: bool = False) -> dict:
     d = mk.describe(model)
     with open('old.json', 'w', encoding='utf-8') as file:
         json.dump(d, file, indent=1, ensure_ascii=False)
-    d['components'][0]['physics'][0]['features'][9]
+    [hot] = [f for f in d['components'][0]['physics'][0]['features']
+             if f['type'] == 'TemperatureBoundary']
+    hot
     # {'tag': 'temp1', 'path': 'comp1/ht/temp1',
     #  'type': 'TemperatureBoundary', 'label': 'Temperature 1',
     #  'active': True, 'properties': {'T0': 'Th'},
@@ -98,8 +102,10 @@ def describe(model: Model, /, *, solver: bool = False) -> dict:
     `materials` and `definitions` (each with `component` unless global),
     `components` with their `geometries`, `pairs`, `physics`,
     `multiphysics` and `meshes`, and `studies` with their steps and
-    solver; `notes` say what could not be read. Results (plots, datasets,
-    evaluations, tables) are left out.
+    solver; `notes` list ({'path', 'kind', 'message'}) what could not be
+    read, which defaults are unknown, why a solver was not compared and
+    what COMSOL changed for good. Results (plots, datasets, evaluations,
+    tables) are left out.
 
     A node (feature, step, operator, ...) has `tag`, `path` (tags from
     the component or study down, e.g. 'comp1/ht/temp1'), `type`, `label`,
@@ -143,8 +149,11 @@ def describe(model: Model, /, *, solver: bool = False) -> dict:
     script model before solving), else 'not compared' with the `reason`.
     With `solver=True`, the sequence is compared with the one COMSOL
     would create now: 'compared' with the `changes` (by tag path), or
-    'not compared' when a mesh the study uses is not built (run
-    `model.mesh()` and describe again) or the study is disabled. This
+    'not compared' with the reason: a mesh the study uses is not built
+    (run `model.mesh()` and describe again), a component with physics
+    has no mesh, the study is disabled, or COMSOL could not make its own
+    sequence. Two solution tags count as equal, so a changed initial
+    solution does not show. This
     makes a temporary sequence in the model and compiles the equations;
     describe removes what that leaves, as far as COMSOL lets it: in a
     model saved by another COMSOL version or build (see `saved_with`),
@@ -295,11 +304,17 @@ def solver_changes(model_nodes: dict, automatic: dict, tags: dict,
     Returns the differences between the active nodes of a solver sequence
     and those of the sequence COMSOL would create, both given as
     {tag path: (type, label path, values)}. `tags` maps tags of the
-    temporary sequence to the model's own; two solution tags count as
-    equal (a store-solution node names a new one each time).
+    temporary sequence to the model's own, also inside lists; two
+    solution tags count as equal (a store-solution node names a new one
+    each time), so a changed initial solution does not show.
     """
+    def mapped(value):
+        if isinstance(value, list):
+            return [mapped(item) for item in value]
+        return tags.get(value, value) if isinstance(value, str) else value
+
     def same(own, auto) -> bool:
-        auto = tags.get(auto, auto) if isinstance(auto, str) else auto
+        auto = mapped(auto)
         if own == auto:
             return True
         return (isinstance(own, str) and isinstance(auto, str)
@@ -384,6 +399,8 @@ class _Reader:
             for gtag in _tags(component.geom()):
                 self.geometries[gtag] = component.geom(gtag)
         self.places: dict[tuple[str, int, int], dict] = {}
+        # what is being read: 'mesh' and 'study' nodes get their own rules
+        self.context = ''
         self.measures: dict[str, Any] = {}
         self.vertices: dict[str, list[list[float]]] = {}
         self.blanks: dict[tuple[str | None, str], Any] = {}
@@ -440,7 +457,11 @@ class _Reader:
         properties: dict
         defaults: dict
         unknown: list[str]
+        maps = STEP_MAPS & set(values) if self.context == 'study' \
+            else set()
         if base is None:
+            for name in maps:
+                values[name] = pairs_of(values[name]) or values[name]
             properties, defaults, unknown = values, {}, []
             entry['all_properties'] = True
             self.note(path, 'defaults_unknown',
@@ -448,7 +469,7 @@ class _Reader:
                       'all properties are listed')
         else:
             base_values = self.read(base, path, noted=False)
-            for name in STEP_MAPS & set(values):
+            for name in maps:
                 if pairs_of(values[name]) is None:
                     continue
                 changed, default = step_map(values[name],
@@ -550,8 +571,11 @@ class _Reader:
         sdim = int(self.geometries[gtag].getSDim())
         # A mesh operation on what is left reads like one on the whole
         # geometry once the mesh is built, and has no levels before
-        if not dims or sorted(dims) == list(range(sdim + 1)):
+        whole = sorted(dims) == list(range(sdim + 1))
+        if not dims or whole and self.context == 'mesh':
             return {'level': 'remaining'}
+        if whole:
+            return {'level': 'geometry'}
         if len(dims) > 1:
             self.note(path, 'levels_unknown', 'a selection on several '
                       f'levels {dims}: its entities are not described')
@@ -571,7 +595,7 @@ class _Reader:
         try:
             named = str(selection.named())
             if named:
-                found['named'] = _label(self.java.selection(named))
+                found['named'] = _label(self.java.selection(named)) or named
         except Exception:
             pass
         return found
@@ -730,7 +754,11 @@ class _Reader:
                       if value not in EMPTY}
             described: dict = {'properties': values}
             functions = {}
-            for ftag in _tags(group.func()):
+            try:
+                function_list = group.func()
+            except Exception:
+                function_list = None
+            for ftag in _tags(function_list):
                 function = group.func(ftag)
                 functions[ftag] = {
                     'type': _type(function),
@@ -823,7 +851,7 @@ class _Reader:
         return {'tag': gtag, 'label': _label(java), 'dimension': sdim,
                 'axisymmetric': axisymmetric,
                 'length_unit': str(java.lengthUnit()),
-                'voids': int(java.getNFiniteVoids()),
+                'voids': _count(java.getNFiniteVoids),
                 'bounding_box': None if box is None else
                 {AXES[i]: box[2*i:2*i + 2] for i in range(sdim)},
                 'entities': entities}
@@ -838,10 +866,15 @@ class _Reader:
             entry: dict = {'tag': tag, 'path': path, 'label': _label(java),
                            'type': str(java.type()), 'active': _active(java)}
             for side in ('source', 'destination'):
-                selection = getattr(java, side)()
-                entry[side] = self.described(
-                    selection, _comsol.selection_dims(selection), path,
-                    default)
+                try:
+                    selection = getattr(java, side)()
+                    entry[side] = self.described(
+                        selection, _comsol.selection_dims(selection), path,
+                        default)
+                except Exception as error:
+                    entry[side] = None
+                    self.note(path, 'unreadable',
+                              f'{side}: {_comsol.reason(error)}')
             found.append(entry)
         return found
 
@@ -901,11 +934,15 @@ class _Reader:
                 else size_level
         except Exception:
             size_level = None
+        self.context = 'mesh'
+        try:
+            features = self.nodes(java, base, path, _create)
+        finally:
+            self.context = ''
         return {'tag': mtag, 'path': path, 'label': _label(java),
                 'geometry': geometries[0] if geometries else None,
                 'automatic': bool(java.isAutomatic()),
-                'size_level': size_level,
-                'features': self.nodes(java, base, path, _create)}
+                'size_level': size_level, 'features': features}
 
     # Studies
 
@@ -915,9 +952,13 @@ class _Reader:
         studies = self.scratch_list('study', None)
         if studies is not None and stag in _tags(studies):
             base = studies.get(stag)
+        self.context = 'study'
+        try:
+            steps = self.nodes(java, base, stag, _create)
+        finally:
+            self.context = ''
         return {'tag': stag, 'path': stag, 'label': _label(java),
-                'active': _active(java),
-                'steps': self.nodes(java, base, stag, _create),
+                'active': _active(java), 'steps': steps,
                 'solver': self.solver(java, stag, solver)}
 
     def solver(self, study, stag: str, compare: bool) -> dict:
@@ -1019,6 +1060,14 @@ def _comsol_version() -> str:
     return str(util.getComsolVersion())
 
 
+def _count(read) -> int | None:
+    """Returns a count COMSOL gives, or None if it cannot."""
+    try:
+        return int(read())
+    except Exception:
+        return None
+
+
 def _create(container, java):
     container.create(str(java.tag()), _type(java))
 
@@ -1053,8 +1102,12 @@ def _skeleton(reader: _Reader) -> Iterator[Any]:
             for ptag in _tags(component.physics()):
                 physics = component.physics(ptag)
                 try:
-                    made = scomp.physics().create(
-                        ptag, _type(physics), str(physics.geom()))
+                    geometry = physics.geom()
+                    if geometry is None:
+                        made = scomp.physics().create(ptag, _type(physics))
+                    else:
+                        made = scomp.physics().create(
+                            ptag, _type(physics), str(geometry))
                     made.identifier(str(physics.identifier()))
                 except Exception:
                     pass        # its nodes list all their properties

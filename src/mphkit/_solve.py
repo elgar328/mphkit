@@ -21,6 +21,7 @@ import re
 import subprocess
 import sys
 import time
+import warnings
 from pathlib import Path
 from typing import Any, overload
 
@@ -126,7 +127,7 @@ def problem_size(model: Model, /, *, study=None) -> dict:
     tried. Returns plain values and leaves nothing in the model, except
     in a model saved by another COMSOL version or build, where compiling
     may update its solver sequences and build the empty meshes of
-    layered materials, as solving would.
+    layered materials, as solving would; a UserWarning then says what.
     """
     if not isinstance(model, Model):
         raise TypeError(f'mk.problem_size takes a model, not {model!r}.')
@@ -136,12 +137,15 @@ def problem_size(model: Model, /, *, study=None) -> dict:
     interfaces = _check.active_physics(model)
     meshes = _check_meshes(model, study_java, interfaces)
     with _comsol.history_off(java), \
-            _comsol.compiled_traces_removed(java):
+            _comsol.compiled_traces_removed(java) as changed:
         attached = attached_sequence(java, std)
         steps, solvers = _sizes(java, study_java)
         if attached is not None:
             # a step added after the sequence was made is not in it
             solvers = {**solvers, **_sequence_solvers(attached)}
+    if changed:
+        warnings.warn('mk.problem_size could not leave the model as it '
+                      'was: ' + '; '.join(changed) + '.', stacklevel=2)
     for step in steps:
         step.update(solvers.get(step.pop('tag'), UNKNOWN))
     return {'study': _comsol.name_of(study_java), 'steps': steps,

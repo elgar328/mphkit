@@ -16,7 +16,7 @@ import pytest
 
 import mphkit as mk
 from conftest import java_export, model_state, read
-from mphkit import _solve
+from mphkit import _comsol, _solve
 from test_example import plate_with_holes
 
 data = Path(__file__).parent/'data'/'progress'
@@ -547,6 +547,22 @@ def test_derived_variables(plate):
     before = model_state(model)
     mk.problem_size(model)
     assert model_state(model) == before
+
+
+def test_changed_for_good(plate, monkeypatch):
+    # what COMSOL changes for good (a sequence updated for this version)
+    # is a warning
+    model, geom = plate
+    original = _comsol._sequence_nodes
+    calls = []
+
+    def nodes(java):
+        calls.append(1)
+        return original(java) + (['sol1/new'] if len(calls) > 1 else [])
+
+    monkeypatch.setattr(_comsol, '_sequence_nodes', nodes)
+    with pytest.warns(UserWarning, match='sol1/new'):
+        mk.problem_size(model)
 
 
 def test_two_plate(client, tmp_path, logging):

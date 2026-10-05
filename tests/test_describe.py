@@ -496,9 +496,13 @@ def test_whole_geometry(model):
                 {'level': 'remaining'}
 
 
-@pytest.mark.parametrize('kind', ['2D', 'axisymmetric', 'shell'])
+@pytest.mark.parametrize('kind', ['1D', '2D', 'axisymmetric', 'shell'])
 def test_other_geometries(model, kind):
-    if kind == 'shell':
+    if kind == '1D':
+        geom = mk.geometry(model, 1)
+        mk.interval(geom, [0, 2])
+        axes = 1
+    elif kind == 'shell':
         geom = mk.geometry(model, 3)
         plane = mk.workplane(geom)
         mk.rectangle(plane, (2, 1))
@@ -638,7 +642,7 @@ def test_model_changed(solved, monkeypatch):
     def nodes(java):
         calls.append(1)
         found = original(java)
-        return found + ['sol1/new'] if len(calls) == 2 else found
+        return found + ['sol1/new'] if len(calls) > 1 else found
 
     monkeypatch.setattr(_comsol, '_sequence_nodes', nodes)
     found = mk.describe(model, solver=True)

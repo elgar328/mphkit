@@ -31,7 +31,8 @@ until 1.0, a minor release (0.2, 0.3, ...) may change the API. See
   in a model not solved since it was made or loaded, and the first time
   also set the study steps' values of variables not solved for from `1`
   to `auto`. In a model saved by another COMSOL version or build,
-  compiling may still update its solver sequences, as solving would.
+  compiling may still update its solver sequences, as solving would; a
+  warning then says what changed.
 
 ## [0.3.0] - 2026-10-04
 
