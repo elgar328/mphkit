@@ -829,10 +829,16 @@ class Translator:
         return ''.join(out)
 
     def prefix(self, word: str) -> str:
-        for kind in ('component', 'identifier', 'multiphysics'):
+        """Translates a tag before a dot: a component, physics
+        identifier, multiphysics coupling, material ('mat1.def.rho'),
+        coordinate system or pair; marks one of b's tags without a
+        partner that a uses for something else."""
+        for kind in ('component', 'identifier', 'multiphysics', 'material',
+                     'coordinate', 'pair', 'geometry'):
             if word in self.maps[kind]:
                 return self.maps[kind][word]
-        if word in self.b_words and word in self.a_words:
+        if word in self.b_words and word in self.a_words and \
+                not any(word in names for names in self.names.values()):
             return f'<b only:{word}>'
         return word
 

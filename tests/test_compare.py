@@ -238,6 +238,15 @@ def test_translator():
         {'ht': 'off', 'frame:spatial1': 'x'}
     # a b tag without a partner that a has too is marked
     assert translator.value('ht.T') == '<b only:ht>.T'
+    # materials and coordinate systems before a dot
+    translator.b_words |= {'mat1', 'mat5', 'sys2'}
+    translator.a_words |= {'mat1', 'sys1'}
+    translator.add('material', 'mat1', 'mat1')
+    translator.add('material', 'mat5', 'mat2')
+    translator.add('coordinate', 'sys2', 'sys1')
+    assert translator.value('mat1.def.rho*mat5.def.k') == \
+        'mat1.def.rho*mat2.def.k'
+    assert translator.value('sys2.T11') == 'sys1.T11'
 
 
 #####################
@@ -954,3 +963,15 @@ def test_physics_controlled_mesh(two):
     messages = [i['message'] for i in found]
     assert not any('hmax' in m and 'in a' in m and 'from_default' in i
                    for m, i in zip(messages, found)), messages
+
+
+def test_material_in_expression(two):
+    # 'mat1.def.rho' in one model is 'mat7.def.rho' in the other
+    for model, tag in zip(two, ('mat1', 'mat7')):
+        geom = two_blocks(model)
+        component = mk.component_of(geom).java
+        made = component.material().create(tag, 'Common')
+        made.propertyGroup('def').set('density', '1000[kg/m^3]')
+        component.variable().create('var1').set('m', f'{tag}.def.rho*2')
+    found = mk.compare(*two)
+    assert kinds(found) == [], [i['message'] for i in found]
