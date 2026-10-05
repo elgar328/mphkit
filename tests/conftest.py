@@ -110,3 +110,102 @@ def read(path):
     otherwise); undecodable bytes, e.g. in a Java export, are replaced.
     """
     return Path(path).read_text(encoding='utf-8', errors='replace')
+
+
+# Containers whose tags, properties and selections model_state() records
+MODEL_LISTS = ('study', 'sol', 'batch', 'func', 'variable', 'cpl',
+               'coordSystem', 'material', 'selection', 'physics',
+               'multiphysics', 'mesh', 'geom', 'component', 'common')
+COMPONENT_LISTS = ('physics', 'multiphysics', 'mesh', 'geom', 'pair',
+                   'common')
+
+
+def model_state(model):
+    """
+    Returns everything a helper that should leave a model as it was might
+    change: the tags, properties and selections of the model's nodes (also
+    ones a Java export does not show, as work done with the history off
+    is not in it), mesh element counts, which solutions hold data and the
+    open models. NaN reads as 'NaN', so equal states compare equal.
+    """
+    import math
+
+    import jpype
+    from mph.node import get
+    from mphkit import _catalog
+    java = model.java
+    found = {}
+
+    def plain(value):
+        if isinstance(value, float) and math.isnan(value):
+            return 'NaN'
+        if isinstance(value, list):
+            return [plain(item) for item in value]
+        return value
+
+    def node(item):
+        values = {}
+        if hasattr(item, 'properties'):
+            for name in [str(n) for n in item.properties()]:
+                try:
+                    if str(item.getValueType(name)) == 'Selection':
+                        continue
+                    values[name] = plain(_catalog.plain(get(item, name)))
+                except Exception:
+                    values[name] = '<unreadable>'
+        try:
+            selection = item.selection()
+            values['<selection>'] = ([int(d) for d in selection.dimension()],
+                                     [int(e) for e in selection.entities()])
+        except Exception:
+            pass
+        return values
+
+    def walk(container, path, depth=0):
+        try:
+            tags = [str(t) for t in container.tags()]
+        except Exception:
+            return
+        found[path] = tags
+        for tag in tags:
+            try:
+                item = container.get(tag)
+            except Exception:
+                continue
+            found[f'{path}/{tag}'] = node(item)
+            if depth > 5:
+                continue
+            for name in ('feature', 'propertyGroup'):
+                if hasattr(item, name):
+                    try:
+                        walk(getattr(item, name)(), f'{path}/{tag}/{name}',
+                             depth + 1)
+                    except Exception:
+                        pass
+            if hasattr(item, 'prop'):
+                try:
+                    for group in item.prop():
+                        found[f'{path}/{tag}/prop/{group.tag()}'] = \
+                            node(group)
+                except Exception:
+                    pass
+
+    for name in MODEL_LISTS:
+        walk(getattr(java, name)(), name)
+    for ctag in java.component().tags():
+        component = java.component(ctag)
+        for name in COMPONENT_LISTS:
+            walk(getattr(component, name)(), f'{ctag}:{name}')
+    results = java.result()
+    walk(results, 'plot')
+    for name in ('dataset', 'numerical', 'table', 'export'):
+        walk(getattr(results, name)(), name)
+    found['<parameters>'] = {str(n): str(java.param().get(n))
+                             for n in java.param().varnames()}
+    found['<elements>'] = {str(t): int(java.mesh(t).getNumElem())
+                           for t in java.mesh().tags()}
+    found['<solved>'] = {str(t): bool(java.sol(t).isEmpty())
+                         for t in java.sol().tags()}
+    util = jpype.JClass('com.comsol.model.util.ModelUtil')
+    found['<models>'] = sorted(str(t) for t in util.tags())
+    return found

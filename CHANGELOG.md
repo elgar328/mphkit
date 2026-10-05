@@ -9,6 +9,12 @@ until 1.0, a minor release (0.2, 0.3, ...) may change the API. See
 
 ## [Unreleased]
 
+### Fixed
+
+- `mk.problem_size` leaves the model's solver sequences as they were; it
+  changed a note the COMSOL Desktop keeps in a sequence that had not been
+  solved yet.
+
 ## [0.3.0] - 2026-10-04
 
 ### Added

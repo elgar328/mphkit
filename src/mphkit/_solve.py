@@ -132,7 +132,7 @@ def problem_size(model: Model, /, *, study=None) -> dict:
     std = str(study_java.tag())
     interfaces = _check.active_physics(model)
     meshes = _check_meshes(model, study_java, interfaces)
-    with _comsol.history_off(java):
+    with _comsol.history_off(java), _comsol.solver_notes_kept(java):
         attached = _attached(java, std)
         steps, solvers = _sizes(java, study_java)
         if attached is not None:

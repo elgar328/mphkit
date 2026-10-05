@@ -1101,6 +1101,58 @@ def scratch(model) -> Iterator[Callable[[Any, str], Any]]:
                     pass
 
 
+# A note the GUI keeps on solver sequence nodes
+NOTE = 'lastchangedproperty'
+
+
+@contextmanager
+def solver_notes_kept(model) -> Iterator[None]:
+    """
+    Keeps the notes of the GUI in a Java model's solver sequences: making
+    a temporary sequence with `createAutoSequence` can rewrite the
+    'lastchangedproperty' note of an existing one (seen on a Variables
+    node), which a Java export does not show. Call it with the history
+    off.
+    """
+    notes = _solver_notes(model)
+    try:
+        yield
+    finally:
+        for node, value in notes.values():
+            now = _note(node)
+            if now is not None and now != value:
+                node.set(NOTE, value)
+
+
+def _solver_notes(model) -> dict[str, tuple[Any, list[list[str]]]]:
+    """Returns the note of every solver sequence node that has one."""
+    found: dict[str, tuple[Any, list[list[str]]]] = {}
+
+    def walk(node, path: str):
+        for tag in node.feature().tags():
+            child = node.feature(tag)
+            value = _note(child)
+            if value is not None:
+                found[f'{path}/{tag}'] = (child, value)
+            walk(child, f'{path}/{tag}')
+
+    sequences = model.sol()
+    for tag in sequences.tags():
+        walk(sequences.get(tag), str(tag))
+    return found
+
+
+def _note(node) -> list[list[str]] | None:
+    """Returns a node's note as lists of strings, or None without one."""
+    try:
+        if NOTE not in [str(name) for name in node.properties()]:
+            return None
+        return [[str(cell) for cell in row]
+                for row in node.getStringMatrix(NOTE)]
+    except Exception:
+        return None
+
+
 ##########
 # Errors #
 ##########

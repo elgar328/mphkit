@@ -15,7 +15,7 @@ from pathlib import Path
 import pytest
 
 import mphkit as mk
-from conftest import java_export, read
+from conftest import java_export, model_state, read
 from mphkit import _solve
 from test_example import plate_with_holes
 
@@ -523,6 +523,21 @@ def test_plate(client, plate, tmp_path):
         size['steps']
     assert leaves_nothing(model, tmp_path) == before
     json.dumps(size)
+
+
+def test_solver_notes(plate):
+    # The temporary sequence rewrote a note of the GUI in the study's own,
+    # unsolved sequence ('lastchangedproperty' of its Variables node),
+    # which a Java export does not show.
+    model, geom = plate
+    java = model.java
+    std = str(java.study().tags()[0])
+    sequence = java.sol().create('sol1')
+    sequence.study(std)
+    sequence.createAutoSequence(std)
+    before = model_state(model)
+    mk.problem_size(model)
+    assert model_state(model) == before
 
 
 def test_two_plate(client, tmp_path, logging):
