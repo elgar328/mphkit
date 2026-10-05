@@ -15,7 +15,7 @@ until 1.0, a minor release (0.2, 0.3, ...) may change the API. See
   values in which nodes can be matched by type and place rather than by
   tags, feature order or entity numbers:
   parameters, definitions, probes, materials, physics, multiphysics,
-  meshes and studies, with only the properties that differ from the
+  meshes, mass properties and studies, with only the properties that differ from the
   defaults (leaving out those other settings make unused) and their SI
   values where COMSOL can evaluate them, the names expressions call
   functions, operators and probes by, and the selections described by

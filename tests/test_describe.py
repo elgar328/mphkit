@@ -86,6 +86,9 @@ def test_names_of():
     assert _describe.names_of(table) == ['int1', 'Tdep', 'k']
     assert _describe.names_of({**table, 'source': 'table'}) == ['int1']
     assert _describe.names_of({'expr': 'x'}) == []
+    # a mass properties node is called by its name ('mass1.mass')
+    assert _describe.names_of({'name': 'mp'}, 'MassProperties') == ['mp']
+    assert _describe.names_of({'name': 'mp'}, 'Variables') == []
 
 
 def test_unused_of():
@@ -103,9 +106,21 @@ def test_unused_of():
                                allowed) == set()
     # options that are not all properties of the node are no choice
     assert _describe.unused_of({'type': 'a', 'a': '1'}, allowed) == set()
-    sizes = {'custom': 'off', 'hmax': '1', 'hauto': 5}
-    assert _describe.unused_of(sizes, allowed, 'Size') == {'hmax'}
+    sizes = {'custom': 'off', 'hmax': '1', 'hmaxactive': True, 'hauto': 5}
+    # custom off: COMSOL's sizes, the switches do nothing (measured)
+    assert _describe.unused_of(sizes, allowed, 'Size') == \
+        {'hmax', 'hmaxactive'}
     assert _describe.unused_of(sizes, allowed, 'FreeTet') == set()
+    # custom on: the predefined size is not used
+    assert _describe.unused_of({**sizes, 'custom': 'on'}, allowed,
+                               'MeshSizeDefault') == {'hauto'}
+    # the physics of mass properties counts only for that density source
+    mass = {'densitySource': 'userDefined', 'physics': 'ht'}
+    assert _describe.unused_of(mass, allowed, 'MassProperties') == \
+        {'physics'}
+    assert _describe.unused_of({**mass, 'densitySource':
+                                'fromSpecifiedPhysics'}, allowed,
+                               'MassProperties') == set()
 
 
 def test_rows_and_units():
@@ -952,3 +967,39 @@ def test_unused_mesh_settings(model):
     [prop] = layer['features']
     assert prop['type'] == 'BndLayerProp'
     assert {'blhmin', 'blhtot'} <= set(prop['unused'])
+
+
+def test_mass_properties(model):
+    geom = blocks(model, 1)
+    component = mk.component_of(geom).java
+    component.physics().create('ht', 'HeatTransfer', str(geom.java.tag()))
+    mass = component.massProp().create('mass1', 'MassProperties')
+    mass.set('name', 'mp')
+    [described] = mk.describe(model)['components'][0]['mass_properties']
+    assert described['type'] == 'MassProperties'
+    assert described['path'] == 'comp1/mass1'
+    assert described['name'] == ['mp']
+    assert described['properties']['name'] == 'mp'
+    # its physics counts only with the density from a chosen physics
+    assert 'physics' in described['unused']
+    assert described['selection']['entities'] == 'all'
+
+
+def test_mesh_size_switches(model):
+    # with custom off the sizes and switches are COMSOL's; with custom on
+    # the predefined size is not used (set the values first: COMSOL turns
+    # custom on when a size is set)
+    geom = blocks(model, 1)
+    mesh = (model/'meshes').create(geom)
+    off = mesh.create('Size')
+    on = mesh.create('Size')
+    mesh.create('FreeTet')
+    on.java.set('hmax', '0.3')
+    on.java.set('custom', 'on')
+    on.java.set('hmaxactive', True)     # setting custom can reset it
+    _, off, on, _ = mk.describe(model)['components'][0]['meshes'][0][
+        'features']
+    assert {'hmax', 'hmaxactive', 'hcurveactive'} <= set(off['unused'])
+    assert 'hauto' not in off['unused']
+    assert 'hauto' in on['unused']
+    assert on['properties']['hmax'] == 0.3

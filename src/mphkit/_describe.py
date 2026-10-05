@@ -113,12 +113,12 @@ def describe(model: Model, /, *, solver: bool = False) -> dict:
     model's `functions`, `variables`, `couplings` (operators),
     `coordinates`, `materials`, `definitions` and `probes` (each with
     `component` unless global), `components` with their `geometries`,
-    `pairs`, `physics`, `multiphysics` and `meshes`, `studies` with their
-    steps and solver, and the tags of the model's `solutions`; `notes`
-    list ({'path', 'kind', 'message'}) what could not be read, which
-    defaults are unknown, why a solver was not compared and what COMSOL
-    changed for good. Results (plots, datasets, evaluations, tables) are
-    left out.
+    `pairs`, `physics`, `multiphysics`, `meshes` and `mass_properties`,
+    `studies` with their steps and solver, and the tags of the model's
+    `solutions`; `notes` list ({'path', 'kind', 'message'}) what could
+    not be read, which defaults are unknown, why a solver was not
+    compared and what COMSOL changed for good. Results (plots, datasets,
+    evaluations, tables) are left out.
 
     A node (feature, step, operator, ...) has `tag`, `path` (tags from
     the component or study down, e.g. 'comp1/ht/temp1'), `type`, `label`,
@@ -135,10 +135,12 @@ def describe(model: Model, /, *, solver: bool = False) -> dict:
     '100[degC]' and '373.15[K]' compare equal; choices among named
     options are not evaluated. `unused` lists properties the node's
     other settings leave unused (alternatives a choice does not pick,
-    values whose switch is off, mesh sizes COMSOL derives); they are left
-    out. `name` lists the names expressions call a function, operator or
-    probe by. Global equations keep their per-equation lists under
-    `rows` (and the defaults of one row under `row_defaults`). Study
+    values whose switch is off, mesh sizes and their switches while
+    `custom` is off and the predefined size `hauto` while it is on); they
+    are left out. `name` lists the names expressions call a function,
+    operator, probe or mass properties node by. Global equations keep
+    their per-equation lists under `rows` (and the defaults of one row
+    under `row_defaults`). Study
     step properties that pair tags with values (`activate`, ...) become a
     dict of the pairs that differ, e.g. {'ec': 'off'}; `solnum` and
     `notsolnum` count '1' and 'auto' as the default (solving sets one to
@@ -313,13 +315,14 @@ def owner(scope: str, components: set[str], tag: str | None = None
     return False
 
 
-def names_of(values: dict) -> list[str]:
+def names_of(values: dict, kind: str = '') -> list[str]:
     """
-    Returns the names expressions call a node by: its function, operator
-    or probe name, and for an interpolation read from a file the names of
-    its functions.
+    Returns the names expressions call a node by: its function, operator,
+    probe or mass properties name, and for an interpolation read from a
+    file the names of its functions.
     """
-    found = [values[key] for key in NAMES
+    keys = NAMES + ('name',) if kind == 'MassProperties' else NAMES
+    found = [values[key] for key in keys
              if isinstance(values.get(key), str) and values[key]]
     table = values.get('funcnametable')
     if values.get('source') == 'file' and isinstance(table, list):
@@ -339,8 +342,10 @@ def unused_of(values: dict, allowed, kind: str = '') -> set[str]:
     Returns the properties of a node that its other settings leave
     unused: the alternatives a choice property does not pick (its allowed
     values, from `allowed(name)`, are all names of the node's
-    properties), a property `p` whose switch `pactive` is off, and the
-    mesh sizes COMSOL derives while `custom` is off.
+    properties), a property `p` whose switch `pactive` is off, the mesh
+    sizes COMSOL derives and their switches while `custom` is off, the
+    predefined size `hauto` while it is on, and the physics of mass
+    properties whose density does not come from a chosen physics.
     """
     unused: set[str] = set()
     for name, value in values.items():
@@ -354,7 +359,14 @@ def unused_of(values: dict, allowed, kind: str = '') -> set[str]:
                     all(option in values for option in options):
                 unused.update(o for o in options if o != value)
     if kind in MESH_SIZES and values.get('custom') == 'off':
-        unused.update(name for name in DERIVED_SIZES if name in values)
+        unused.update(name for size in DERIVED_SIZES
+                      for name in (size, size + 'active') if name in values)
+    if kind in MESH_SIZES and values.get('custom') == 'on' and \
+            'hauto' in values:
+        unused.add('hauto')
+    if kind == 'MassProperties' and 'physics' in values and \
+            values.get('densitySource') != 'fromSpecifiedPhysics':
+        unused.add('physics')
     return unused
 
 
@@ -549,7 +561,7 @@ class _Reader:
         base_values = None if base is None else \
             self.read(base, path, noted=False)
         # what the raw values tell before they are reduced to differences
-        names = names_of(values)
+        names = names_of(values, kind)
         if names:
             entry['name'] = names
         if has_rows(values):
@@ -1031,7 +1043,19 @@ class _Reader:
                 ctag, _create_physics),
             'meshes': [self.mesh(java, scomp, ctag, mtag)
                        for mtag in _tags(java.mesh())],
+            'mass_properties': self.mass_properties(java, scomp, ctag),
         }
+
+    def mass_properties(self, component, scomp, ctag: str) -> list[dict]:
+        try:
+            container = component.massProp()
+        except Exception:
+            return []
+        try:
+            base = scomp.massProp() if scomp is not None else None
+        except Exception:
+            base = None
+        return self.nodes_of(container, base, ctag, _create)
 
     def nodes_of(self, container, base_container, path: str,
                  make) -> list[dict]:
