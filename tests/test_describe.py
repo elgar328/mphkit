@@ -382,7 +382,7 @@ def test_plate(solved):
     assert described['mphkit'] == mk.__version__
     assert described['comsol'].startswith('COMSOL')
     assert described['saved_with'].startswith('COMSOL')
-    assert described['format'] == 2
+    assert described['format'] == _describe.FORMAT == 3
     assert described['notes'] == []
 
 
@@ -921,19 +921,19 @@ def test_names_rows_probes(model, tmp_path):
     rows.setIndex('equation', 'u2-1', 1, 0)
     described = mk.describe(model)
     [total] = described['couplings']
-    assert total['name'] == ['total']
+    assert total['names'] == ['total']
     assert 'axisym' in total['unused']
     assert 'axisym' not in total['properties']
     functions = {f['tag']: f for f in described['functions']}
-    assert functions['an1']['name'] == ['an1']
-    assert functions['int1']['name'] == ['int1', 'Tdep']
+    assert functions['an1']['names'] == ['an1']
+    assert functions['int1']['names'] == ['int1', 'Tdep']
     probes = {p['tag']: p for p in described['probes']}
-    assert probes['dom1']['name'] == ['dom1']
+    assert probes['dom1']['names'] == ['dom1']
     assert probes['dom1']['component'] == 'comp1'
     point = probes['pt1']
     [expression] = point['features']
     assert expression['type'] == 'PointExpr'
-    assert point['name'] == expression['name']
+    assert point['names'] == expression['names']
     [physics] = [p for p in described['components'][0]['physics']
                  if p['tag'] == 'ge']
     [first] = physics['features']
@@ -977,7 +977,7 @@ def test_mass_properties(model):
     [described] = mk.describe(model)['components'][0]['mass_properties']
     assert described['type'] == 'MassProperties'
     assert described['path'] == 'comp1/mass1'
-    assert described['name'] == ['mp']
+    assert described['names'] == ['mp']
     assert described['properties']['name'] == 'mp'
     # its physics counts only with the density from a chosen physics
     assert 'physics' in described['unused']

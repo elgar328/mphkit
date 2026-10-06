@@ -1023,8 +1023,8 @@ def words(described: dict) -> set[str]:
             for key in ('tag', 'identifier'):
                 if isinstance(value.get(key), str):
                     found.add(value[key])
-            found.update(n for n in value.get('name', [])
-                         if isinstance(value.get('name'), list))
+            found.update(n for n in value.get('names', [])
+                         if isinstance(value.get('names'), list))
             for item in value.values():
                 walk(item)
         elif isinstance(value, list):
@@ -1339,7 +1339,10 @@ class _Comparison:
             found = _different('on other geometries')
             found['other'] = True
             return found
-        return pair.selection(sa, sb)
+        found = pair.selection(sa, sb)
+        if _exterior(sa) != _exterior(sb):
+            found = _with_exterior(found, 'a' if _exterior(sa) else 'b')
+        return found
 
     def overlap(self, na: dict, nb: dict) -> float:
         if 'source' in na or 'source' in nb:      # an identity pair
@@ -1404,10 +1407,10 @@ class _Comparison:
         left_b = list(range(len(list_b)))
         if named:
             for i in list(left_a):
-                names_a = set(list_a[i].get('name') or [])
+                names_a = set(list_a[i].get('names') or [])
                 for j in left_b:
                     nb = list_b[j]
-                    if names_a & set(nb.get('name') or []) and \
+                    if names_a & set(nb.get('names') or []) and \
                             type_of(nb) == type_of(list_a[i]):
                         pairs.append((i, j, context))
                         left_a.remove(i)
@@ -1479,8 +1482,8 @@ class _Comparison:
                 for na, nb, ctx in self.pair(in_a, in_b, context, named):
                     names = self.translator.names.setdefault(
                         nb.get('component'), {})
-                    for name_b, name_a in zip(nb.get('name') or [nb['tag']],
-                                              na.get('name') or [na['tag']]):
+                    for name_b, name_a in zip(nb.get('names') or [nb['tag']],
+                                              na.get('names') or [na['tag']]):
                         names[name_b] = name_a
                     if kind:
                         self.translator.add(kind, nb['tag'], na['tag'])
@@ -1635,8 +1638,8 @@ class _Comparison:
         for na, nb, ctx in self.pair(ca.get('mass_properties', []),
                                      cb.get('mass_properties', []), context,
                                      named=True):
-            for name_b, name_a in zip(nb.get('name') or [],
-                                      na.get('name') or []):
+            for name_b, name_a in zip(nb.get('names') or [],
+                                      na.get('names') or []):
                 self.translator.add('massprop', name_b, name_a)
             self.later(self.compare_node, na, nb, ctx)
         del component
@@ -1750,6 +1753,30 @@ class _Comparison:
                 self.later(self.compare_node, fa, fb, ctx)
             self.later(self.compare_solver, sa, sb)
 
+    def change_key(self, change: dict, side: str) -> str:
+        """
+        A solver change as a comparable key: model b's tags translated to
+        a's, and solution tags as one placeholder (a store-solution node
+        names a new solution each time).
+        """
+        def plain(value):
+            if isinstance(value, list):
+                return [plain(item) for item in value]
+            if isinstance(value, str) and value in self.solutions:
+                return '<solution>'
+            return value
+
+        def mapped(value):
+            if side == 'b':
+                value = self.translator.value(value)
+            return plain(value)
+
+        return json.dumps([mapped(change.get('path')), change.get('type'),
+                           change.get('change'),
+                           {k: mapped(v[0]) for k, v in
+                            (change.get('properties') or {}).items()}],
+                          sort_keys=True)
+
     def compare_solver(self, sa: dict, sb: dict):
         solver_a, solver_b = sa.get('solver') or {}, sb.get('solver') or {}
         statuses = {solver_a.get('status'), solver_b.get('status')}
@@ -1765,8 +1792,10 @@ class _Comparison:
                                    f'{self.side_head(side, study)}: solver '
                                    f'not compared: {solver.get("reason")}')
             return
-        keys_a = {_change_key(c): c for c in solver_a.get('changes', [])}
-        keys_b = {_change_key(c): c for c in solver_b.get('changes', [])}
+        keys_a = {self.change_key(c, 'a'): c
+                  for c in solver_a.get('changes', [])}
+        keys_b = {self.change_key(c, 'b'): c
+                  for c in solver_b.get('changes', [])}
         for keys, side in ((keys_a, 'a'), (keys_b, 'b')):
             other = keys_b if side == 'a' else keys_a
             for key, change in keys.items():
@@ -1935,7 +1964,8 @@ class _Comparison:
                                {**sb, 'entities': applied_b})['same']:
             extra['same_applied'] = True
             ending = '; applies nowhere in either' if \
-                applied_a == [] and applied_b == [] else \
+                applied_a == [] and applied_b == [] and not (
+                    _exterior(sa, True) or _exterior(sb, True)) else \
                 '; applies to the same entities'
         entry = self.selection_item(
             'selection', na, nb, f'{self.head(na, nb)}: {what} differs: ',
@@ -2408,6 +2438,8 @@ def _level(selection) -> str:
 def _empty(selection) -> bool:
     if not isinstance(selection, dict):
         return False
+    if _exterior(selection, True):
+        return False
     return selection.get('level') == 'none' or \
         selection.get('entities') == [] or selection.get('applied') == []
 
@@ -2415,8 +2447,34 @@ def _empty(selection) -> bool:
 def _nothing(selection) -> bool:
     """Tells whether a selection selects nothing (not counting where a
     node applies: one overridden everywhere still says where it is)."""
-    return isinstance(selection, dict) and (
+    return isinstance(selection, dict) and not _exterior(selection) and (
         selection.get('level') == 'none' or selection.get('entities') == [])
+
+
+def _exterior(selection, applied: bool = False) -> bool:
+    """Whether a selection holds the exterior of boundary elements
+    (domain 0): as selected, or where the node applies."""
+    if not isinstance(selection, dict):
+        return False
+    selected = bool(selection.get('exterior'))
+    return bool(selection.get('exterior_applied', selected)) if applied \
+        else selected
+
+
+def _with_exterior(found: dict, side: str) -> dict:
+    """A selection comparison that also differs in the exterior."""
+    text = f'the exterior (domain 0) only in {side}'
+    found = {**found, 'same': False}
+    found['text'] = ', '.join(t for t in (found.get('text'), text) if t)
+    found.setdefault('numbers', {'a': [], 'b': []})
+    found.setdefault('places', {'a': [], 'b': []})
+    if 'elsewhere' in found:
+        # both geometries have the exterior: never folded
+        inside = dict(found.get('inside') or {'numbers': {'a': [], 'b': []}})
+        inside['text'] = ', '.join(
+            t for t in (inside.get('text'), text) if t)
+        found['inside'] = inside
+    return found
 
 
 def _same_name(na: dict, nb: dict) -> bool:
@@ -2468,11 +2526,3 @@ def _jaccard(a: list, b: list) -> float:
     common = sum(min(counts_a.get(k, 0), counts_b.get(k, 0)) for k in keys)
     return common / sum(max(counts_a.get(k, 0), counts_b.get(k, 0))
                         for k in keys)
-
-
-def _change_key(change: dict) -> str:
-    return json.dumps([change.get('path'), change.get('type'),
-                       change.get('change'),
-                       {k: v[0] for k, v in
-                        (change.get('properties') or {}).items()}],
-                      sort_keys=True)

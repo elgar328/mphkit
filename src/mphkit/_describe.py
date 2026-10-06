@@ -28,7 +28,7 @@ from mph.node import get
 from . import _catalog, _check, _comsol, _solve
 
 # Version of the result's layout; raise it when the layout changes
-FORMAT = 2
+FORMAT = 3
 # Tag prefix of the temporary model and solver sequences
 SCRATCH = 'mkdesc'
 AXES = 'xyz'
@@ -137,7 +137,7 @@ def describe(model: Model, /, *, solver: bool = False) -> dict:
     other settings leave unused (alternatives a choice does not pick,
     values whose switch is off, mesh sizes and their switches while
     `custom` is off and the predefined size `hauto` while it is on); they
-    are left out. `name` lists the names expressions call a function,
+    are left out. `names` lists the names expressions call a function,
     operator, probe or mass properties node by. Global equations keep
     their per-equation lists under `rows` (and the defaults of one row
     under `row_defaults`). Study
@@ -496,6 +496,7 @@ class _Reader:
             for gtag in _tags(component.geom()):
                 self.geometries[gtag] = component.geom(gtag)
         self.places: dict[tuple[str, int, int], dict] = {}
+        self.noted_places: set[tuple] = set()
         # what is being read: 'mesh' and 'study' nodes get their own rules
         self.context = ''
         self.measures: dict[str, Any] = {}
@@ -563,7 +564,7 @@ class _Reader:
         # what the raw values tell before they are reduced to differences
         names = names_of(values, kind)
         if names:
-            entry['name'] = names
+            entry['names'] = names
         if has_rows(values):
             entry['rows'] = {name: values.pop(name) for name in ROWS
                              if name in values}
@@ -795,11 +796,21 @@ class _Reader:
                 chosen = None
         if chosen is None:
             chosen = applied
+        # domain 0 is the exterior of boundary elements: no place of its own
+        exterior = dim == sdim and 0 in chosen
+        exterior_applied = dim == sdim and 0 in applied
+        if dim == sdim:
+            chosen = [n for n in chosen if n != 0]
+            applied = [n for n in applied if n != 0]
         found: dict = {'level': _comsol.entity_level_name(dim, sdim),
                        'geometry': gtag,
                        'entities': self.located(gtag, dim, chosen, path)}
         if sorted(set(chosen)) != sorted(set(applied)):
             found['applied'] = self.located(gtag, dim, applied, path)
+        if exterior:
+            found['exterior'] = True
+        if exterior_applied != exterior:
+            found['exterior_applied'] = exterior_applied
         if named:
             try:
                 found['named'] = _label(self.java.selection(named)) or named
@@ -818,7 +829,12 @@ class _Reader:
         """Returns the bounding box and size of one entity."""
         key = (gtag, dim, number)
         if key in self.places:
-            return self.places[key]
+            cached = self.places[key]
+            if 'unknown' in cached and (key, path) not in self.noted_places:
+                self.noted_places.add((key, path))
+                self.note(path, 'place_unknown', f'entity {number} at level '
+                          f'{dim} of "{gtag}" could not be measured')
+            return cached
         geometry = self.geometries[gtag]
         sdim = int(geometry.getSDim())
         found: dict
@@ -845,6 +861,7 @@ class _Reader:
                          for i in range(len(box) // 2)}
                 found['size'] = json_value(size)
         except Exception as error:
+            self.noted_places.add((key, path))
             self.note(path, 'place_unknown', f'entity {number} at level '
                       f'{dim} of "{gtag}": {_comsol.reason(error)}')
             found = {'unknown': number}
@@ -917,11 +934,11 @@ class _Reader:
             entry = self.node(java, base, path, subnodes=subnodes)
             if name == 'probe':
                 # a point probe names its expressions in subnodes
-                names = entry.get('name', []) + [
+                names = entry.get('names', []) + [
                     n for sub in entry['features']
-                    for n in sub.get('name', [])]
+                    for n in sub.get('names', [])]
                 if names:
-                    entry['name'] = names
+                    entry['names'] = names
             if component is not None:
                 entry['component'] = component
             found.append(entry)
@@ -1243,6 +1260,7 @@ class _Reader:
         own = self.solver_nodes(sequence, f'{stag}/{tag}')
         sequences = java.sol()
         automatic: dict | None = None
+        solutions: set[str] = set()
         with _comsol.history_off(java), \
                 _comsol.compiled_traces_removed(java) as changed:
             temporary = str(sequences.uniquetag(SCRATCH))
@@ -1251,6 +1269,9 @@ class _Reader:
                 made.study(stag)
                 made.createAutoSequence(stag)
                 automatic = self.solver_nodes(made, '', noted=False)
+                # a store-solution node names a solution that goes with
+                # the temporary sequence
+                solutions = set(_tags(sequences))
             except Exception as error:
                 reason = ('COMSOL could not make its own solver sequence: '
                           f'{_comsol.reason(error)}')
@@ -1262,7 +1283,7 @@ class _Reader:
         if automatic is None:
             return self.not_compared(stag, tag, str(reason))
         changes = solver_changes(own, automatic, {temporary: str(tag)},
-                                 set(_tags(sequences)) | {temporary})
+                                 solutions | set(_tags(sequences)))
         return {'status': 'compared', 'sequence': tag, 'changes': changes}
 
     def not_compared(self, stag: str, tag: str | None, reason: str,

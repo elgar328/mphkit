@@ -8,7 +8,7 @@ import json
 import pytest
 
 import mphkit as mk
-from mphkit import _compare
+from mphkit import _compare, _describe
 from mphkit._compare import Table, Tolerance, match_tables, same_value
 
 def kinds(items):
@@ -60,7 +60,8 @@ def node(tag, kind, selection=None, properties=None, defaults=None,
 
 
 def described(features=(), geometries=None, parameters=None, **extra):
-    """A format-2 description with one component and one interface."""
+    """A description in the current format with one component and one
+    interface."""
     if geometries is None:
         geometries = [geometry([box((0, 1), (0, 1), (0, 1), 1.0)],
                                cube_faces())]
@@ -70,7 +71,7 @@ def described(features=(), geometries=None, parameters=None, **extra):
                  {'level': 'domain', 'geometry': 'geom1',
                   'entities': 'all'},
                  'features': list(features)}
-    found = {'format': 2, 'parameters': parameters or {}, 'functions': [],
+    found = {'format': _describe.FORMAT, 'parameters': parameters or {}, 'functions': [],
              'variables': [], 'couplings': [], 'coordinates': [],
              'materials': [], 'definitions': [], 'probes': [],
              'components': [{'tag': 'comp1', 'label': 'Component 1',
@@ -362,7 +363,7 @@ def test_variables_by_name():
 def test_named_operators():
     def coupling(tag, names):
         return {'tag': tag, 'path': f'comp1/{tag}', 'type': 'Integration',
-                'label': tag, 'active': True, 'name': names,
+                'label': tag, 'active': True, 'names': names,
                 'properties': {}, 'defaults': {}, 'selection': None,
                 'selections': {}, 'features': [], 'component': 'comp1'}
 
@@ -434,6 +435,59 @@ def test_solver_not_asked():
     assert kinds(found) == []
     assert any('solver=True' in i['message'] for i in found
                if i['kind'] == 'note')
+
+
+def test_solution_tags():
+    # a store-solution node names a new solution each time
+    def study(solution, path='su1'):
+        change = {'path': path, 'labels': path, 'type': 'StoreSolution',
+                  'change': 'property',
+                  'properties': {'sol': [[solution], ['sol2']]}}
+        return [{'tag': 'std1', 'path': 'std1', 'label': 'Study 1',
+                 'active': True, 'steps': [],
+                 'solver': {'status': 'compared', 'sequence': 'sol1',
+                            'changes': [change]}}]
+
+    a = described(studies=study('sol2'), solutions=['sol1', 'sol2'])
+    b = described(studies=study('sol3'), solutions=['sol1', 'sol3'])
+    assert kinds(mk.compare(a, b)) == []
+    b = described(studies=study('sol3', 'su2'), solutions=['sol1', 'sol3'])
+    assert kinds(mk.compare(a, b)) == ['solver', 'solver']
+
+
+def test_exterior():
+    # domain 0 of boundary elements: a flag next to the real domains
+    def domains(exterior, entities='all', applied=None):
+        found = {'level': 'domain', 'geometry': 'geom1',
+                 'entities': entities}
+        if exterior:
+            found['exterior'] = True
+        if applied is not None:
+            found['exterior_applied'] = applied
+        return found
+
+    a = described([node('bpam1', 'BoundaryElements', domains(True))])
+    b = described([node('bpam1', 'BoundaryElements', domains(True))])
+    assert kinds(mk.compare(a, b)) == []
+    b = described([node('bpam1', 'BoundaryElements', domains(False))])
+    [item] = [i for i in mk.compare(a, b) if i['kind'] != 'note']
+    assert item['kind'] == 'selection'
+    assert item['message'].endswith('the exterior (domain 0) only in a')
+    # only the exterior: not an empty selection
+    only = described([node('mat1', 'Common', domains(True, []))])
+    found = mk.compare(only, described())
+    assert kinds(found) == ['only_in_a']
+    assert 'empty' not in found[0]
+    # applied to the exterior only: it does not apply nowhere
+    a = described([node('bpam1', 'BoundaryElements',
+                        domains(True, 'all', applied=True))])
+    a['components'][0]['physics'][0]['features'][0]['selection'][
+        'applied'] = []
+    b = copy.deepcopy(a)
+    b['components'][0]['physics'][0]['features'][0]['selection'][
+        'entities'] = []
+    found = [i for i in mk.compare(a, b) if i['kind'] == 'selection']
+    assert found and not any('nowhere' in i['message'] for i in found)
 
 
 def test_materials():
@@ -538,7 +592,7 @@ def test_empty_selection_pairs_by_tag():
 def test_mass_properties_by_name():
     def mass(tag, name):
         return {'tag': tag, 'path': f'comp1/{tag}', 'type': 'MassProperties',
-                'label': 'Mass Properties 1', 'active': True, 'name': [name],
+                'label': 'Mass Properties 1', 'active': True, 'names': [name],
                 'properties': {'name': name} if name != tag else {},
                 'defaults': {'name': tag} if name != tag else {},
                 'selection': {'level': 'domain', 'geometry': 'geom1',
