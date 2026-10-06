@@ -160,6 +160,11 @@ def compare(a: Model | dict, b: Model | dict, /, *,
     file names with a relative path ('data/comp1.mph'), and tags in
     properties other than the ones of nodes, physics, materials,
     coordinate systems, pairs, studies and solvers (e.g. load groups).
+    Compared although they may be unused: a probe's `intsurface` and
+    `intvolume` outside 3D, a sweep's `filename` while both save to a
+    file (its default differs from one computer to the next), values
+    picked by a choice whose name does not end in `_src` (e.g. `k` while
+    `k_mat` is 'from_mat') and the settings of physics interfaces.
     """
     ignored, shown_ = _names(ignore), _names(show)
     unknown = (ignored - IGNORABLE - SHOWABLE - set(KINDS)) | \

@@ -27,8 +27,9 @@ from mph.node import get
 
 from . import _catalog, _check, _comsol, _solve
 
-# Version of the result's layout; raise it when the layout changes
-FORMAT = 3
+# Version of the result's layout; raise it when the layout changes or
+# what describe leaves out as unused
+FORMAT = 4
 # Tag prefix of the temporary model and solver sequences
 SCRATCH = 'mkdesc'
 AXES = 'xyz'
@@ -50,6 +51,13 @@ SKIPPED_SETTINGS = frozenset({'PhysicalModelProperty/hasDG'})
 # while `custom` is off
 MESH_SIZES = ('Size', 'MeshSizeDefault')
 DERIVED_SIZES = ('hmax', 'hmin', 'hcurve', 'hgrad', 'hnarrow')
+# Study steps that write their solutions to `filename` only with `save` on
+SWEEPS = frozenset({'Parametric', 'MaterialSweep', 'FunctionSweep',
+                    'BatchSweep'})
+# A port's excitation values, unused while `PortExcitation` is off
+EXCITATION = ('pamp', 'P0', 'IncidentWave')
+# A probe's surface and volume integrals, which change nothing in 3D
+INTEGRALS = ('intsurface', 'intvolume')
 # Study step properties that list [tag, value, tag, value, ...] pairs
 # (physics, 'frame:...', 'multi:...', components or geometries)
 STEP_MAPS = frozenset({'activate', 'activateCoupling', 'discretization',
@@ -109,7 +117,7 @@ def describe(model: Model, /, *, solver: bool = False) -> dict:
     #  'selections': {}, 'features': []}
     ```
 
-    The result has `format` (3; `mk.compare` takes this one only) and
+    The result has `format` (4; `mk.compare` takes this one only) and
     `mphkit` (the version that described), `parameters` (expression, SI
     value and SI unit), the model's `functions`, `variables`, `couplings`
     (operators),
@@ -139,9 +147,12 @@ def describe(model: Model, /, *, solver: bool = False) -> dict:
     '100[degC]' and '373.15[K]' compare equal; choices among named
     options are not evaluated. `unused` lists properties the node's
     other settings leave unused (alternatives a choice does not pick,
-    values whose switch is off, mesh sizes and their switches while
-    `custom` is off and the predefined size `hauto` while it is on); they
-    are left out. `names` lists the names expressions call a function,
+    values whose switch is off, a value `p` while `p_src` takes it from
+    elsewhere, mesh sizes and their switches while `custom` is off, the
+    predefined size `hauto` while it is on, a sweep's `filename` while
+    `save` is off, a port's excitation values while `PortExcitation` is
+    off and a probe's `intsurface` and `intvolume` in 3D); they are left
+    out. `names` lists the names expressions call a function,
     operator, probe or mass properties node by. Global equations keep
     their per-equation lists under `rows` (and the defaults of one row
     under `row_defaults`). Study step properties that pair tags with
@@ -349,15 +360,21 @@ def has_rows(values: dict) -> bool:
         isinstance(values.get('equation'), list)
 
 
-def unused_of(values: dict, allowed, kind: str = '') -> set[str]:
+def unused_of(values: dict, allowed, kind: str = '',
+              probe_sdim: int | None = None) -> set[str]:
     """
     Returns the properties of a node that its other settings leave
     unused: the alternatives a choice property does not pick (its allowed
     values, from `allowed(name)`, are all names of the node's
-    properties), a property `p` whose switch `pactive` is off, the mesh
-    sizes COMSOL derives and their switches while `custom` is off, the
-    predefined size `hauto` while it is on, and the physics of mass
-    properties whose density does not come from a chosen physics.
+    properties), a property `p` whose switch `pactive` is off, a property
+    `p` whose source `p_src` takes the value from elsewhere instead of
+    its option 'userdef', the mesh sizes COMSOL derives and their
+    switches while `custom` is off, the predefined size `hauto` while it
+    is on, the physics of mass properties whose density does not come
+    from a chosen physics, the file name of a sweep that does not save
+    to a file, the excitation values of a port that is not excited, and
+    the surface and volume integrals of a probe whose component is 3D
+    (`probe_sdim`, given for probes only).
     """
     unused: set[str] = set()
     for name, value in values.items():
@@ -365,6 +382,11 @@ def unused_of(values: dict, allowed, kind: str = '') -> set[str]:
         if name.endswith('active') and switched in values and \
                 value in ('off', False):
             unused.add(switched)
+        source = name[:-len('_src')]
+        if name.endswith('_src') and source in values and \
+                isinstance(value, str) and value not in ('', 'userdef') \
+                and 'userdef' in allowed(name):
+            unused.add(source)
         if isinstance(value, str) and value != name and value in values:
             options = allowed(name)
             if len(options) > 1 and value in options and \
@@ -379,6 +401,13 @@ def unused_of(values: dict, allowed, kind: str = '') -> set[str]:
     if kind == 'MassProperties' and 'physics' in values and \
             values.get('densitySource') != 'fromSpecifiedPhysics':
         unused.add('physics')
+    if kind in SWEEPS and values.get('save') in ('off', False) and \
+            'filename' in values:
+        unused.add('filename')
+    if values.get('PortExcitation') in ('off', False):
+        unused.update(name for name in EXCITATION if name in values)
+    if probe_sdim == 3:
+        unused.update(name for name in INTEGRALS if name in values)
     return unused
 
 
@@ -503,10 +532,13 @@ class _Reader:
         self.components = [tag for tag in _tags(self.java.component())
                            if not hidden_component(tag, materials)]
         self.geometries: dict[str, Any] = {}
+        # the space dimension of each component with a geometry
+        self.dimensions: dict[str, int] = {}
         for ctag in self.components:
             component = self.java.component(ctag)
             for gtag in _tags(component.geom()):
                 self.geometries[gtag] = component.geom(gtag)
+                self.dimensions[ctag] = int(component.geom(gtag).getSDim())
         self.places: dict[tuple[str, int, int], dict] = {}
         self.noted_places: set[tuple] = set()
         # what is being read: 'mesh' and 'study' nodes get their own rules
@@ -558,12 +590,13 @@ class _Reader:
         return values
 
     def node(self, java, base, path: str, subnodes=None,
-             kept=None) -> dict:
+             kept=None, probe_sdim: int | None = None) -> dict:
         """
         Describes a node against its counterpart `base` in the temporary
         model (None if there is none). `subnodes` creates the
         counterparts of its own subnodes; `kept` tells which property
-        names count.
+        names count; `probe_sdim` is the space dimension of a probe's
+        component.
         """
         values = self.read(java, path)
         if kept is not None:
@@ -587,7 +620,7 @@ class _Reader:
                     and row}
         unused = unused_of(values,
                            lambda name: _comsol.allowed_values(java, name),
-                           kind)
+                           kind, probe_sdim)
         for name in unused:
             values.pop(name, None)
             if base_values is not None:
@@ -943,7 +976,10 @@ class _Reader:
             path = tag if component is None else f'{component}/{tag}'
             base = self.counterpart(self.scratch_list(name, component),
                                     java, _create)
-            entry = self.node(java, base, path, subnodes=subnodes)
+            entry = self.node(
+                java, base, path, subnodes=subnodes,
+                probe_sdim=self.dimensions.get(component or '')
+                if name == 'probe' else None)
             if name == 'probe':
                 # a point probe names its expressions in subnodes
                 names = entry.get('names', []) + [

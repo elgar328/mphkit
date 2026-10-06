@@ -14,9 +14,10 @@ until 1.0, a minor release (0.2, 0.3, ...) may change the API. See
 - `mk.describe(model)` returns a model's settings as plain, JSON-ready
   values in which nodes can be matched by type and place rather than by
   tags, order or entity numbers: the properties that differ from the
-  defaults, with their SI values, and selections by the location and
-  size of their entities; `solver=True` adds the solver settings that
-  differ from the ones COMSOL would choose. It leaves the model as it
+  defaults (except those a node's other settings leave unused), with
+  their SI values, and selections by the location and size of their
+  entities; `solver=True` adds the solver settings that differ from the
+  ones COMSOL would choose. It leaves the model as it
   was, except that compiling may update the solver sequences of a model
   saved by another COMSOL version (listed in the result's `notes`).
 - `mk.compare(a, b)` lists how two models (or results of `mk.describe`)

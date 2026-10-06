@@ -581,6 +581,17 @@ def test_used_only():
     # not where defaults are unknown
     b['components'][0]['physics'][0]['features'][0]['all_properties'] = True
     assert not [i for i in mk.compare(a, b) if i.get('used_only')]
+    # b takes the value from another node: its own one is unused
+    a = described([node('pc1', 'PeriodicHeat', None,
+                        {'k': ['kx', '0', '0']}, {'k': ['0', '0', '0']})])
+    b = described([node('pc1', 'PeriodicHeat', None,
+                        {'k_src': 'root.comp1.ht.pp1.k'},
+                        {'k_src': 'userdef'}, unused=['k'])])
+    found = [i for i in mk.compare(a, b) if i['kind'] == 'property']
+    assert [i.get('name') for i in found] == ['k_src', None]
+    assert found[0]['from_default'] is True
+    assert found[1]['used_only'] is True
+    assert found[1]['a'] == {'k': ['kx', '0', '0']}
 
 
 def test_empty_selection_pairs_by_tag():
@@ -1423,6 +1434,10 @@ def test_probes(two):
         probe = component.probe().create(tag, 'Domain')
         probe.set('probename', 'average')
     assert kinds(mk.compare(*two)) == []
+    # in 3D a probe's surface integral changes nothing
+    probe.set('intsurface', 'on')
+    assert kinds(mk.compare(*two)) == []
+    assert 'intsurface' in mk.describe(two[1])['probes'][0]['unused']
     points = []
     for model in two:
         component = mk.component_of(model/'geometries'/'Geometry 1').java

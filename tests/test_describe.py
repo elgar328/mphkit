@@ -123,6 +123,49 @@ def test_unused_of():
                                'MassProperties') == set()
 
 
+def test_unused_of_sources_ports_sweeps_probes():
+    def allowed(name):
+        return {'k_src': ['root.comp1.pp1.k', 'userdef'],
+                'c_src': ['fromSpeed']}.get(name, [])
+
+    # a value taken from elsewhere leaves the user-defined one unused
+    taken = {'k_src': 'root.comp1.pp1.k', 'k': ['kx', 'ky', '0']}
+    assert _describe.unused_of(taken, allowed) == {'k'}
+    assert _describe.unused_of({**taken, 'k_src': 'userdef'},
+                               allowed) == set()
+    assert _describe.unused_of({'k_src': 'root.comp1.pp1.k'},
+                               allowed) == set()
+    # with no user-defined option, the value is not known to be unused
+    assert _describe.unused_of({'c_src': 'fromSpeed', 'c': '343'},
+                               allowed) == set()
+    # a sweep's file name counts only while it saves to a file
+    sweep = {'save': 'off', 'filename': 'C:\\Users\\x\\param.mph'}
+    assert _describe.unused_of(sweep, allowed, 'Parametric') == \
+        {'filename'}
+    assert _describe.unused_of({**sweep, 'save': False}, allowed,
+                               'BatchSweep') == {'filename'}
+    assert _describe.unused_of({**sweep, 'save': 'on'}, allowed,
+                               'Parametric') == set()
+    assert _describe.unused_of(sweep, allowed, 'Interpolation') == set()
+    # a port that is not excited uses none of its excitation values
+    port = {'PortExcitation': 'off', 'pamp': '1', 'P0': '0',
+            'IncidentWave': 'Amplitude', 'phi': '0'}
+    assert _describe.unused_of(port, allowed) == \
+        {'pamp', 'P0', 'IncidentWave'}
+    assert _describe.unused_of({'PortExcitation': False, 'Pin': '1[W]'},
+                               allowed) == set()
+    assert _describe.unused_of({**port, 'PortExcitation': 'on'},
+                               allowed) == set()
+    # a probe's surface and volume integrals change nothing in 3D
+    probe = {'intsurface': 'on', 'intvolume': 'off', 'expr': 'T'}
+    assert _describe.unused_of(probe, allowed, 'Domain', 3) == \
+        {'intsurface', 'intvolume'}
+    assert _describe.unused_of({'intsurface': 'on'}, allowed,
+                               'Boundary', 3) == {'intsurface'}
+    assert _describe.unused_of(probe, allowed, 'Domain', 2) == set()
+    assert _describe.unused_of(probe, allowed, 'Domain') == set()
+
+
 def test_rows_and_units():
     assert _describe.has_rows({'name': ['u'], 'equation': ['ut-1']})
     assert not _describe.has_rows({'name': 'u', 'equation': ['ut-1']})
@@ -419,7 +462,7 @@ def test_plate(solved):
     assert described['mphkit'] == mk.__version__
     assert described['comsol'].startswith('COMSOL')
     assert described['saved_with'].startswith('COMSOL')
-    assert described['format'] == _describe.FORMAT == 3
+    assert described['format'] == _describe.FORMAT == 4
     assert described['notes'] == []
 
 
@@ -527,6 +570,43 @@ def test_not_built(model):
     geom.java.feature('blk1').set('size', ['2', '1', '1'])
     with pytest.raises(RuntimeError, match='run model.build'):
         mk.describe(model)
+
+
+def test_unused_by_other_settings(model):
+    # COMSOL's names the rules of `unused_of` rely on
+    geom = blocks(model, 1)
+    study = (model/'studies').create(name='sweeps')
+    study.create('Stationary')
+    sweep = study.create('Parametric')
+    sweep.java.set('filename', '/elsewhere/param.mph')
+    other = study.create('MaterialSweep')
+    assert _describe._type(other.java) in _describe.SWEEPS
+    acoustics = (model/'physics').create('PressureAcoustics', geom)
+    port = acoustics.create('Port', 2)
+    port.select(mk.sel.box(geom, 'boundary', x=0))
+    assert 'off' in _comsol.allowed_values(port.java, 'PortExcitation')
+    mk.set(port, PortExcitation='off', pamp='2', P0='1[W]')
+    described = mk.describe(model)
+    steps = {s['type']: s for s in described['studies'][0]['steps']}
+    assert 'filename' in steps['Parametric']['unused']
+    assert 'filename' not in steps['Parametric']['properties']
+    [found] = [f for p in described['components'][0]['physics']
+               for f in p['features'] if f['type'] == 'Port']
+    assert {'pamp', 'P0', 'IncidentWave'} <= set(found['unused'])
+    assert found['properties'] == {'PortExcitation': 'off'}
+
+
+def test_probe_integrals_in_2d(model):
+    geom = mk.geometry(model, 2)
+    mk.square(geom, 1)
+    model.build(geom)
+    (model/'physics').create('HeatTransfer', geom)
+    component = mk.component_of(geom).java
+    probe = component.probe().create('bnd1', 'Boundary')
+    probe.set('intsurface', 'on')
+    [found] = mk.describe(model)['probes']
+    assert found['properties']['intsurface'] in ('on', True)
+    assert 'intsurface' not in found.get('unused', [])
 
 
 def test_defaults_unknown(client, solved, monkeypatch):
