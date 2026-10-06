@@ -114,7 +114,10 @@ def test_spaced():
     ('0 0.1 0.2', [0, 0.1, 0.2]),
     ('0,0.1', [0, 0.1]),
     ('0 range(1,1,3)', [0, 1, 2, 3]),
-    ('range(0,dt,1)', None), ('1[s] 2[s]', None), ('x', None)])
+    ('range(0,dt,1)', None), ('1[s] 2[s]', None), ('x', None),
+    # given up before making the values
+    ('range(0,1,inf)', None), ('range(0,nan,1)', None),
+    ('range(0,1e-7,1)', None)])
 def test_numbers(text, expected):
     found = _compare.numbers(text)
     if expected is None:
@@ -949,6 +952,65 @@ def test_arguments_and_order():
     assert kinds(mk.compare(b, a)) == ['only_in_b', 'only_in_a']
     assert kinds(mk.compare(a, b)) == ['only_in_a', 'only_in_b']
     assert mk.compare(b, a)[0]['path']['b'] == 'parameters/L'
+    assert mk.compare(a, b, ignore=None) == mk.compare(a, b)
+    for wrong in ({'only_in_b': 1}, ['only_in_b', 1], 3):
+        with pytest.raises(ValueError, match='a name or a list'):
+            mk.compare(a, b, ignore=wrong)
+    with pytest.raises(ValueError, match="material_info"):
+        mk.compare(a, b, ignore='nothing')
+
+
+def test_incomplete_results():
+    good = described([node('hf1', 'HeatFluxBoundary', faces(1))])
+    for broken, problem in (
+            ({**good, 'components': None}, "'components' is no list"),
+            ({**good, 'parameters': []}, "'parameters' is no dict"),
+            ({**good, 'components': [{'geometries': []}]}, 'has no tag'),
+            ({**good, 'components': [{'tag': 'comp1'}]}, "'geometries'"),
+            ({**good, 'probes': None}, "'probes' is no list")):
+        with pytest.raises(ValueError, match='a is not a complete') as found:
+            mk.compare(broken, good)
+        assert problem in str(found.value)
+    # deeper down: the reading error, without blaming the data alone
+    deep = copy.deepcopy(good)
+    del deep['components'][0]['physics'][0]['features'][0]['tag']
+    with pytest.raises(ValueError, match='could not read a or b') as found:
+        mk.compare(deep, good)
+    assert isinstance(found.value.__cause__, KeyError)
+    assert 'bug in mphkit' in str(found.value)
+    # an empty model (no components, a 0D geometry list) is complete
+    empty = {**good, 'components': []}
+    assert mk.compare(empty, empty) == []
+
+
+def pair_node(tag, source, destination):
+    return {'tag': tag, 'path': f'comp1/{tag}', 'type': 'IdentityBoundaryPair',
+            'label': 'Pair', 'active': True, 'source': source,
+            'destination': destination, 'properties': {}, 'defaults': {},
+            'features': []}
+
+
+def test_pair_unmeasured():
+    unknown = {'level': 'boundary', 'geometry': 'geom1',
+               'entities': 'unknown'}
+    a, b = described(), described()
+    a['components'][0]['pairs'] = [pair_node('p1', unknown, faces(2))]
+    b['components'][0]['pairs'] = [pair_node('p1', faces(3), faces(2))]
+    found = mk.compare(a, b)
+    assert kinds(found) == ['unchecked']
+    assert 'source not compared' in found[0]['message']
+    # what cannot be compared is not the same: no swapped source and
+    # destination, the destination differs
+    b['components'][0]['pairs'] = [pair_node('p1', faces(2), faces(3))]
+    found = mk.compare(a, b)
+    assert sorted(kinds(found)) == ['selection', 'unchecked']
+    [item] = [i for i in found if i['kind'] == 'selection']
+    assert 'destination differs' in item['message']
+    a['components'][0]['pairs'] = [pair_node('p1', faces(1), unknown)]
+    b['components'][0]['pairs'] = [pair_node('p1', faces(1), faces(2))]
+    found = mk.compare(a, b)
+    assert kinds(found) == ['unchecked']
+    assert 'destination not compared' in found[0]['message']
 
 
 def test_mesh_units():

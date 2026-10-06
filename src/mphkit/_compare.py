@@ -172,23 +172,47 @@ def compare(a: Model | dict, b: Model | dict, /, *,
     if unknown:
         raise ValueError(
             f'mk.compare does not know {sorted(unknown)}; ignore takes '
-            f'{sorted(IGNORABLE | set(KINDS))}, show takes '
+            f'{sorted(IGNORABLE | SHOWABLE | set(KINDS))}, show takes '
             f'{sorted(SHOWABLE)}.')
     if isinstance(tolerance, bool) or \
             not isinstance(tolerance, (int, float)) or \
             not math.isfinite(tolerance) or tolerance < 0:
         raise ValueError(f'mk.compare takes a tolerance of 0 or more, not '
                          f'{tolerance!r}.')
-    found = _Comparison(_described(a, 'a'), _described(b, 'b'),
-                        tolerance).run()
+    plain = [name for name, side in (('a', a), ('b', b))
+             if not isinstance(side, Model)]
+    described_a, described_b = _described(a, 'a'), _described(b, 'b')
+    try:
+        found = _Comparison(described_a, described_b, tolerance).run()
+    except (KeyError, TypeError, AttributeError, IndexError) as error:
+        if not plain:
+            raise
+        raise ValueError(
+            f'mk.compare could not read {" or ".join(plain)} '
+            f'({type(error).__name__}: {error}). Pass complete results of '
+            'mk.describe; if they are, this is a bug in mphkit.'
+        ) from error
     hidden = (ignored | {'label', 'material_info'}) - shown_
     return _filtered(found, hidden)
 
 
 def _names(value) -> set[str]:
     """The names given to `ignore` or `show`: one name or several."""
-    return {value} if isinstance(value, str) else set(value)
+    if value is None:
+        return set()
+    if isinstance(value, str):
+        return {value}
+    if isinstance(value, dict) or not isinstance(value, Iterable) or \
+            not all(isinstance(name, str) for name in value):
+        raise ValueError(f'mk.compare takes a name or a list of names for '
+                         f'ignore and show, not {value!r}.')
+    return set(value)
 
+
+# Lists at the top of a result of mk.describe
+LISTS = ('functions', 'variables', 'couplings', 'coordinate_systems',
+         'materials', 'definitions', 'probes', 'studies', 'solutions',
+         'notes')
 
 KINDS = ('parameter', 'geometry', 'only_in_a', 'only_in_b', 'property',
          'expression', 'variable', 'active', 'selection', 'applied',
@@ -206,7 +230,31 @@ def _described(side, name: str) -> dict:
             f'{name} has format {side.get("format")!r}, this mphkit '
             f'compares format {_describe.FORMAT}: describe the model again '
             'with this mphkit.')
+    problem = _shape_problem(side)
+    if problem:
+        raise ValueError(f'{name} is not a complete result of mk.describe: '
+                         f'{problem}.')
     return side
+
+
+def _shape_problem(side: dict) -> str | None:
+    """Tells what is wrong with the top level of a result of
+    mk.describe, or None."""
+    if not isinstance(side.get('parameters'), dict):
+        return "'parameters' is no dict"
+    components = side.get('components')
+    if not isinstance(components, list):
+        return "'components' is no list"
+    for component in components:
+        if not isinstance(component, dict) or 'tag' not in component:
+            return 'a component has no tag'
+        if not isinstance(component.get('geometries'), list):
+            return f"component {component['tag']!r} has no list " \
+                "'geometries'"
+    for key, value in side.items():
+        if key in LISTS and not isinstance(value, list):
+            return f'{key!r} is no list'
+    return None
 
 
 def _filtered(items: list[dict], hidden: set[str]) -> list[dict]:
@@ -295,7 +343,11 @@ def numbers(text: str) -> list[float] | None:
                 start, step, stop = (float(v) for v in match.groups())
             except ValueError:
                 return None
-            if step == 0 or (stop - start) * step < 0:
+            if not all(math.isfinite(v) for v in (start, step, stop)) or \
+                    step == 0 or (stop - start) * step < 0:
+                return None
+            # too long to compare value by value
+            if (stop - start) / step + 1 > 10**6:
                 return None
             slack = 1e-9 * abs(step)
             count = 0
@@ -2009,12 +2061,22 @@ class _Comparison:
                       a=na.get('type'), b=nb.get('type'), context=context)
         straight = [self.selection(na.get(s), nb.get(s))
                     for s in ('source', 'destination')]
-        if all(found['same'] for found in straight):
+        for side, found in zip(('source', 'destination'), straight):
+            if found['unknown']:
+                self.unchecked('a', na, f'{self.head(na, nb)}: {side} not '
+                               'compared (several levels or unmeasured '
+                               'entities)', context)
+
+        def same(found: dict) -> bool:
+            # a selection that could not be compared is not the same
+            return found['same'] and not found['unknown']
+
+        if all(same(found) for found in straight):
             return
         swapped = [self.selection(na.get(s), nb.get(t))
                    for s, t in (('source', 'destination'),
                                 ('destination', 'source'))]
-        if all(found['same'] for found in swapped):
+        if all(same(found) for found in swapped):
             entry = self.item('selection', na, nb, f'{self.head(na, nb)}: '
                               'source and destination swapped',
                               context=context)
