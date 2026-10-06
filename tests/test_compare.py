@@ -11,14 +11,9 @@ import mphkit as mk
 from mphkit import _compare
 from mphkit._compare import Table, Tolerance, match_tables, same_value
 
-# The stage-1 notice that applied entities and order are not compared yet
-LATER = 'not compared yet'
-
-
 def kinds(items):
     """The kinds of the items that are differences."""
-    return [i['kind'] for i in items if i['kind'] != 'note'
-            and not (i['kind'] == 'unchecked' and LATER in i['message'])]
+    return [i['kind'] for i in items if i['kind'] != 'note']
 
 
 ###################
@@ -622,6 +617,179 @@ def test_material_function_keys():
     assert 'expr is' in item['message'] and 'argders' in item['message']
 
 
+#####################################
+# Where nodes apply, and the order  #
+#####################################
+
+def applying(numbers, applied=None):
+    """Cube faces (1 to 6) that a node selects and where it applies."""
+    found = faces(*numbers)
+    if applied is not None:
+        found['applied'] = faces(*applied)['entities']
+    return found
+
+
+def test_applied_linked_to_its_cause():
+    # b adds temp2 on face 2, which takes it from temp1
+    a = described([node('temp1', 'TemperatureBoundary', applying((1, 2)))])
+    b = described([node('temp1', 'TemperatureBoundary',
+                        applying((1, 2), (1,))),
+                   node('temp2', 'TemperatureBoundary', faces(2))])
+    found = mk.compare(a, b)
+    assert kinds(found) == ['only_in_b']
+    [linked] = found[0]['consequences']
+    assert linked['kind'] == 'applied'
+    assert linked['causes'] == [found[0]['path']]
+    assert linked['numbers'] == {'a': [2], 'b': []}
+    assert found[0]['message'].endswith('(+1 consequences)')
+    # the other way round
+    [back] = mk.compare(b, a)[0]['consequences']
+    assert back['causes'] == [{'a': 'comp1/ht/temp2', 'b': None}]
+    # a hidden cause leaves what it explains
+    assert kinds(mk.compare(a, b, ignore={'only_in_b'})) == ['applied']
+    shown = mk.compare(a, b, ignore={'applied'})
+    assert 'consequences' not in shown[0]
+    assert shown[0]['message'].endswith('only in b')
+
+
+def test_applied_not_for_own_selection():
+    # temp1 also selects face 3 in b: a selection difference only
+    a = described([node('temp1', 'TemperatureBoundary',
+                        applying((1, 2), (1,))),
+                   node('temp2', 'TemperatureBoundary', faces(2))])
+    b = described([node('temp1', 'TemperatureBoundary',
+                        applying((1, 2, 3), (1, 3))),
+                   node('temp2', 'TemperatureBoundary', faces(2))])
+    assert kinds(mk.compare(a, b)) == ['selection']
+
+
+def test_applied_without_cause():
+    # a disabled node overrides nothing: no cause, at the top
+    a = described([node('temp1', 'TemperatureBoundary', applying((1, 2)))])
+    b = described([node('temp1', 'TemperatureBoundary',
+                        applying((1, 2), (1,))),
+                   node('temp2', 'TemperatureBoundary', faces(2),
+                        active=False)])
+    found = mk.compare(a, b)
+    assert kinds(found) == ['applied', 'only_in_b']
+    assert 'causes' not in found[0]
+
+
+def test_applied_under_interface():
+    # an interface only in b explains a difference only with couplings
+    def interface_b(model, couplings):
+        component = model['components'][0]
+        component['physics'].append({
+            'tag': 'ht2', 'path': 'comp1/ht2', 'identifier': 'ht2',
+            'type': 'HeatTransfer', 'label': 'Heat 2', 'active': True,
+            'settings': {}, 'defaults': {}, 'selection': {
+                'level': 'domain', 'geometry': 'geom1', 'entities': 'all'},
+            'features': [{**node('temp1', 'TemperatureBoundary', faces(2)),
+                          'path': 'comp1/ht2/temp1'}]})
+        component['multiphysics'] = couplings
+        return model
+
+    def model_b(couplings):
+        return interface_b(described([node(
+            'temp1', 'TemperatureBoundary', applying((1, 2), (1,)))]),
+            couplings)
+
+    a = described([node('temp1', 'TemperatureBoundary', applying((1, 2)))])
+    assert kinds(mk.compare(a, model_b([]))) == ['applied', 'only_in_b']
+    coupling = {**node('te1', 'Coupling', {
+        'level': 'domain', 'geometry': 'geom1', 'entities': 'all'}),
+        'path': 'comp1/te1'}
+    b = model_b([coupling])
+    found = mk.compare(a, b)
+    assert kinds(found) == ['only_in_b', 'only_in_b']
+    assert found[0]['path']['b'] == 'comp1/ht2'
+    assert [c['kind'] for c in found[0]['consequences']] == ['applied']
+
+
+def test_disabled_interface():
+    # a disabled interface: its features read as disabled, and no longer
+    # override each other
+    def model(active):
+        made = described([
+            node('temp1', 'TemperatureBoundary',
+                 applying((1, 2), (1, 2) if not active else (1,)),
+                 active=active),
+            node('temp2', 'TemperatureBoundary', faces(2), active=active)])
+        made['components'][0]['physics'][0]['active'] = active
+        return made
+
+    found = mk.compare(model(True), model(False))
+    assert kinds(found) == ['active']
+    assert sorted(c['kind'] for c in found[0]['consequences']) == \
+        ['active', 'active', 'applied']
+    assert kinds(mk.compare(model(False), model(False))) == []
+
+
+def test_material_overridden():
+    def material(tag, entities, applied=None):
+        selection = {'level': 'domain', 'geometry': 'geom1',
+                     'entities': entities}
+        if applied is not None:
+            selection['applied'] = applied
+        return {'tag': tag, 'path': f'comp1/{tag}', 'type': 'Common',
+                'label': tag, 'active': True, 'properties': {},
+                'defaults': {}, 'component': 'comp1',
+                'selection': selection, 'selections': {}, 'features': [],
+                'groups': {}}
+
+    first = box((0, 1), (0, 1), (0, 1), 1.0)
+    second = box((1, 2), (0, 1), (0, 1), 1.0)
+    shapes = [geometry([first, second], cube_faces())]
+    a = described(geometries=shapes, materials=[material('mat1', 'all')])
+    b = described(geometries=copy.deepcopy(shapes), materials=[
+        material('mat1', 'all', [first]), material('mat2', [second])])
+    found = mk.compare(a, b)
+    assert kinds(found) == ['only_in_b']
+    assert found[0]['consequences'][0]['path']['a'] == 'comp1/mat1'
+
+
+def test_order():
+    def mesh(*tags):
+        made = {'tag': 'mesh1', 'path': 'comp1/mesh1', 'label': 'Mesh 1',
+                'geometry': 'geom1', 'automatic': False, 'features': []}
+        for tag in tags:
+            made['features'].append({
+                'tag': tag, 'path': f'comp1/mesh1/{tag}', 'type': 'FreeTet',
+                'label': tag, 'active': True, 'properties': {},
+                'defaults': {}, 'selection': faces(int(tag[-1])),
+                'selections': {}, 'features': []})
+        return [made]
+
+    a = described()
+    a['components'][0]['meshes'] = mesh('ftet1', 'ftet2', 'ftet3')
+    b = described()
+    b['components'][0]['meshes'] = mesh('ftet2', 'ftet1', 'ftet3')
+    [item] = mk.compare(a, b)[:1]
+    assert item['kind'] == 'order'
+    assert item['a'] == ['ftet1', 'ftet2', 'ftet3']
+    assert item['b'] == ['ftet2', 'ftet1', 'ftet3']
+    assert 'ftet2 (a mesh1/ftet2, b mesh1/ftet2) moved' in item['message']
+    assert kinds(mk.compare(a, b, ignore={'mesh'})) == []
+    assert kinds(mk.compare(b, a)) == ['order']
+
+
+def test_order_of_steps():
+    def study(*kinds):
+        return [{'tag': 'std1', 'path': 'std1', 'label': 'Study 1',
+                 'active': True, 'solver': {'status': 'automatic',
+                                            'sequence': None},
+                 'steps': [{'tag': kind.lower(), 'path': f'std1/{kind}',
+                            'type': kind, 'label': kind, 'active': True,
+                            'properties': {}, 'defaults': {},
+                            'selection': None, 'selections': {},
+                            'features': []} for kind in kinds]}]
+
+    a = described(studies=study('Stationary', 'Frequency'))
+    b = described(studies=study('Frequency', 'Stationary'))
+    assert kinds(mk.compare(a, b)) == ['order']
+    assert kinds(mk.compare(a, a)) == []
+
+
 def test_ignore_and_format():
     model = described()
     with pytest.raises(ValueError, match='does not know'):
@@ -696,8 +864,7 @@ def test_same_plate_built_otherwise(two):
     old, new = mk.describe(a), mk.describe(b)
     found = mk.compare(old, new)
     assert kinds(found) == [], [i['message'] for i in found]
-    assert not [i for i in found if i['kind'] == 'unchecked'
-                and LATER not in i['message']]
+    assert not [i for i in found if i['kind'] == 'unchecked']
     # read back from JSON: the same result
     again = mk.compare(json.loads(json.dumps(old)),
                        json.loads(json.dumps(new)))
@@ -708,8 +875,7 @@ def test_one_property(two):
     a, b = two
     heat_plate(a)
     heat_plate(b, h='20[W/(m^2*K)]')
-    [item] = [i for i in mk.compare(a, b) if i['kind'] != 'note'
-              and LATER not in i['message']]
+    [item] = [i for i in mk.compare(a, b) if i['kind'] != 'note']
     assert item['kind'] == 'property'
     assert item['name'] == 'h'
     assert (item['a'], item['b']) == ('h0', '20[W/(m^2*K)]')
@@ -761,7 +927,8 @@ def test_thicker_plate(two):
     [item] = found[:1]
     assert item['consequences']
     assert all(c['kind'] in ('selection', 'property', 'only_in_a',
-                             'only_in_b') for c in item['consequences'])
+                             'only_in_b', 'applied')
+               for c in item['consequences'])
 
 
 def test_moved_condition(two):
@@ -779,6 +946,95 @@ def test_moved_condition(two):
     assert kinds(found) == ['selection']
     assert found[0]['numbers']['a'] and found[0]['numbers']['b']
     assert 'x=0' in found[0]['message'] and 'x=100' in found[0]['message']
+    # the insulation now applies on the other face: a consequence
+    [linked] = found[0]['consequences']
+    assert linked['kind'] == 'applied'
+    assert linked['path']['a'].endswith('/ins1')
+    assert linked['causes'] == [found[0]['path']]
+    assert found[0]['message'].endswith('(+1 consequences)')
+
+
+def test_periodic_face_removed(two):
+    # b leaves out one face of the periodic condition: the insulation
+    # applies there instead, a consequence
+    for model, both in zip(two, (True, False)):
+        def periodic(model, geom, heat, both=both):
+            node = heat.create('PeriodicHeat', 2)
+            chosen = mk.sel.entities(geom, mk.sel.box(geom, 'boundary', y=0))
+            if both:
+                chosen += mk.sel.entities(
+                    geom, mk.sel.box(geom, 'boundary', y=50))
+            node.java.selection().set(chosen)
+        heat_plate(model, extra=periodic)
+    found = mk.compare(*two)
+    assert 'applied' not in kinds(found), [i['message'] for i in found]
+    [item] = [i for i in found if i.get('consequences')]
+    assert item['kind'] == 'selection'
+    [linked] = item['consequences']
+    assert linked['kind'] == 'applied'
+    assert linked['path']['a'].endswith('/ins1')
+    assert linked['causes'] == [item['path']]
+
+
+def test_overlap_order(two):
+    # two conditions that share a face, made in the other order: where
+    # they apply differs, and nothing else explains it
+    for model, reverse in zip(two, (False, True)):
+        def overlapping(model, geom, heat, reverse=reverse):
+            def make(planes):
+                node = heat.create('TemperatureBoundary', 2)
+                node.java.selection().set([
+                    n for plane in planes for n in mk.sel.entities(
+                        geom, mk.sel.box(geom, 'boundary', **plane))])
+            first, second = [{'y': 0}, {'z': 0}], [{'z': 0}, {'x': 100}]
+            for planes in ((second, first) if reverse else (first, second)):
+                make(planes)
+        heat_plate(model, extra=overlapping)
+    found = mk.compare(*two)
+    assert kinds(found) == ['applied', 'applied'], \
+        [i['message'] for i in found]
+    assert not any('causes' in i for i in found)
+
+
+def test_later_feature_disabled(two):
+    # temp2 takes the hot face from temp1 in a only
+    for model, active in zip(two, (True, False)):
+        def later(model, geom, heat, active=active):
+            node = heat.create('TemperatureBoundary', 2)
+            node.java.selection().set(mk.sel.entities(
+                geom, mk.sel.box(geom, 'boundary', x=0)))
+            node.java.active(active)
+        heat_plate(model, extra=later)
+    found = mk.compare(*two)
+    assert kinds(found) == ['active']
+    assert [c['path']['a'].rsplit('/', 1)[1]
+            for c in found[0]['consequences']] == ['temp1']
+
+
+def test_interface_disabled_in_one(two):
+    a, b = two
+    heat_plate(a)
+    heat_plate(b, extra=lambda model, geom, heat: heat.java.active(False))
+    found = mk.compare(a, b)
+    assert kinds(found) == ['active']
+    assert found[0]['path']['a'] == 'comp1/ht'
+    assert {c['kind'] for c in found[0]['consequences']} == \
+        {'active', 'applied'}
+
+
+def test_overridden_by_sibling(two):
+    # b's second solid takes domain 2 from solid1 and its subnodes
+    a, b = two
+    for model in two:
+        geom = two_blocks(model)
+        heat = (model/'physics').create('HeatTransfer', geom)
+    solid = heat.create('SolidHeatTransferModel', 3)
+    solid.java.selection().set([2])
+    found = mk.compare(a, b)
+    assert kinds(found) == ['only_in_b']
+    linked = [c['path']['a'] for c in found[0]['consequences']]
+    assert 'comp1/ht/solid1' in linked
+    assert all(c['kind'] == 'applied' for c in found[0]['consequences'])
 
 
 def test_operators_by_name(two):
@@ -1065,6 +1321,16 @@ def test_assembly(two, partial):
     if partial:
         assert 'unchecked' in rest
     assert 'selection' not in rest
+    # union against assembly changes where the insulation and the
+    # continuity apply; both are explained
+    assert 'applied' not in rest
+    [cont] = [i for i in found if i['kind'] == 'active']
+    assert cont['path']['a'].endswith('/dcont1')
+    assert [c['path']['a'].rsplit('/', 1)[1]
+            for c in cont['consequences']] == ['ins1']
+    [pair] = [i for i in found if i['kind'] == 'only_in_a']
+    assert [c['path']['a'].rsplit('/', 1)[1]
+            for c in pair['consequences']] == ['dcont1']
 
 
 def test_library_material(two):

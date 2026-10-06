@@ -873,8 +873,7 @@ def test_readme(solved):
     assert namespace['old_settings'] == namespace['new_settings'] == \
         mk.describe(model)
     # the same model: only what compare leaves out
-    assert {d['kind'] for d in namespace['differences']} == \
-        {'unchecked', 'note'}
+    assert {d['kind'] for d in namespace['differences']} == {'note'}
 
 
 def test_docstring_example(solved, monkeypatch, tmp_path):

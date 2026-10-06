@@ -90,13 +90,27 @@ def compare(a, b, /, *, tolerance: float = 1e-6, ignore=(),
     has it from its defaults), 'expression' (same value, but one side
     uses parameters or leaves out the unit), 'variable', 'active',
     'selection' (with the entity `numbers` that differ; `same_applied:
-    True` if both apply to the same entities), 'solver' and 'label';
-    then 'unchecked' (what could not be compared, e.g. unknown defaults)
-    and 'note'. A 'property' item with `used_only: True` lists values
-    one side sets and uses while the other's settings leave them unused
-    (e.g. sizes of a mesh node with `custom` on in one model, next to the
-    `custom` item itself). Places are in each model's length unit;
-    comparisons are in SI.
+    True` if both apply to the same entities), 'applied' (where a node
+    applies differs in the entities both models select: another node
+    overrides it in one of them), 'order' (of mesh operations or study
+    steps; the nodes that moved), 'solver' and 'label'; then 'unchecked'
+    (what could not be compared, e.g. unknown defaults) and 'note'. A
+    'property' item with `used_only: True` lists values one side sets
+    and uses while the other's settings leave them unused (e.g. sizes of
+    a mesh node with `custom` on in one model, next to the `custom` item
+    itself). Places are in each model's length unit; comparisons are in
+    SI.
+
+    An 'applied' item goes into the `consequences` of the item that
+    explains it, its first `causes` (the paths of all candidates): a
+    node of the same interface (of any interface where the component has
+    couplings) or the same component's materials that selects other
+    entities, is only in one model or enabled in one only, or a pair for
+    a node that applies on pairs only, covering every entity where it
+    differs. A selection explains its own level only; an interface on in
+    one model only explains all levels. Nodes under a node disabled in
+    one model are in its 'active' item. Messages end in '(+N
+    consequences)'.
 
     Where a geometry differs, what follows from it is in the geometry
     item's `consequences` (fix the geometry first): selections that
@@ -112,11 +126,11 @@ def compare(a, b, /, *, tolerance: float = 1e-6, ignore=(),
     Labels and library entries of materials (`material_info: True`, e.g.
     'sys' against a library's 'none' or a function's derivatives) are
     hidden unless `show` names 'label' or 'material_info'; `show` wins
-    over `ignore`.
+    over `ignore`. The consequences of a hidden item take its place.
 
-    Not compared: results, where nodes apply when features overlap and
-    the order of mesh operations and study steps (both noted as
-    'unchecked'), expressions COMSOL cannot evaluate other than as
+    Not compared: results, the order of physics features and materials
+    (where they apply is: a cause may come before the node it
+    overrides), expressions COMSOL cannot evaluate other than as
     written ('2*a' and 'a*2' differ), the two faces of a pair in an
     assembly and other entities with the same box and size (they are one
     row of the table), a probe's name used as a variable, the same mass
@@ -157,22 +171,55 @@ def _described(side, name: str) -> dict:
 
 
 def _filtered(items: list[dict], hidden: set[str]) -> list[dict]:
-    """Leaves out what `ignore` names, also among consequences, and the
-    internal keys (starting with '_')."""
+    """
+    Leaves out what `ignore` names, also among consequences (what a
+    hidden item explains moves up in its place), counts the consequences
+    left in the message and drops the internal keys (starting with '_').
+    """
+    return _stripped(_kept(items, hidden))
+
+
+def _kept(items: list[dict], hidden: set[str]) -> list[dict]:
     found = []
     for item in items:
+        consequences = _kept(item['consequences'], hidden) \
+            if 'consequences' in item else None
         if item['kind'] in hidden or \
                 ('empty' in hidden and item.get('empty')) or \
                 ('same_applied' in hidden and item.get('same_applied')) or \
                 ('material_info' in hidden and item.get('material_info')) \
                 or ('mesh' in hidden and item.get('_mesh')):
+            found.extend(consequences or [])
             continue
+        item = dict(item)
+        if consequences is not None:
+            item['consequences'] = consequences
+            count = len(consequences)
+            if count:
+                item['message'] += f' (+{count} consequences' + (
+                    ': fix the geometry first)' if item['kind'] == 'geometry'
+                    else ')')
+            elif item['kind'] != 'geometry':
+                del item['consequences']
+        found.append(item)
+    found.sort(key=_section)
+    return found
+
+
+def _stripped(items: list[dict]) -> list[dict]:
+    found = []
+    for item in items:
         item = {key: value for key, value in item.items()
                 if not key.startswith('_')}
         if 'consequences' in item:
-            item['consequences'] = _filtered(item['consequences'], hidden)
+            item['consequences'] = _stripped(item['consequences'])
         found.append(item)
     return found
+
+
+def _section(item: dict) -> tuple:
+    return (SECTIONS.get(item['kind'], 2), item['kind'] == 'only_in_b',
+            item.get('_order', 0))
 
 
 ##########
@@ -579,6 +626,7 @@ class GeometryPair:
         self.dims = level_dims(ga['dimension'])
         self.tables: dict[tuple[int, str], Table] = {}
         self.matches: dict[str, tuple] = {}
+        self.cell_maps: dict[tuple[int, str], dict] = {}
         # whether the shapes differ (set by the comparison)
         self.differs = False
 
@@ -685,13 +733,15 @@ class GeometryPair:
         common = 0.0
         only_a: set[int] = set()
         only_b: set[int] = set()
-        for cell_a, cell_b in cells:
+        differing: set = set()
+        for index, (cell_a, cell_b) in enumerate(cells):
             in_a, in_b = cell_a & rows_a, cell_b & rows_b
             if in_a == cell_a and in_b == cell_b:
                 common += ta.size(cell_a)
             elif in_a or in_b:
                 only_a |= in_a
                 only_b |= in_b
+                differing.add(index)
         # what differs in entities both geometries have, and in the rest
         inside = (set(only_a), set(only_b))
         rest_a = sorted(rows_a & set(left_a))
@@ -701,20 +751,103 @@ class GeometryPair:
         else:
             only_a |= set(rest_a)
             only_b |= set(rest_b)
+            differing.add('rest')
         total = max(ta.size(rows_a), tb.size(rows_b))
         found: dict[str, Any] = {
             'same': not only_a and not only_b,
             'overlap': common / total if total else 1.0, 'unknown': False}
         if not found['same']:
-            found.update(_rows_found(level, ta, tb, only_a, only_b))
-            if self.differs:
-                found['inside'] = _rows_found(level, ta, tb, *inside) \
-                    if inside[0] or inside[1] else None
-                found['elsewhere'] = sum(
-                    len(table.rows[r]['numbers'])
-                    for rows, table in ((only_a - inside[0], ta),
-                                        (only_b - inside[1], tb))
-                    for r in rows)
+            found['cells'] = differing
+            found.update(self.split(level, only_a, only_b, inside))
+        return found
+
+    def split(self, level: str, only_a: set, only_b: set,
+              inside: tuple[set, set]) -> dict:
+        """The rows that differ, and where the shapes differ, the part in
+        entities both geometries have ('inside', None if none) and how
+        many other entities differ ('elsewhere')."""
+        ta, tb = self.table(0, level), self.table(1, level)
+        found = _rows_found(level, ta, tb, only_a, only_b)
+        if self.differs:
+            found['inside'] = _rows_found(level, ta, tb, *inside) \
+                if inside[0] or inside[1] else None
+            found['elsewhere'] = sum(
+                len(table.rows[r]['numbers'])
+                for rows, table in ((only_a - inside[0], ta),
+                                    (only_b - inside[1], tb))
+                for r in rows)
+        return found
+
+    def cell_of(self, side: int, level: str) -> dict:
+        """A level's rows of one side by the cell they are in, 'rest' for
+        rows without a counterpart."""
+        key = (side, level)
+        if key not in self.cell_maps:
+            cells, left_a, left_b = self.match(level)
+            found: dict = {row: 'rest' for row in (left_a, left_b)[side]}
+            for index, cell in enumerate(cells):
+                for row in cell[side]:
+                    found[row] = index
+            self.cell_maps[key] = found
+        return self.cell_maps[key]
+
+    def applied(self, sa: dict, sb: dict) -> dict | None:
+        """
+        Compares where two nodes apply, in the cells where they select the
+        same entities (a node's own change of selection is a selection
+        difference). Returns None if they apply alike, else the rows that
+        differ as `selection` does, with the differing `cells` (indices,
+        'rest' for the rows without a counterpart).
+        """
+        level = sa['level']
+        ea, eb = sa.get('entities'), sb.get('entities')
+        aa, ab = sa.get('applied', ea), sb.get('applied', eb)
+        ta, tb = self.table(0, level), self.table(1, level)
+        rows: list[set[int]] = []
+        for table, places in ((ta, ea), (tb, eb), (ta, aa), (tb, ab)):
+            found_rows = table.rows_of(places) \
+                if isinstance(places, (list, str)) else None
+            if found_rows is None:
+                return None
+            rows.append(found_rows)
+        rows_a, rows_b, applied_a, applied_b = rows
+        cells, left_a, left_b = self.match(level)
+        only_a: set[int] = set()
+        only_b: set[int] = set()
+        differing: set = set()
+
+        def alike(cell_a, cell_b, in_a, in_b) -> bool:
+            return (in_a == cell_a and in_b == cell_b) or \
+                (not in_a and not in_b)
+
+        for index, (cell_a, cell_b) in enumerate(cells):
+            if not alike(cell_a, cell_b, cell_a & rows_a, cell_b & rows_b):
+                continue
+            in_a, in_b = cell_a & applied_a, cell_b & applied_b
+            if not alike(cell_a, cell_b, in_a, in_b):
+                only_a |= in_a
+                only_b |= in_b
+                differing.add(index)
+        inside = (set(only_a), set(only_b))
+        rest_a, rest_b = set(left_a), set(left_b)
+        if rest_a or rest_b:
+            selected = (rows_a & rest_a, rows_b & rest_b)
+            if (ea == 'all' and eb == 'all') or alike(
+                    rest_a, rest_b, *selected) or same_region(
+                    ta, sorted(selected[0]), tb, sorted(selected[1]),
+                    self.tol):
+                in_a, in_b = applied_a & rest_a, applied_b & rest_b
+                if not alike(rest_a, rest_b, in_a, in_b) and \
+                        not same_region(ta, sorted(in_a), tb, sorted(in_b),
+                                        self.tol):
+                    only_a |= in_a
+                    only_b |= in_b
+                    differing.add('rest')
+        if not differing:
+            return None
+        found: dict[str, Any] = {'same': False, 'unknown': False,
+                                 'cells': differing}
+        found.update(self.split(level, only_a, only_b, inside))
         return found
 
 
@@ -910,18 +1043,26 @@ def words(described: dict) -> set[str]:
 
 class _Context:
     """Where two paired nodes are: their components (a's and b's tags),
-    whether in a mesh (and the geometries' length scales), and whether
-    the component's geometry differs or the pair is a guess by order."""
+    whether in a mesh (and the geometries' length scales), whether the
+    component's geometry differs or the pair is a guess by order, and the
+    bundle of nodes that override each other's entities (physics of an
+    interface or a component, materials of a component, pairs)."""
 
     def __init__(self, component=None, component_b=None, mesh=False,
-                 scales=(1.0, 1.0), differs=False, by_order=False):
+                 scales=(1.0, 1.0), differs=False, by_order=False,
+                 bundle=None):
         self.component, self.component_b = component, component_b
         self.mesh, self.scales = mesh, scales
         self.differs, self.by_order = differs, by_order
+        self.bundle = bundle
 
     def ordered(self) -> _Context:
         return _Context(self.component, self.component_b, self.mesh,
-                        self.scales, self.differs, True)
+                        self.scales, self.differs, True, self.bundle)
+
+    def bundled(self, bundle) -> _Context:
+        return _Context(self.component, self.component_b, self.mesh,
+                        self.scales, self.differs, self.by_order, bundle)
 
 
 class _Comparison:
@@ -945,6 +1086,13 @@ class _Comparison:
         self.count = 0
         self.components = ({c['tag'] for c in a.get('components', [])},
                            {c['tag'] for c in b.get('components', [])})
+        # each side's components by tag; tree positions of nodes by path
+        self.component_nodes = {
+            (side, c['tag']): c for side, described in (('a', a), ('b', b))
+            for c in described.get('components', [])}
+        self.ranks: dict[str, dict[str, int]] = {
+            side: _tree_ranks(described)
+            for side, described in (('a', a), ('b', b))}
 
     def run(self) -> list[dict]:
         self.compare_parameters()
@@ -959,11 +1107,11 @@ class _Comparison:
         self.pair_studies()
         for compare, args in self.pending:
             compare(*args)
+        self.fold_children()
+        self.link()
         self.add_notes()
         self.fold()
-        self.items.sort(key=lambda item: (
-            SECTIONS.get(item['kind'], 2),
-            item['kind'] == 'only_in_b', item['_order']))
+        self.items.sort(key=_section)
         return self.items
 
     # Items
@@ -983,6 +1131,7 @@ class _Comparison:
                 entry['_mesh'] = True
             entry['_component'] = context.component
             entry['_fold'] = fold
+            entry['_bundle'] = context.bundle
         entry['_order'] = self.count
         self.count += 1
         self.items.append(entry)
@@ -1008,10 +1157,12 @@ class _Comparison:
         if empty:
             message += ' (selects nothing)'
         extra = {'empty': True} if empty else {}
-        self.item(f'only_in_{side}', na, nb, message,
-                  a=node if side == 'a' else None,
-                  b=node if side == 'b' else None, context=context,
-                  fold=fold, **extra)
+        entry = self.item(f'only_in_{side}', na, nb, message,
+                          a=node if side == 'a' else None,
+                          b=node if side == 'b' else None, context=context,
+                          fold=fold, **extra)
+        if context.bundle is not None and node.get('active') is not False:
+            entry['_area'] = self.area(side, node)
 
     def head(self, na, nb) -> str:
         """
@@ -1352,7 +1503,8 @@ class _Comparison:
         for ca, cb, context in components:
             in_a = [m for m in materials_a if m.get('component') == ca['tag']]
             in_b = [m for m in materials_b if m.get('component') == cb['tag']]
-            for na, nb, ctx in self.pair(in_a, in_b, context,
+            bundled = context.bundled(('material', ca['tag']))
+            for na, nb, ctx in self.pair(in_a, in_b, bundled,
                                          kind=_material_kind):
                 self.translator.add('material', nb['tag'], na['tag'])
                 for node, used in ((na, used_a), (nb, used_b)):
@@ -1384,6 +1536,7 @@ class _Comparison:
                                 info=frozenset(MATERIAL_INFO))
         self.compare_active(na, nb, context)
         self.compare_selection(na, nb, context)
+        self.compare_applied(na, nb, context)
         groups_a, groups_b = self.groups(na, 'a'), self.groups(nb, 'b')
         for gtag in list(groups_a) + [g for g in groups_b
                                       if g not in groups_a]:
@@ -1454,19 +1607,27 @@ class _Comparison:
     def pair_component(self, ca: dict, cb: dict, context: _Context):
         component = context.component
         for na, nb, ctx in self.pair(ca.get('pairs', []),
-                                     cb.get('pairs', []), context):
+                                     cb.get('pairs', []),
+                                     context.bundled(('pair', component))):
             self.translator.add('pair', nb['tag'], na['tag'])
             self.later(self.compare_pair, na, nb, ctx)
+        # couplings override the features of the interfaces they couple,
+        # and do not say which: then all of the component's physics are
+        # one bundle; else each interface is one
+        coupled = bool(ca.get('multiphysics') or cb.get('multiphysics'))
+        bundle = ('physics', component) if coupled else None
         interfaces = self.pair(ca.get('physics', []), cb.get('physics', []),
-                               context)
+                               context.bundled(bundle))
         for na, nb, _ in interfaces:
             self.translator.add('physics', nb['tag'], na['tag'])
             self.translator.add('identifier', nb.get('identifier'),
                                 na.get('identifier'))
         for na, nb, ctx in interfaces:
-            self.pair_interface(na, nb, ctx)
+            self.pair_interface(na, nb, ctx.bundled(
+                bundle or ('physics', component, na['tag'])))
         for na, nb, ctx in self.pair(ca.get('multiphysics', []),
-                                     cb.get('multiphysics', []), context):
+                                     cb.get('multiphysics', []),
+                                     context.bundled(bundle)):
             self.translator.add('multiphysics', nb['tag'], na['tag'])
             self.later(self.compare_node, na, nb, ctx)
         self.pair_meshes(ca, cb, context)
@@ -1491,20 +1652,48 @@ class _Comparison:
         self.later(self.compare_interface, na, nb, context)
         self.later(self.compare_rows, na, nb, rows_a, rows_b, context)
 
-    def pair_features(self, list_a, list_b, context, owner_b) -> list:
+    def pair_features(self, list_a, list_b, context, owner_b,
+                      ordered=None) -> list:
         """Pairs features (also of features) and records their tags under
-        the interface's identifier and tag in model b."""
+        the interface's identifier and tag in model b. With the nodes
+        that hold the lists as `ordered`, also compares their order."""
         pairs = self.pair(list_a, list_b, context)
         for key in (owner_b.get('identifier'), owner_b.get('tag')):
             if key:
                 tags = self.translator.features.setdefault(key, {})
                 for fa, fb, _ in pairs:
                     tags[fb['tag']] = fa['tag']
+        if ordered is not None:
+            owner_a, owner_b = ordered
+            self.compare_order(owner_a, owner_b, list_b, pairs, context)
         for fa, fb, ctx in pairs:
             self.later(self.compare_node, fa, fb, ctx, False)
             self.pair_features(fa.get('features', []),
-                               fb.get('features', []), ctx, owner_b)
+                               fb.get('features', []), ctx, owner_b,
+                               None if ordered is None else (fa, fb))
         return pairs
+
+    def compare_order(self, owner_a: dict, owner_b: dict, list_b: list,
+                      pairs: list, context: _Context):
+        """
+        Reports paired nodes in another order (mesh operations, study
+        steps): the ones outside the longest run in the same order (the
+        first such run in a's order) moved.
+        """
+        positions = [next(k for k, node in enumerate(list_b) if node is fb)
+                     for _, fb, _ in pairs]
+        kept = _longest_run(positions)
+        if len(kept) == len(pairs):
+            return
+        moved = [self.head(fa, fb) for k, (fa, fb, _) in enumerate(pairs)
+                 if k not in kept]
+        in_b = [pairs[k][1]['tag'] for k in
+                sorted(range(len(pairs)), key=positions.__getitem__)]
+        self.item('order', owner_a, owner_b,
+                  f'{self.head(owner_a, owner_b)}: order differs: '
+                  f'{", ".join(moved)} moved',
+                  a=[fa['tag'] for fa, _, _ in pairs], b=in_b,
+                  context=context)
 
     def pair_meshes(self, ca: dict, cb: dict, context: _Context):
         geometries = self.translator.maps['geometry']
@@ -1539,7 +1728,7 @@ class _Comparison:
                           a=ma.get('size_level'), b=mb.get('size_level'),
                           context=ctx)
             self.pair_features(ma.get('features', []),
-                               mb.get('features', []), ctx, {})
+                               mb.get('features', []), ctx, {}, (ma, mb))
 
     # Studies
 
@@ -1554,6 +1743,7 @@ class _Comparison:
             self.translator.add('sequence', sequence_b, sequence_a)
         for sa, sb, ctx in studies:
             steps = self.pair(sa.get('steps', []), sb.get('steps', []), ctx)
+            self.compare_order(sa, sb, sb.get('steps', []), steps, ctx)
             tags = self.translator.steps.setdefault(sb['tag'], {})
             for fa, fb, _ in steps:
                 tags[fb['tag']] = fa['tag']
@@ -1655,6 +1845,7 @@ class _Comparison:
         self.compare_label(na, nb, context)
         self.compare_values(na, nb, context)
         self.compare_selection(na, nb, context)
+        self.compare_applied(na, nb, context)
         for name in list(na.get('selections') or {}) + [
                 n for n in (nb.get('selections') or {})
                 if n not in (na.get('selections') or {})]:
@@ -1687,22 +1878,30 @@ class _Comparison:
                    for s, t in (('source', 'destination'),
                                 ('destination', 'source'))]
         if all(found['same'] for found in swapped):
-            self.item('selection', na, nb, f'{self.head(na, nb)}: source and '
-                      'destination swapped', context=context)
+            entry = self.item('selection', na, nb, f'{self.head(na, nb)}: '
+                              'source and destination swapped',
+                              context=context)
+            entry['_area'] = self.area('a', na) | self.area('b', nb)
             return
         for side, found in zip(('source', 'destination'), straight):
             if not found['same'] and not found['unknown']:
-                self.selection_item('selection', na, nb,
-                                    f'{self.head(na, nb)}: {side} differs: ',
-                                    found, context, a=na.get(side),
-                                    b=nb.get(side))
+                entry = self.selection_item(
+                    'selection', na, nb, f'{self.head(na, nb)}: {side} '
+                    'differs: ', found, context, a=na.get(side),
+                    b=nb.get(side))
+                entry['_area'] = _area_of(na.get(side), found)
 
     def compare_active(self, na, nb, context):
         if na.get('active', True) != nb.get('active', True):
-            self.item('active', na, nb, f'{self.head(na, nb)}: active in '
-                      f'{"a" if na.get("active", True) else "b"} only',
-                      a=na.get('active'), b=nb.get('active'),
-                      context=context)
+            side = 'a' if na.get('active', True) else 'b'
+            entry = self.item('active', na, nb, f'{self.head(na, nb)}: '
+                              f'active in {side} only', a=na.get('active'),
+                              b=nb.get('active'), context=context)
+            entry['_on'] = side
+            if context.bundle is not None:
+                # what the enabled one covers (a disabled node overrides
+                # nothing; its own entities read as if it were enabled)
+                entry['_area'] = self.area(side, na if side == 'a' else nb)
 
     def compare_label(self, na, nb, context):
         if na.get('label') != nb.get('label'):
@@ -1738,12 +1937,46 @@ class _Comparison:
             ending = '; applies nowhere in either' if \
                 applied_a == [] and applied_b == [] else \
                 '; applies to the same entities'
-        self.selection_item('selection', na, nb,
-                            f'{self.head(na, nb)}: {what} differs: ', found,
-                            context, ending, a=sa, b=sb, **extra)
+        entry = self.selection_item(
+            'selection', na, nb, f'{self.head(na, nb)}: {what} differs: ',
+            found, context, ending, a=sa, b=sb, **extra)
+        if name is None:
+            entry['_area'] = _area_of(sa, found)
+
+    def compare_applied(self, na: dict, nb: dict, context: _Context):
+        """
+        Reports where two nodes of a bundle (physics, materials) apply
+        differently in the entities both select: another node overrides
+        them in one model only (linked to its cause later).
+        """
+        if context.bundle is None or context.bundle[0] == 'pair':
+            return
+        sa, sb = na.get('selection'), nb.get('selection')
+        if not isinstance(sa, dict) or not isinstance(sb, dict):
+            return
+        level = sa.get('level')
+        if level != sb.get('level') or level in LEVELS_ONLY or \
+                level == 'several':
+            return
+        gtag = str(sa.get('geometry'))
+        pair = self.geometries.get(gtag)
+        if pair is None or level not in pair.dims or \
+                self.translator.maps['geometry'].get(
+                    str(sb.get('geometry'))) != gtag:
+            return
+        found = pair.applied(sa, sb)
+        if found is None:
+            return
+        entry = self.selection_item(
+            'applied', na, nb, f'{self.head(na, nb)}: applies differently: ',
+            found, context, a=sa, b=sb)
+        cells = found['cells'] - {'rest'} if pair.differs else found['cells']
+        entry['_area'] = {(gtag, level, cell) for cell in cells}
+        entry['_selections'] = (sa, sb)
 
     def selection_item(self, kind: str, na, nb, head: str, found: dict,
-                       context: _Context, ending: str = '', **extra):
+                       context: _Context, ending: str = '',
+                       **extra) -> dict:
         """
         Reports a selection that differs. Where the geometry differs, a
         difference only in entities without a counterpart follows from it
@@ -1764,9 +1997,10 @@ class _Comparison:
                     extra['elsewhere'] = found['elsewhere']
                     tail = (f' (+{found["elsewhere"]} entities without a '
                             'counterpart)')
-        self.item(kind, na, nb, f'{head}{shown_part["text"]}{tail}{ending}',
-                  context=context, fold=fold, **_numbers(shown_part),
-                  **extra)
+        return self.item(kind, na, nb,
+                         f'{head}{shown_part["text"]}{tail}{ending}',
+                         context=context, fold=fold, **_numbers(shown_part),
+                         **extra)
 
     def compare_values(self, na: dict, nb: dict, context: _Context,
                        key: str = 'properties', skip=frozenset(),
@@ -1937,6 +2171,141 @@ class _Comparison:
                               f'{shown(row_b.get(key))} in b', a=x,
                               b=row_b.get(key), context=context, name=name)
 
+    # Where nodes apply, and why it differs
+
+    def cover(self, side: str, selection) -> set:
+        """The cells a selection applies to, as (a's geometry, level,
+        cell index or 'rest')."""
+        if not isinstance(selection, dict):
+            return set()
+        level = selection.get('level')
+        places = selection.get('applied', selection.get('entities'))
+        gtag = selection.get('geometry')
+        if side == 'b':
+            gtag = self.translator.maps['geometry'].get(str(gtag))
+        pair = self.geometries.get(str(gtag)) if gtag is not None else None
+        if pair is None or level not in pair.dims or \
+                not (isinstance(places, list) or places == 'all'):
+            return set()
+        index = 0 if side == 'a' else 1
+        rows = pair.table(index, level).rows_of(places)
+        if rows is None:
+            return set()
+        cells = pair.cell_of(index, level)
+        return {(gtag, level, cells[row]) for row in rows}
+
+    def area(self, side: str, node: dict) -> set:
+        """
+        Where a node can change where others apply: its own entities; for
+        a pair its source and destination; for an interface those of all
+        its features and of the component's couplings.
+        """
+        if 'source' in node or 'destination' in node:
+            return self.cover(side, node.get('source')) | \
+                self.cover(side, node.get('destination'))
+        if 'identifier' not in node:
+            return self.cover(side, node.get('selection'))
+        found = set()
+        for feature in _features(node):
+            found |= self.cover(side, feature.get('selection'))
+        component = self.component_nodes.get(
+            (side, str(node.get('path', '')).partition('/')[0]), {})
+        for coupling in component.get('multiphysics', []):
+            found |= self.cover(side, coupling.get('selection'))
+        return found
+
+    def fold_children(self):
+        """
+        Moves the `active` items of nodes under a node disabled in the
+        same model into the outermost such node's item (COMSOL reads all
+        nodes under a disabled one as disabled).
+        """
+        actives = {item['path']['a']: item for item in self.items
+                   if item['kind'] == 'active' and item['path']['a']}
+        kept = []
+        for item in self.items:
+            parent = None
+            if item['kind'] == 'active' and item['path']['a']:
+                parts = item['path']['a'].split('/')
+                for end in range(1, len(parts)):
+                    found = actives.get('/'.join(parts[:end]))
+                    if found is not None and found.get('_on') == \
+                            item.get('_on'):
+                        parent = found
+                        break
+            if parent is None:
+                kept.append(item)
+            else:
+                parent.setdefault('consequences', []).append(item)
+        self.items = kept
+
+    def link(self):
+        """
+        Moves each `applied` item into the item that explains it: of the
+        same bundle (or a pair, for a node that applies only on pairs),
+        covering all of the cells where it differs. Prefers one that stays
+        at the top, then one that covers it alone, then the first in the
+        model tree; all candidates are in its `causes`.
+        """
+        causes = [item for item in self.items if item.get('_area') and
+                  item['kind'] in ('selection', 'active', 'only_in_a',
+                                   'only_in_b')]
+        kept = []
+        for item in self.items:
+            if item['kind'] != 'applied' or item.get('_fold') or \
+                    not item.get('_area'):
+                kept.append(item)
+                continue
+            area = item['_area']
+            found = [c for c in causes if c['_component'] ==
+                     item['_component'] and c['path'] != item['path'] and
+                     c['_area'] & area and self.may_cause(c, item)]
+            covered = set().union(*(c['_area'] for c in found))
+            if not found or not area <= covered:
+                kept.append(item)
+                continue
+            found.sort(key=lambda c: (
+                bool(c.get('_fold')) and c['_component'] in self.differing,
+                not area <= c['_area'], self.rank(c)))
+            item['causes'] = [c['path'] for c in found]
+            found[0].setdefault('consequences', []).append(item)
+        self.items = kept
+
+    def may_cause(self, cause: dict, item: dict) -> bool:
+        """Whether a node can change where another applies: the same
+        bundle, or a pair for a node that applies on pairs only."""
+        if cause['_bundle'] == item['_bundle']:
+            return True
+        if (cause['_bundle'] or ('',))[0] != 'pair' or \
+                item['_bundle'][0] != 'physics':
+            return False
+        pairs = {}
+        for side in 'ab':
+            component = item['_component'] if side == 'a' else \
+                self.translator_component(item['_component'])
+            node = self.component_nodes.get((side, component), {})
+            pairs[side] = set().union(*(
+                self.area(side, pair) for pair in node.get('pairs', [])))
+        sa, sb = item['_selections']
+        return self.cover('a', sa) <= pairs['a'] and \
+            self.cover('b', sb) <= pairs['b']
+
+    def translator_component(self, component_a) -> str | None:
+        for b_tag, a_tag in self.translator.maps['component'].items():
+            if a_tag == component_a:
+                return b_tag
+        return None
+
+    def rank(self, item: dict) -> tuple:
+        """Where an item's node is in the model tree: a's nodes first,
+        then the nodes only b has."""
+        path_a, path_b = item['path']['a'], item['path']['b']
+        if path_a in self.ranks['a']:
+            return (0, self.ranks['a'][path_a])
+        if path_b in self.ranks['b']:
+            return (1, self.ranks['b'][path_b])
+        return (2, item['_order'])
+
     # Notes and folding
 
     def add_notes(self):
@@ -1949,9 +2318,6 @@ class _Comparison:
                 na, nb = (node, None) if side == 'a' else (None, node)
                 self.item('note' if kind == 'model_changed' else 'unchecked',
                           na, nb, f'{side}: {note.get("message")}')
-        self.item('unchecked', None, None,
-                  'Where nodes apply when features overlap and the order of '
-                  'mesh operations and study steps are not compared yet.')
         self.item('note', None, None, 'Results (plots, datasets, tables) '
                   'are not compared.')
 
@@ -1965,12 +2331,66 @@ class _Comparison:
                 target['consequences'].append(item)
             else:
                 kept.append(item)
-        for target in self.differing.values():
-            count = len(target['consequences'])
-            if count:
-                target['message'] += (f' (+{count} consequences: fix the '
-                                      'geometry first)')
         self.items = kept
+
+
+def _longest_run(positions: list[int]) -> set[int]:
+    """The indices of the longest increasing run of positions, the one
+    with the smallest indices among equally long ones."""
+    count = len(positions)
+    longest = [1] * count
+    for i in range(count - 1, -1, -1):
+        for j in range(i + 1, count):
+            if positions[j] > positions[i]:
+                longest[i] = max(longest[i], longest[j] + 1)
+    need = max(longest, default=0)
+    found: set[int] = set()
+    last = None
+    for i in range(count):
+        if need and longest[i] == need and \
+                (last is None or positions[i] > positions[last]):
+            found.add(i)
+            last = i
+            need -= 1
+    return found
+
+
+def _area_of(selection, found: dict) -> set:
+    """The cells where a selection differs, as `cover` gives them."""
+    if not isinstance(selection, dict):
+        return set()
+    return {(selection.get('geometry'), selection.get('level'), cell)
+            for cell in found.get('cells', ())}
+
+
+def _features(node: dict):
+    for feature in node.get('features', []):
+        yield feature
+        yield from _features(feature)
+
+
+def _tree_ranks(described: dict) -> dict[str, int]:
+    """The paths of the nodes that override each other, in tree order:
+    pairs, physics with their features, couplings, materials."""
+    found: dict[str, int] = {}
+
+    def add(node):
+        path = node.get('path') if isinstance(node, dict) else None
+        if isinstance(path, str) and path not in found:
+            found[path] = len(found)
+
+    for component in described.get('components', []):
+        for pair in component.get('pairs', []):
+            add(pair)
+        for interface in component.get('physics', []):
+            add(interface)
+            for feature in _features(interface):
+                add(feature)
+        for coupling in component.get('multiphysics', []):
+            add(coupling)
+    for material in described.get('materials', []):
+        add(material)
+    return found
 
 
 def _path(node) -> str | None:
