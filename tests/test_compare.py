@@ -71,7 +71,8 @@ def described(features=(), geometries=None, parameters=None, **extra):
                  {'level': 'domain', 'geometry': 'geom1',
                   'entities': 'all'},
                  'features': list(features)}
-    found = {'format': _describe.FORMAT, 'parameters': parameters or {}, 'functions': [],
+    found = {'format': _describe.FORMAT, 'parameters': parameters or {},
+             'functions': [],
              'variables': [], 'couplings': [], 'coordinates': [],
              'materials': [], 'definitions': [], 'probes': [],
              'components': [{'tag': 'comp1', 'label': 'Component 1',
@@ -452,7 +453,11 @@ def test_solution_tags():
     b = described(studies=study('sol3'), solutions=['sol1', 'sol3'])
     assert kinds(mk.compare(a, b)) == []
     b = described(studies=study('sol3', 'su2'), solutions=['sol1', 'sol3'])
-    assert kinds(mk.compare(a, b)) == ['solver', 'solver']
+    found = mk.compare(a, b)
+    assert kinds(found) == ['solver', 'solver']
+    assert found[0]['message'].endswith(
+        'solver su1 (StoreSolution) property sol ["sol2"] (COMSOL: '
+        '["sol2"]) only in a')
 
 
 def test_exterior():
@@ -695,7 +700,7 @@ def test_applied_linked_to_its_cause():
     assert linked['kind'] == 'applied'
     assert linked['causes'] == [found[0]['path']]
     assert linked['numbers'] == {'a': [2], 'b': []}
-    assert found[0]['message'].endswith('(+1 consequences)')
+    assert found[0]['message'].endswith('(+1 consequence)')
     # the other way round
     [back] = mk.compare(b, a)[0]['consequences']
     assert back['causes'] == [{'a': 'comp1/ht/temp2', 'b': None}]
@@ -774,8 +779,9 @@ def test_disabled_interface():
 
     found = mk.compare(model(True), model(False))
     assert kinds(found) == ['active']
+    # a disabled node's own entities read as if enabled: no 'applied'
     assert sorted(c['kind'] for c in found[0]['consequences']) == \
-        ['active', 'active', 'applied']
+        ['active', 'active']
     assert kinds(mk.compare(model(False), model(False))) == []
 
 
@@ -823,6 +829,7 @@ def test_order():
     assert item['a'] == ['ftet1', 'ftet2', 'ftet3']
     assert item['b'] == ['ftet2', 'ftet1', 'ftet3']
     assert 'ftet2 (a mesh1/ftet2, b mesh1/ftet2) moved' in item['message']
+    assert item['message'].endswith('; b: ftet2, ftet1, ftet3')
     assert kinds(mk.compare(a, b, ignore={'mesh'})) == []
     assert kinds(mk.compare(b, a)) == ['order']
 
@@ -842,6 +849,143 @@ def test_order_of_steps():
     b = described(studies=study('Frequency', 'Stationary'))
     assert kinds(mk.compare(a, b)) == ['order']
     assert kinds(mk.compare(a, a)) == []
+
+
+def test_file_names_and_words():
+    # tags of steps and meshes are not tags before a dot; file names keep
+    # theirs
+    step = {'tag': 'param', 'path': 'std1/param', 'type': 'Parametric',
+            'label': 'Parametric Sweep', 'active': True,
+            'properties': {'filename': 'C:\\Users\\x\\param.mph'},
+            'defaults': {'filename': ''}, 'selection': None,
+            'selections': {}, 'features': []}
+    study = [{'tag': 'std1', 'path': 'std1', 'label': 'Study 1',
+              'active': True, 'steps': [step],
+              'solver': {'status': 'automatic', 'sequence': None}}]
+    model = described(studies=study)
+    assert 'param' not in _compare.words(model)
+    assert mk.compare(model, copy.deepcopy(model)) == []
+    translator = _compare.Translator({'comp2'}, {'comp1'})
+    translator.add('component', 'comp1', 'comp2')
+    assert translator.value('1/comp1.k') == '1/comp2.k'
+    assert translator.value('q/comp1.A') == 'q/comp2.A'
+    assert translator.value('/home/u/comp1.mph') == '/home/u/comp1.mph'
+    assert translator.value('C:\\data\\comp1.mph') == \
+        'C:\\data\\comp1.mph'
+
+
+def test_component_only_in_b():
+    # b's comp1 has no partner; its comp2 is a's comp1: a variable of b's
+    # comp1 is not paired with one of a's comp1
+    def variables(component, value):
+        return {'tag': 'var1', 'path': f'{component}/var1', 'label': 'var1',
+                'active': True, 'component': component,
+                'variables': {'T0': value}, 'selection': {'level': 'global'}}
+
+    cube = geometry([box((0, 1), (0, 1), (0, 1), 1.0)], cube_faces())
+    flat = {**geometry([box((0, 1), (0, 1), (0, 0), 1.0)], []),
+            'dimension': 2, 'bounding_box': {'x': [0, 1], 'y': [0, 1]}}
+    a = described(variables=[variables('comp1', '300[K]')])
+    b = described(variables=[variables('comp2', '300[K]'),
+                             variables('comp1', '999[K]')])
+    component = b['components'][0]
+    b['components'] = [
+        {**component, 'tag': 'comp1', 'geometries': [flat], 'physics': []},
+        {**component, 'tag': 'comp2', 'geometries': [cube]}]
+    found = mk.compare(a, b)
+    assert 'variable' not in kinds(found)
+    [only] = [i for i in found if i['kind'] == 'only_in_b'
+              and i.get('name') == 'T0']
+    assert only['path']['b'] == 'comp1/var1'
+    [component_only] = [i for i in found if i['message'].endswith(
+        'component only in b')]
+    assert component_only['path'] == {'a': None, 'b': 'comp1'}
+    back = mk.compare(b, a)
+    assert sorted(kinds(back)) == sorted(
+        k.replace('only_in_b', 'only_in_a') for k in kinds(found))
+
+
+@pytest.mark.parametrize('one, other, expected', [
+    ('not asked', 'not asked', []), ('not asked', 'automatic', []),
+    ('not asked', 'compared', ['note']),
+    ('not asked', 'not compared', ['note', 'unchecked']),
+    ('compared', 'automatic', []),
+    ('not compared', 'compared', ['unchecked']),
+    ('not compared', 'not compared', ['unchecked', 'unchecked'])])
+def test_solver_statuses(one, other, expected):
+    def study(status):
+        return [{'tag': 'std1', 'path': 'std1', 'label': 'Study 1',
+                 'active': True, 'steps': [],
+                 'solver': {'status': status, 'sequence': 'sol1',
+                            'reason': 'mesh not built', 'changes': []}}]
+
+    found = mk.compare(described(studies=study(one)),
+                       described(studies=study(other)))
+    assert sorted(i['kind'] for i in found) == sorted(expected)
+
+
+def test_arguments_and_order():
+    a = described(parameters={'L': {'expression': '1', 'value': 1,
+                                    'unit': '1'}})
+    b = described([node('hf1', 'HeatFluxBoundary', faces(1))])
+    assert mk.compare(a, b, ignore='only_in_b') == \
+        mk.compare(a, b, ignore={'only_in_b'})
+    with pytest.raises(ValueError, match='does not know'):
+        mk.compare(a, b, show={'parameter'})
+    with pytest.raises(ValueError, match='tolerance'):
+        mk.compare(a, b, tolerance=-1)
+    # a parameter only in a comes before the nodes
+    assert kinds(mk.compare(b, a)) == ['only_in_b', 'only_in_a']
+    assert kinds(mk.compare(a, b)) == ['only_in_a', 'only_in_b']
+    assert mk.compare(b, a)[0]['path']['b'] == 'parameters/L'
+
+
+def test_mesh_units():
+    # sizes in the length unit scale; levels and counts do not
+    def model(unit, scale, hmax, hauto, layers):
+        made = described(geometries=[geometry(
+            [box((0, 1 / scale), (0, 1 / scale), (0, 1 / scale),
+                 1 / scale**3)], cube_faces(0, 1 / scale), unit=unit,
+            scale=scale)])
+        made['components'][0]['meshes'] = [{
+            'tag': 'mesh1', 'path': 'comp1/mesh1', 'label': 'Mesh 1',
+            'geometry': 'geom1', 'automatic': False, 'features': [
+                {'tag': 'size', 'path': 'comp1/mesh1/size', 'type': 'Size',
+                 'label': 'Size', 'active': True,
+                 'properties': {'hmax': hmax, 'hauto': hauto,
+                                'blnlayers': layers},
+                 'defaults': {}, 'selection': None, 'selections': {},
+                 'features': []}]}]
+        return made
+
+    a = model('m', 1.0, 0.1, 5, 4)
+    b = model('mm', 1e-3, 100.0, 5, 4)
+    assert kinds(mk.compare(a, b)) == []
+    b = model('mm', 1e-3, 100.0, 4, 8)
+    assert sorted(i['name'] for i in mk.compare(a, b)) == \
+        ['blnlayers', 'hauto']
+
+
+def test_unchecked_kept_apart():
+    # two reasons for one node: both kept
+    selection = {'level': 'several', 'levels': ['boundary', 'domain'],
+                 'entities': 'unknown'}
+    a = described([node('hf1', 'HeatFluxBoundary', selection,
+                        {'q0': '1'}, {})])
+    b = described([node('hf1', 'HeatFluxBoundary', selection, {}, {})])
+    found = [i['message'] for i in mk.compare(a, b)
+             if i['kind'] == 'unchecked']
+    assert len(found) == 2
+    assert any('defaults unknown' in m for m in found)
+    assert any('selection not compared' in m for m in found)
+
+
+def test_messages_read_plainly():
+    place = {'x': [-3.9e-19, 0.04], 'y': [0.0, 0.04], 'z': [-0.06, -0.06]}
+    assert _compare.place_text(place) == 'x 0..0.04, y 0..0.04, z=-0.06'
+    assert _compare.shown(None) == '(none)'
+    assert _compare.numbers('range(0,1e-7,1)') is None
+    assert _compare.numbers('range(0,0.5,1)') == [0, 0.5, 1]
 
 
 def test_ignore_and_format():
@@ -1005,7 +1149,7 @@ def test_moved_condition(two):
     assert linked['kind'] == 'applied'
     assert linked['path']['a'].endswith('/ins1')
     assert linked['causes'] == [found[0]['path']]
-    assert found[0]['message'].endswith('(+1 consequences)')
+    assert found[0]['message'].endswith('(+1 consequence)')
 
 
 def test_periodic_face_removed(two):
@@ -1072,8 +1216,9 @@ def test_interface_disabled_in_one(two):
     found = mk.compare(a, b)
     assert kinds(found) == ['active']
     assert found[0]['path']['a'] == 'comp1/ht'
-    assert {c['kind'] for c in found[0]['consequences']} == \
-        {'active', 'applied'}
+    # the features read as disabled too; where disabled nodes apply is
+    # not compared
+    assert {c['kind'] for c in found[0]['consequences']} == {'active'}
 
 
 def test_overridden_by_sibling(two):
@@ -1382,9 +1527,10 @@ def test_assembly(two, partial):
     assert cont['path']['a'].endswith('/dcont1')
     assert [c['path']['a'].rsplit('/', 1)[1]
             for c in cont['consequences']] == ['ins1']
+    # the continuity is off in the union: where it applies is not
+    # compared, its 'active' item says it
     [pair] = [i for i in found if i['kind'] == 'only_in_a']
-    assert [c['path']['a'].rsplit('/', 1)[1]
-            for c in pair['consequences']] == ['dcont1']
+    assert 'consequences' not in pair
 
 
 def test_library_material(two):

@@ -34,7 +34,18 @@ NAME_KEYS = frozenset({'funcname', 'opname', 'probename', 'funcnametable'})
 # Material properties that describe a library entry, not the material
 MATERIAL_INFO = ('sys', 'argders')
 # Mesh size properties in the geometry's length unit
-LENGTH_KEYS = frozenset({'hmax', 'hmin'})
+LENGTH_KEYS = frozenset({'hmax', 'hmin', 'blhmin', 'blhtot', 'cellsize'})
+# Mesh numbers that do not depend on the length unit (measured: equal
+# defaults in a geometry in m and in mm)
+PLAIN_MESH_KEYS = frozenset({
+    'adapsolnum', 'blhminfact', 'blnlayers', 'blstretch', 'buildtime',
+    'dimension', 'elemcount', 'elementspar', 'elemratio', 'globalminpar',
+    'hauto', 'hcurve', 'hgrad', 'hmeshgrad', 'hnarrow', 'horder',
+    'layerdec', 'maxcoarsening', 'maxrefinement', 'minangle', 'numcell',
+    'numelem', 'numrefine', 'refinement', 'scale', 'smoothmaxdepth',
+    'smoothmaxiter', 'splitangle', 'splitdivangle', 'splitminangle',
+    'trimmaxangle', 'trimminangle', 'weights', 'worstpar', 'xscale',
+    'yscale', 'zscale'})
 # Relative tolerances: sizes (rendering meshes), values, boxes of curved
 # pieces measured on different seams
 SIZE_RTOL = 1e-3
@@ -46,46 +57,53 @@ WORD = re.compile(r'[A-Za-z_][A-Za-z0-9_]*')
 PATH = re.compile(r'[A-Za-z_]\w*(/[A-Za-z_]\w*)+')
 NUMBER = re.compile(r'[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?')
 RANGE = re.compile(r'range\(([^(),]+),([^(),]+),([^(),]+)\)')
+# A file name: with a backslash, or from the root, home or a drive
+FILE = re.compile(r'.*\\|/|\./|~|[A-Za-z]:[\\/]')
 
 
-def compare(a, b, /, *, tolerance: float = 1e-6, ignore=(),
-            show=()) -> list[dict]:
+def compare(a: Model | dict, b: Model | dict, /, *,
+            tolerance: float = 1e-6, ignore: str | Iterable[str] = (),
+            show: str | Iterable[str] = ()) -> list[dict]:
     """
     Returns the differences between the settings of two models, as a
     list of dicts, e.g. to check a script that rebuilds a model made in
     the COMSOL Desktop:
 
     ```python
-    differences = mk.compare(old, model)
-    for d in differences:
-        if d['kind'] != 'note':
-            print(d['kind'], d['message'])
+    for d in mk.compare(old, model):
+        print(d['kind'], d['message'])
     # property Temperature 1 (a ht/temp1, b ht/temp3): T0 is 100[degC]
     #     in a, 50[degC] in b
     ```
 
-    `a` and `b` are models or results of `mk.describe` (also read back
-    from JSON); describe a model with `solver=True` to compare solvers
-    too. Nodes are paired without their tags or order: by name where
+    `a` and `b` are models or results of `mk.describe` (also read back from
+    JSON); the list is empty where nothing differs. Solvers are compared
+    when both models are described with `solver=True` (a model without a
+    solver sequence counts as COMSOL's own); a note says so when only one
+    was. Nodes are paired without their tags or order: by name where
     expressions call them by name (parameters, variables, functions,
-    operators, probes, mass properties, global equations), else by type
-    and where their selections lie, on a table that pairs the entities
-    of the two geometries by bounding box and size (also where a face is
-    split into pieces differently); a node that selects nothing pairs
-    with one of the same tag and label. Values are compared after model
-    b's tags in them are translated to model a's (`ht2.T`, `comp2.`, an
-    operator called by another name, `mass1.mass`); values COMSOL
-    evaluates to the same SI value and unit are equal ('100[degC]' and
-    '373.15[K]'), lists like 'range(0,0.1,1)' are compared by their
-    numbers.
+    operators, probes, mass properties, global equations), else by type and
+    where their selections lie, on a table that pairs the entities of the
+    two geometries by bounding box and size (also where a face is split into
+    pieces differently); a node that selects nothing pairs with one of the
+    same tag and label. Values are compared after model b's tags in them are
+    translated to model a's (`ht2.T`, `comp2.`, an operator called by
+    another name, `mass1.mass`); values COMSOL evaluates to the same SI
+    value and unit are equal ('100[degC]' and '373.15[K]'), lists like
+    'range(0,0.1,1)' are compared by their numbers.
 
     Each item has `kind`, `path` and `label` (each {'a', 'b'}; None on
     the side that lacks it), `message` (one line, naming each side's
     path without its component) and the values `a` and `b` as each
-    model has them. Kinds, in this order: 'parameter', 'geometry'
-    (dimension, bounding box, entities without a counterpart, union
-    against assembly), then per node 'only_in_a', 'only_in_b' (`a` or
-    `b` holds the whole node; `empty: True` if it selects nothing),
+    model has them. Items come in this order: parameters, geometries
+    (and components only one model has), the differences of nodes, then
+    'unchecked' and 'note'; within each, what only model b has comes
+    last. Kinds: 'parameter', 'geometry' (dimension, bounding box,
+    entities without a counterpart, union against assembly),
+    'only_in_a', 'only_in_b' (`a` or `b` holds the whole node; `empty:
+    True` if it selects nothing; a component only one model has is one
+    item for its geometries, physics, couplings, meshes, pairs, mass
+    properties and materials),
     'property' (`name` of the setting; `from_default: True` if one side
     has it from its defaults), 'expression' (same value, but one side
     uses parameters or leaves out the unit), 'variable', 'active',
@@ -110,19 +128,21 @@ def compare(a, b, /, *, tolerance: float = 1e-6, ignore=(),
     differs. A selection explains its own level only; an interface on in
     one model only explains all levels. Nodes under a node disabled in
     one model are in its 'active' item. Messages end in '(+N
-    consequences)'.
+    consequences)'; `causes` may name an item `ignore` hides.
 
-    Where a geometry differs, what follows from it is in the geometry
-    item's `consequences` (fix the geometry first): selections that
-    differ only in entities without a counterpart, and mesh sizes `hmax`
-    and `hmin` from the defaults. A selection that also differs in
-    entities both geometries have stays at the top with those entities
-    only; `elsewhere` counts the others. Settings stay at the top; a node
-    paired only by order there has `matched_by_order: True` and its
-    messages end in '(paired by order)'.
+    Where a geometry differs, what follows from it is in the geometry item's
+    `consequences` (fix the geometry first): selections that differ only in
+    entities without a counterpart, nodes only one model has where the other
+    has some of that type, and mesh lengths (`hmax`, `hmin`, boundary layer
+    thicknesses) from the defaults. A selection that also differs in
+    entities both geometries have stays at the top with those entities only;
+    `elsewhere` counts the others. Settings stay at the top; a node paired
+    only by order there has `matched_by_order: True` and its messages end in
+    '(paired by order)'.
 
     `tolerance` is relative to the size of the geometries. `ignore` takes
-    kinds and 'empty', 'mesh' (all of the meshes) and 'same_applied'.
+    kinds and 'empty', 'mesh' (all of the meshes) and 'same_applied'
+    (one name or several).
     Labels and library entries of materials (`material_info: True`, e.g.
     'sys' against a library's 'none' or a function's derivatives) are
     hidden unless `show` names 'label' or 'material_info'; `show` wins
@@ -134,21 +154,34 @@ def compare(a, b, /, *, tolerance: float = 1e-6, ignore=(),
     written ('2*a' and 'a*2' differ), the two faces of a pair in an
     assembly and other entities with the same box and size (they are one
     row of the table), a probe's name used as a variable, the same mass
-    properties name in two components, and tags in properties other than
-    the ones of nodes, physics, materials, coordinate systems, pairs,
-    studies and solvers (e.g. load groups).
+    properties name in two components, where boundary elements apply on
+    the exterior (domain 0; where they select it is compared), tags in
+    file names with a relative path ('data/comp1.mph'), and tags in
+    properties other than the ones of nodes, physics, materials,
+    coordinate systems, pairs, studies and solvers (e.g. load groups).
     """
-    names = set(ignore) | set(show)
-    unknown = names - IGNORABLE - SHOWABLE - set(KINDS)
+    ignored, shown_ = _names(ignore), _names(show)
+    unknown = (ignored - IGNORABLE - SHOWABLE - set(KINDS)) | \
+        (shown_ - SHOWABLE)
     if unknown:
         raise ValueError(
             f'mk.compare does not know {sorted(unknown)}; ignore takes '
             f'{sorted(IGNORABLE | set(KINDS))}, show takes '
             f'{sorted(SHOWABLE)}.')
+    if isinstance(tolerance, bool) or \
+            not isinstance(tolerance, (int, float)) or \
+            not math.isfinite(tolerance) or tolerance < 0:
+        raise ValueError(f'mk.compare takes a tolerance of 0 or more, not '
+                         f'{tolerance!r}.')
     found = _Comparison(_described(a, 'a'), _described(b, 'b'),
                         tolerance).run()
-    hidden = (set(ignore) | {'label', 'material_info'}) - set(show)
+    hidden = (ignored | {'label', 'material_info'}) - shown_
     return _filtered(found, hidden)
+
+
+def _names(value) -> set[str]:
+    """The names given to `ignore` or `show`: one name or several."""
+    return {value} if isinstance(value, str) else set(value)
 
 
 KINDS = ('parameter', 'geometry', 'only_in_a', 'only_in_b', 'property',
@@ -196,7 +229,8 @@ def _kept(items: list[dict], hidden: set[str]) -> list[dict]:
             item['consequences'] = consequences
             count = len(consequences)
             if count:
-                item['message'] += f' (+{count} consequences' + (
+                item['message'] += f' (+{count} consequence' + \
+                    ('s' if count > 1 else '') + (
                     ': fix the geometry first)' if item['kind'] == 'geometry'
                     else ')')
             elif item['kind'] != 'geometry':
@@ -218,8 +252,8 @@ def _stripped(items: list[dict]) -> list[dict]:
 
 
 def _section(item: dict) -> tuple:
-    return (SECTIONS.get(item['kind'], 2), item['kind'] == 'only_in_b',
-            item.get('_order', 0))
+    part = item.get('_part', SECTIONS.get(item['kind'], 2))
+    return (part, item['kind'] == 'only_in_b', item.get('_order', 0))
 
 
 ##########
@@ -259,10 +293,12 @@ def numbers(text: str) -> list[float] | None:
                 return None
             slack = 1e-9 * abs(step)
             count = 0
-            while count < 10**6:
+            while True:
                 value = start + count * step
                 if (value - stop) * math.copysign(1, step) > slack:
                     break
+                if count >= 10**6:
+                    return None     # too long to compare value by value
                 found.append(value)
                 count += 1
         elif NUMBER.fullmatch(token):
@@ -346,7 +382,8 @@ def same_value(a, b, si_a=None, si_b=None,
             if '1' in (si_a.get('unit'), si_b.get('unit')):
                 return 'expression'
         return 'property'
-    if _number(a) and _number(b):
+    if isinstance(a, (int, float)) and isinstance(b, (int, float)) and \
+            not isinstance(a, bool) and not isinstance(b, bool):
         return None if close(float(a), float(b)) else 'property'
     return None if a == b and type(a) is type(b) else 'property'
 
@@ -375,6 +412,8 @@ def _close_values(x, y) -> bool:
 
 def shown(value, limit: int = 80) -> str:
     """Writes a value for a message, cut to `limit` characters."""
+    if value is None:
+        return '(none)'
     text = value if isinstance(value, str) else json.dumps(value)
     return text if len(text) <= limit else text[:limit - 3] + '...'
 
@@ -383,10 +422,17 @@ def place_text(place: dict) -> str:
     """Writes the box of an entity, e.g. 'x=100, y 0..50, z 0..10'."""
     if 'unknown' in place:
         return f'entity {place["unknown"]} (not measured)'
+    # single precision noise next to large coordinates reads as 0
+    scale = max([abs(v) for axis in AXES if axis in place
+                 for v in place[axis]] + [0.0])
+
+    def plain(value: float) -> float:
+        return 0.0 if abs(value) <= 1e-9 * scale else value
+
     parts = []
     for axis in AXES:
         if axis in place:
-            low, high = place[axis]
+            low, high = (plain(v) for v in place[axis])
             parts.append(f'{axis}={low:.6g}' if low == high
                          else f'{axis} {low:.6g}..{high:.6g}')
     return ', '.join(parts)
@@ -428,10 +474,8 @@ class Table:
         self.rows: list[dict] = []
         self.row_of: dict[int, int] = {}
         self.by_place: dict[str, int] = {}
-        self.unknown: list[int] = []
         for number, place in enumerate(places, 1):
             if 'unknown' in place:
-                self.unknown.append(number)
                 continue
             key = place_key(place)
             if key in self.by_place:
@@ -909,14 +953,17 @@ class Translator:
                 return self.maps[kind][value]
         return None
 
-    def value(self, value, component: str | None = None):
-        """Translates a value of model b: tags, lists, step maps."""
+    def value(self, value, component=None):
+        """Translates a value of model b: tags, lists, step maps (not
+        file names)."""
         if isinstance(value, str):
             found = self.whole(value)
             if found is not None:
                 return found
             if PATH.fullmatch(value):
                 return self.path(value)
+            if FILE.match(value):
+                return value
             return self.expression(value, component)
         if isinstance(value, list):
             return [self.value(item, component) for item in value]
@@ -1015,25 +1062,23 @@ class Translator:
 
 
 def words(described: dict) -> set[str]:
-    """All tags, identifiers and names of a description."""
+    """
+    The tags a model writes before a dot in expressions: components,
+    geometries, physics identifiers, couplings, materials, coordinate
+    systems, pairs and mass properties names.
+    """
     found: set[str] = set()
-
-    def walk(value):
-        if isinstance(value, dict):
-            for key in ('tag', 'identifier'):
-                if isinstance(value.get(key), str):
-                    found.add(value[key])
-            found.update(n for n in value.get('names', [])
-                         if isinstance(value.get('names'), list))
-            for item in value.values():
-                walk(item)
-        elif isinstance(value, list):
-            for item in value:
-                walk(item)
-
-    walk({key: described.get(key) for key in (
-        'functions', 'couplings', 'coordinates', 'materials',
-        'definitions', 'probes', 'components', 'studies')})
+    for key in ('materials', 'coordinates'):
+        found.update(n['tag'] for n in described.get(key, []) if 'tag' in n)
+    for component in described.get('components', []):
+        found.add(component['tag'])
+        for key in ('geometries', 'multiphysics', 'pairs'):
+            found.update(n['tag'] for n in component.get(key, [])
+                         if 'tag' in n)
+        found.update(p['identifier'] for p in component.get('physics', [])
+                     if p.get('identifier'))
+        for node in component.get('mass_properties', []):
+            found.update(node.get('names') or [])
     return found
 
 
@@ -1118,13 +1163,16 @@ class _Comparison:
 
     def item(self, kind: str, na, nb, message: str, a=None, b=None,
              context: _Context | None = None, fold: bool = False,
-             **extra) -> dict:
+             section: int | None = None, **extra) -> dict:
         entry = {'kind': kind,
                  'path': {'a': _path(na), 'b': _path(nb)},
                  'label': {'a': _label(na), 'b': _label(nb)},
                  'message': message, 'a': a, 'b': b, **extra}
+        if section is not None:
+            entry['_part'] = section
         if context is not None:
-            if context.by_order:
+            # a node only one model has was not paired at all
+            if context.by_order and not kind.startswith('only_in'):
                 entry['matched_by_order'] = True
                 entry['message'] += ' (paired by order)'
             if context.mesh:
@@ -1139,7 +1187,7 @@ class _Comparison:
 
     def unchecked(self, side: str, node, message: str,
                   context: _Context | None = None):
-        key = (side, _path(node))
+        key = (side, _path(node), message)
         if key in self.unchecked_paths:
             return
         self.unchecked_paths.add(key)
@@ -1202,7 +1250,7 @@ class _Comparison:
                 self.item(f'only_in_{side}', na, nb,
                           f'parameter {name} only in {side}',
                           a=entry if side == 'a' else None,
-                          b=entry if side == 'b' else None)
+                          b=entry if side == 'b' else None, section=0)
                 continue
             ea, eb = pa[name], pb[name]
             found = same_value(ea['expression'], eb['expression'],
@@ -1213,7 +1261,7 @@ class _Comparison:
                           node, node,
                           f'parameter {name} is {shown(ea["expression"])} '
                           f'in a, {shown(eb["expression"])} in b',
-                          a=ea['expression'], b=eb['expression'])
+                          a=ea['expression'], b=eb['expression'], section=0)
 
     # Components and geometries
 
@@ -1247,12 +1295,16 @@ class _Comparison:
                                            differs=differs)))
         for i, ca in enumerate(ca_list):
             if i not in used_a:
-                self.item('only_in_a', ca, None,
-                          f'{self.head(ca, None)}: component only in a', a=ca)
+                node = {'path': ca['tag'], 'label': ca.get('label')}
+                self.item('only_in_a', node, None,
+                          f'{self.head(node, None)}: component only in a',
+                          a=ca, section=1)
         for j, cb in enumerate(cb_list):
             if j not in used_b:
-                self.item('only_in_b', None, cb,
-                          f'{self.head(None, cb)}: component only in b', b=cb)
+                node = {'path': cb['tag'], 'label': cb.get('label')}
+                self.item('only_in_b', None, node,
+                          f'{self.head(None, node)}: component only in b',
+                          b=cb, section=1)
         return found
 
     def pair_geometries(self, ca: dict, cb: dict) -> bool:
@@ -1314,8 +1366,8 @@ class _Comparison:
                         (None, geometry)
                     self.item(f'only_in_{side}', na, nb,
                               f'{self.head(na, nb)}: geometry only in {side}',
-                              a=na, b=nb, context=_Context(ca['tag'],
-                                                           cb['tag']))
+                              a=na, b=nb, section=1,
+                              context=_Context(ca['tag'], cb['tag']))
                     differs = True
         return differs
 
@@ -1466,17 +1518,15 @@ class _Comparison:
     def pair_lists(self, keys, named: bool = False, kind: str | None = None):
         """Pairs the nodes of model-wide lists (functions, ...), within
         each component, and records their names and tags."""
-        components = self.translator.maps['component']
         for key in keys:
             list_a, list_b = self.a.get(key, []), self.b.get(key, [])
             scopes = dict.fromkeys(
                 [n.get('component') for n in list_a] +
-                [components.get(n.get('component'), n.get('component'))
-                 for n in list_b])
+                [self.scope_b(n.get('component')) for n in list_b])
             for scope in scopes:
                 in_a = [n for n in list_a if n.get('component') == scope]
-                in_b = [n for n in list_b if components.get(
-                    n.get('component'), n.get('component')) == scope]
+                in_b = [n for n in list_b
+                        if self.scope_b(n.get('component')) == scope]
                 scope_b = in_b[0].get('component') if in_b else None
                 context = self.context_of(scope, scope_b)
                 for na, nb, ctx in self.pair(in_a, in_b, context, named):
@@ -1488,6 +1538,14 @@ class _Comparison:
                     if kind:
                         self.translator.add(kind, nb['tag'], na['tag'])
                     self.later(self.compare_node, na, nb, ctx)
+
+    def scope_b(self, component):
+        """Where a node of model b is, as a's component: a component
+        without a partner in a is a scope of its own."""
+        if component is None:
+            return None
+        return self.translator.maps['component'].get(component,
+                                                     ('b only', component))
 
     def context_of(self, component, component_b) -> _Context:
         return _Context(component, component_b,
@@ -1535,7 +1593,7 @@ class _Comparison:
 
     def compare_material(self, na: dict, nb: dict, context: _Context):
         if na.get('type') == nb.get('type'):
-            self.compare_values(na, nb, context, skip={'link'},
+            self.compare_values(na, nb, context, skip=frozenset({'link'}),
                                 info=frozenset(MATERIAL_INFO))
         self.compare_active(na, nb, context)
         self.compare_selection(na, nb, context)
@@ -1642,16 +1700,14 @@ class _Comparison:
                                       na.get('names') or []):
                 self.translator.add('massprop', name_b, name_a)
             self.later(self.compare_node, na, nb, ctx)
-        del component
 
     def pair_interface(self, na: dict, nb: dict, context: _Context):
         rows_a = [f for f in na.get('features', []) if 'rows' in f]
         rows_b = [f for f in nb.get('features', []) if 'rows' in f]
-        features = self.pair_features(
+        self.pair_features(
             [f for f in na.get('features', []) if 'rows' not in f],
             [f for f in nb.get('features', []) if 'rows' not in f],
             context, nb)
-        del features
         self.later(self.compare_interface, na, nb, context)
         self.later(self.compare_rows, na, nb, rows_a, rows_b, context)
 
@@ -1694,7 +1750,7 @@ class _Comparison:
                 sorted(range(len(pairs)), key=positions.__getitem__)]
         self.item('order', owner_a, owner_b,
                   f'{self.head(owner_a, owner_b)}: order differs: '
-                  f'{", ".join(moved)} moved',
+                  f'{", ".join(moved)} moved; b: {", ".join(in_b)}',
                   a=[fa['tag'] for fa, _, _ in pairs], b=in_b,
                   context=context)
 
@@ -1781,8 +1837,20 @@ class _Comparison:
         solver_a, solver_b = sa.get('solver') or {}, sb.get('solver') or {}
         statuses = {solver_a.get('status'), solver_b.get('status')}
         if 'not asked' in statuses:
-            self.item('note', sa, sb, f'{self.head(sa, sb)}: solvers not '
-                      'compared; describe both with solver=True')
+            # one model's solver was read: say how to compare them; a
+            # model without a sequence (COMSOL's own) needs no reading
+            for side, solver, other, study in (
+                    ('a', solver_a, solver_b, sa),
+                    ('b', solver_b, solver_a, sb)):
+                if solver.get('status') == 'not asked' and \
+                        other.get('status') in ('compared', 'not compared'):
+                    self.item('note', sa, sb, f'{self.head(sa, sb)}: '
+                              f'solvers not compared; describe {side} with '
+                              'solver=True')
+                elif solver.get('status') == 'not compared':
+                    self.unchecked(side, study,
+                                   f'{self.side_head(side, study)}: solver '
+                                   f'not compared: {solver.get("reason")}')
             return
         if not statuses <= {'compared', 'automatic'}:
             for side, solver, study in (('a', solver_a, sa),
@@ -1800,10 +1868,14 @@ class _Comparison:
             other = keys_b if side == 'a' else keys_a
             for key, change in keys.items():
                 if key not in other:
+                    values = ', '.join(
+                        f'{name} {shown(pair[0], 40)} (COMSOL: '
+                        f'{shown(pair[1], 40)})' for name, pair in
+                        (change.get('properties') or {}).items())
                     self.item('solver', sa, sb,
                               f'{self.head(sa, sb)}: solver {change["path"]} '
-                              f'({change["type"]}) {change["change"]} '
-                              f'{shown(change.get("properties", ""))} only '
+                              f'({change["type"]}) {change["change"]}'
+                              f'{" " + values if values else ""} only '
                               f'in {side}',
                               a=change if side == 'a' else None,
                               b=change if side == 'b' else None)
@@ -1811,13 +1883,12 @@ class _Comparison:
     # Variables
 
     def compare_variables(self):
-        components = self.translator.maps['component']
         rows: dict[tuple, dict[str, list]] = {}
         for side, described in (('a', self.a), ('b', self.b)):
             for node in described.get('variables', []):
                 scope = node.get('component')
                 if side == 'b':
-                    scope = components.get(scope, scope)
+                    scope = self.scope_b(scope)
                 for name, expression in node.get('variables', {}).items():
                     rows.setdefault((scope, name), {'a': [], 'b': []})[
                         side].append((node, expression))
@@ -1835,8 +1906,9 @@ class _Comparison:
                               a=expression_a, context=context, name=name)
                     continue
                 left_b.remove(match)
-                self.compare_variable(name, node_a, expression_a, *match,
-                                      context)
+                node_b, expression_b = match
+                self.compare_variable(name, node_a, expression_a, node_b,
+                                      expression_b, context)
             for node_b, expression_b in left_b:
                 self.item('only_in_b', None, node_b,
                           f'variable {name} ({node_b["tag"]}) only in b',
@@ -1981,6 +2053,8 @@ class _Comparison:
         """
         if context.bundle is None or context.bundle[0] == 'pair':
             return
+        if na.get('active') is False or nb.get('active') is False:
+            return      # its 'active' item says it
         sa, sb = na.get('selection'), nb.get('selection')
         if not isinstance(sa, dict) or not isinstance(sb, dict):
             return
@@ -2046,6 +2120,7 @@ class _Comparison:
         if na.get('type') == 'MassProperties':
             skip = skip | {'name'}      # compared through the pairing
         blocked = []
+        in_units: list[str] = []
         translate = self.translator.value
         component_b = context.component_b
         for name in list(pa) + [n for n in pb if n not in pa]:
@@ -2077,8 +2152,7 @@ class _Comparison:
             found = self.compare_one(name, value_a, value_b, s_a, s_b,
                                      context)
             if found == 'unchecked':
-                self.unchecked('a', na, f'{self.head(na, nb)}: {name} is in '
-                               'the length units, which differ', context)
+                in_units.append(name)
             elif found:
                 extra = {'from_default': True} if from_default else {}
                 # a library material's own entry; a coordinate system only
@@ -2086,13 +2160,17 @@ class _Comparison:
                 if name in info and (name != 'sys' or
                                      'none' in (raw_a, raw_b)):
                     extra['material_info'] = True
-                # mesh sizes from the defaults follow the geometry's size
+                # mesh lengths from the defaults follow the geometry's size
                 fold = from_default and context.mesh and \
                     name in LENGTH_KEYS
                 self.item(found, na, nb,
                           f'{self.head(na, nb)}: {name} is {shown(raw_a)} '
                           f'in a, {shown(raw_b)} in b', a=raw_a, b=raw_b,
                           context=context, name=name, fold=fold, **extra)
+        if in_units:
+            self.unchecked('a', na, f'{self.head(na, nb)}: the length units '
+                           f'differ, not compared: {", ".join(in_units)}',
+                           context)
         if blocked:
             self.unchecked('a', na, f'{self.head(na, nb)}: defaults '
                            f'unknown, not compared: {", ".join(blocked)}',
@@ -2134,7 +2212,8 @@ class _Comparison:
             scale_a, scale_b = context.scales
             if name in LENGTH_KEYS:
                 value_a, value_b = value_a * scale_a, value_b * scale_b
-            elif scale_a != scale_b and not close(value_a, value_b):
+            elif name not in PLAIN_MESH_KEYS and scale_a != scale_b and \
+                    not close(value_a, value_b):
                 return 'unchecked'
         return same_value(value_a, value_b, si_a, si_b, self.parameters)
 
@@ -2348,8 +2427,6 @@ class _Comparison:
                 na, nb = (node, None) if side == 'a' else (None, node)
                 self.item('note' if kind == 'model_changed' else 'unchecked',
                           na, nb, f'{side}: {note.get("message")}')
-        self.item('note', None, None, 'Results (plots, datasets, tables) '
-                  'are not compared.')
 
     def fold(self):
         """Moves what a differing geometry causes into its item."""
@@ -2470,9 +2547,10 @@ def _with_exterior(found: dict, side: str) -> dict:
     found.setdefault('places', {'a': [], 'b': []})
     if 'elsewhere' in found:
         # both geometries have the exterior: never folded
-        inside = dict(found.get('inside') or {'numbers': {'a': [], 'b': []}})
+        inside: dict[str, Any] = dict(
+            found.get('inside') or {'numbers': {'a': [], 'b': []}})
         inside['text'] = ', '.join(
-            t for t in (inside.get('text'), text) if t)
+            str(t) for t in (inside.get('text'), text) if t)
         found['inside'] = inside
     return found
 

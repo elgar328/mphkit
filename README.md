@@ -165,7 +165,7 @@ can be matched by type and place, whatever their tags and order, and
 ```python
 old_settings = mk.describe(old)    # settings that differ from the defaults, by node
 new_settings = mk.describe(model)  # JSON-ready, e.g. to keep with the script
-differences = mk.compare(old_settings, new_settings)  # also takes models
+differences = mk.compare(old_settings, new_settings)  # [] if all alike
 ```
 
 Results of the solved
