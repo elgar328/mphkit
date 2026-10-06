@@ -476,6 +476,26 @@ def shown(value, limit: int = 80) -> str:
     return text if len(text) <= limit else text[:limit - 3] + '...'
 
 
+def same_text(a, b) -> bool:
+    """Tells whether two values read the same, white space aside."""
+    if isinstance(a, str) and isinstance(b, str):
+        return spaced(a) == spaced(b)
+    if isinstance(a, list) and isinstance(b, list):
+        return len(a) == len(b) and all(map(same_text, a, b))
+    return a == b
+
+
+def in_a_tags(raw_a, raw_b, translated_b, limit: int = 80) -> str:
+    """
+    The end of a message where b's value reads as a's but names other
+    nodes: b's value in a's tags ('ht' in b may be another interface than
+    in a); '' otherwise.
+    """
+    if translated_b != raw_b and same_text(raw_a, raw_b):
+        return f" (in a's tags: {shown(translated_b, limit)})"
+    return ''
+
+
 def place_text(place: dict) -> str:
     """Writes the box of an entity, e.g. 'x=100, y 0..50, z 0..10'."""
     if 'unknown' in place:
@@ -1715,10 +1735,12 @@ class _Comparison:
                 found = same_value(pa[key], value_b, si_a.get(key),
                                    si_b.get(key), self.parameters)
                 if found:
+                    ending = in_a_tags(pa[key], pb[key], value_b)
                     self.item(found, na, nb,
                               f'{head}: {key} is {shown(pa[key])} in a, '
-                              f'{shown(pb[key])} in b', a=pa[key], b=pb[key],
-                              context=context, group=gtag, name=key)
+                              f'{shown(pb[key])} in b{ending}', a=pa[key],
+                              b=pb[key], context=context, group=gtag,
+                              name=key)
                 continue
             side = 'a' if key in pa else 'b'
             target = info if key in MATERIAL_INFO or \
@@ -1745,7 +1767,9 @@ class _Comparison:
         if not names:
             return
         parts = [f'{k} is {shown(fa.get(k), 40)} in a, '
-                 f'{shown(fb.get(k), 40)} in b' for k in names]
+                 f'{shown(fb.get(k), 40)} in b'
+                 f'{in_a_tags(fa.get(k), fb.get(k), translated.get(k), 40)}'
+                 for k in names]
         extra = {'material_info': True} if set(names) <= set(MATERIAL_INFO) \
             else {}
         self.item('property', na, nb, f'{head}: {key}: {"; ".join(parts)}',
@@ -2078,9 +2102,11 @@ class _Comparison:
         translated = self.translator.value(expression_b, context.component_b)
         if same_value(expression_a, translated, None, None,
                       self.parameters):
+            ending = in_a_tags(expression_a, expression_b, translated)
             self.item('variable', na, nb, f'{head}: {shown(expression_a)} '
-                      f'in a, {shown(expression_b)} in b', a=expression_a,
-                      b=expression_b, context=context, name=name)
+                      f'in a, {shown(expression_b)} in b{ending}',
+                      a=expression_a, b=expression_b, context=context,
+                      name=name)
         if na.get('active', True) != nb.get('active', True):
             self.item('variable', na, nb, f'{head}: active in '
                       f'{"a" if na.get("active", True) else "b"} only',
@@ -2295,11 +2321,17 @@ class _Comparison:
             if name in unused or name in NAME_KEYS or name in skip:
                 continue
             from_default = False
+            # a mesh length from the other's defaults is in its unit
+            scale_a, scale_b = context.scales
+            converted = context.mesh and name in LENGTH_KEYS
             if name in pa:
                 raw_a, value_a, s_a = pa[name], pa[name], si_a.get(name)
             elif name in db:
-                raw_a, s_a = db[name], sd_b.get(name)
+                s_a = sd_b.get(name)
                 value_a = translate(db[name], component_b)
+                if converted and _number(value_a):
+                    value_a = float(f'{value_a * scale_b / scale_a:.12g}')
+                raw_a = value_a
                 from_default = True
             else:
                 blocked.append(name)
@@ -2308,7 +2340,10 @@ class _Comparison:
                 raw_b, s_b = pb[name], si_b.get(name)
                 value_b = translate(pb[name], component_b)
             elif name in da:
-                raw_b, value_b, s_b = da[name], da[name], sd_a.get(name)
+                value_b, s_b = da[name], sd_a.get(name)
+                if converted and _number(value_b):
+                    value_b = float(f'{value_b * scale_a / scale_b:.12g}')
+                raw_b = value_b
                 from_default = True
             else:
                 blocked.append(name)
@@ -2331,10 +2366,13 @@ class _Comparison:
                 # mesh lengths from the defaults follow the geometry's size
                 fold = from_default and context.mesh and \
                     name in LENGTH_KEYS
+                ending = in_a_tags(raw_a, raw_b, value_b) \
+                    if name in pb else ''
                 self.item(found, na, nb,
                           f'{self.head(na, nb)}: {name} is {shown(raw_a)} '
-                          f'in a, {shown(raw_b)} in b', a=raw_a, b=raw_b,
-                          context=context, name=name, fold=fold, **extra)
+                          f'in a, {shown(raw_b)} in b{ending}', a=raw_a,
+                          b=raw_b, context=context, name=name, fold=fold,
+                          **extra)
         if in_units:
             self.unchecked('a', na, f'{self.head(na, nb)}: the length units '
                            f'differ, not compared: {", ".join(in_units)}',
@@ -2471,10 +2509,11 @@ class _Comparison:
                 y = raw if of_a else self.translator.value(
                     raw, context.component_b)
                 if same_value(x, y, parameters=self.parameters):
+                    ending = '' if of_a else in_a_tags(x, raw, y)
                     self.item('property', fa, fb,
                               f'{self.head(fa, fb)}: equation {name}: '
                               f'{key} is {shown(x)} in a, '
-                              f'{shown(raw)} in b', a=x,
+                              f'{shown(raw)} in b{ending}', a=x,
                               b=raw, context=context, name=name)
 
     # Where nodes apply, and why it differs

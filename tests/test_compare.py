@@ -1126,6 +1126,95 @@ def test_mesh_units():
         ['blnlayers', 'hauto']
 
 
+def interface(tag, features, kind='HeatTransfer'):
+    return {'tag': tag, 'path': f'comp1/{tag}', 'identifier': tag,
+            'type': kind, 'label': 'Heat', 'active': True, 'settings': {},
+            'defaults': {}, 'selection': {'level': 'domain',
+                                          'geometry': 'geom1',
+                                          'entities': 'all'},
+            'features': features}
+
+
+def test_same_text_other_nodes():
+    # b's 'ht' is another interface than a's: the message says so
+    flux = node('hf1', 'HeatFluxBoundary', faces(1), {'q0': 'ht.T'},
+                {'q0': '0'})
+    a = described([flux])
+    b = described()
+    moved = {**copy.deepcopy(flux), 'path': 'comp1/ht2/hf1'}
+    b['components'][0]['physics'] = [interface('ht2', [moved]),
+                                     interface('ht', [], 'Other')]
+    [item] = [i for i in mk.compare(a, b) if i['kind'] == 'property']
+    assert item['message'].endswith("ht.T in a, ht.T in b (in a's tags: "
+                                    "<b only:ht>.T)")
+    # long values are compared whole, shown cut
+    long = 'ht.T + ' + ' + '.join(['1'] * 60)
+    flux['properties']['q0'] = moved['properties']['q0'] = long
+    [item] = [i for i in mk.compare(a, b) if i['kind'] == 'property']
+    assert "(in a's tags: <b only:ht>.T + 1" in item['message']
+    assert item['message'].endswith("...)")
+    # values that read differently need no note
+    moved['properties']['q0'] = 'ht.T*2'
+    [item] = [i for i in mk.compare(a, b) if i['kind'] == 'property']
+    assert "a's tags" not in item['message']
+
+
+def test_variables_with_swapped_tags():
+    # 'comp2.T' in both, but b's comp2 is a's comp1 (by place)
+    def model(names):
+        found = described(geometries=[geometry(
+            [box((0, 1), (0, 1), (0, 1), 1.0)], cube_faces())])
+        second = copy.deepcopy(found['components'][0])
+        second['geometries'][0] = geometry(
+            [box((5, 6), (0, 1), (0, 1), 1.0)], cube_faces(5, 6))
+        first, other = names
+        found['components'][0]['tag'] = first
+        second['tag'] = other
+        found['components'].append(second)
+        found['variables'] = [{
+            'tag': 'var1', 'path': 'var1', 'type': 'Variables',
+            'label': 'Variables 1', 'active': True,
+            'variables': {'x': 'comp2.T'}, 'selection': None}]
+        return found
+
+    a, b = model(('comp1', 'comp2')), model(('comp2', 'comp1'))
+    found = [i for i in mk.compare(a, b) if i['kind'] == 'variable']
+    assert len(found) == 1
+    assert "(in a's tags: comp1.T)" in found[0]['message']
+
+
+def test_mesh_default_in_its_unit():
+    # a in m leaves hmax at its default, b in mm sets it: a's value from
+    # b's default is shown in a's unit
+    def model(unit, scale, size, hmax=None, default=None):
+        made = described(geometries=[geometry(
+            [box((0, size), (0, size), (0, size), size**3)],
+            cube_faces(0, size), unit=unit, scale=scale)])
+        made['components'][0]['meshes'] = [{
+            'tag': 'mesh1', 'path': 'comp1/mesh1', 'label': 'Mesh 1',
+            'geometry': 'geom1', 'automatic': False, 'features': [
+                {'tag': 'size', 'path': 'comp1/mesh1/size', 'type': 'Size',
+                 'label': 'Size', 'active': True,
+                 'properties': {} if hmax is None else {'hmax': hmax},
+                 'defaults': {} if hmax is None else {'hmax': default},
+                 'selection': None, 'selections': {}, 'features': []}]}]
+        return made
+
+    a = model('m', 1.0, 1.0)
+    b = model('mm', 1e-3, 1000.0, hmax=200.0, default=150.0)
+    [item] = mk.compare(a, b)
+    assert (item['a'], item['b']) == (0.15, 200.0)
+    [item] = mk.compare(b, a)
+    assert (item['a'], item['b']) == (200.0, 0.15)
+    # the same length in both units: no difference
+    b = model('mm', 1e-3, 1000.0, hmax=150.0, default=150.0)
+    assert mk.compare(a, b) == []
+    # an expression stays as it is
+    b = model('mm', 1e-3, 1000.0, hmax=200.0, default='L/10')
+    [item] = mk.compare(a, b)
+    assert item['a'] == 'L/10'
+
+
 def test_unchecked_kept_apart():
     # two reasons for one node: both kept
     selection = {'level': 'several', 'levels': ['boundary', 'domain'],
