@@ -995,15 +995,47 @@ def test_component_only_in_b():
         {**component, 'tag': 'comp2', 'geometries': [cube]}]
     found = mk.compare(a, b)
     assert 'variable' not in kinds(found)
-    [only] = [i for i in found if i['kind'] == 'only_in_b'
-              and i.get('name') == 'T0']
-    assert only['path']['b'] == 'comp1/var1'
-    [component_only] = [i for i in found if i['message'].endswith(
-        'component only in b')]
+    # its variable comes with the component
+    [component_only] = [i for i in found
+                        if 'component only in b' in i['message']]
     assert component_only['path'] == {'a': None, 'b': 'comp1'}
+    assert component_only['message'].endswith('(+1 consequence)')
+    [only] = component_only['consequences']
+    assert (only['name'], only['path']['b']) == ('T0', 'comp1/var1')
     back = mk.compare(b, a)
     assert sorted(kinds(back)) == sorted(
         k.replace('only_in_b', 'only_in_a') for k in kinds(found))
+    [component_only] = [i for i in back
+                        if 'component only in a' in i['message']]
+    assert [i['name'] for i in component_only['consequences']] == ['T0']
+    assert 'comp1/var1' not in str(mk.compare(a, b, ignore='only_in_b'))
+
+
+def test_component_only_with_its_nodes():
+    # the operators and variables of a component only b has come with it
+    a, b = described(), described()
+    second = copy.deepcopy(b['components'][0])
+    second['tag'] = 'comp2'
+    second['geometries'] = [geometry([box((5, 6), (0, 1), (0, 1), 1.0)],
+                                     cube_faces(5, 6), tag='geom2')]
+    second['physics'][0].update(tag='ht2', identifier='ht2',
+                                path='comp2/ht2')
+    b['components'].append(second)
+    b['couplings'] = [{
+        'tag': 'intop1', 'path': 'comp2/intop1', 'type': 'Integration',
+        'label': 'I', 'active': True, 'names': ['intop1'], 'properties': {},
+        'defaults': {}, 'selection': None, 'selections': {}, 'features': [],
+        'component': 'comp2'}]
+    b['variables'] = [{
+        'tag': 'var1', 'path': 'comp2/var1', 'label': 'v', 'active': True,
+        'component': 'comp2', 'variables': {'p': '1', 'q': '2'},
+        'selection': {'level': 'global'}}]
+    [item] = mk.compare(a, b)
+    assert item['path']['b'] == 'comp2'
+    assert [i['path']['b'] for i in item['consequences']] == \
+        ['comp2/intop1', 'comp2/var1', 'comp2/var1']
+    assert item['message'].endswith('(+3 consequences)')
+    assert mirrored(a, b)
 
 
 @pytest.mark.parametrize('one, other, expected', [

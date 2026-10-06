@@ -104,8 +104,10 @@ def compare(a: Model | dict, b: Model | dict, /, *,
     entities without a counterpart, union against assembly),
     'only_in_a', 'only_in_b' (`a` or `b` holds the whole node; `empty:
     True` if it selects nothing; a component only one model has is one
-    item for its geometries, physics, couplings, meshes, pairs, mass
-    properties and materials),
+    item for its geometries, physics, multiphysics couplings, meshes,
+    pairs, mass properties and materials, with what its operators,
+    functions, probes, definitions, variables and coordinate systems
+    give as its `consequences`),
     'property' (`name` of the setting; `from_default: True` if one side
     has it from its defaults), 'expression' (same value, but one side
     uses parameters or leaves out the unit), 'variable', 'active',
@@ -1230,6 +1232,9 @@ class _Comparison:
         self.geometries: dict[str, GeometryPair] = {}
         # a's components whose geometry differs, with its geometry item
         self.differing: dict[str | None, dict] = {}
+        # components only one model has (b's as ('b only', tag)), with
+        # their items
+        self.lone: dict[Any, dict] = {}
         self.pending: list[tuple] = []
         self.overlaps: dict[tuple[int, int], tuple] = {}
         self.unchecked_paths: set[tuple] = set()
@@ -1401,15 +1406,17 @@ class _Comparison:
         for i, ca in enumerate(ca_list):
             if i not in used_a:
                 node = {'path': ca['tag'], 'label': ca.get('label')}
-                self.item('only_in_a', node, None,
-                          f'{self.head(node, None)}: component only in a',
-                          a=ca, section=1)
+                self.lone[ca['tag']] = self.item(
+                    'only_in_a', node, None,
+                    f'{self.head(node, None)}: component only in a', a=ca,
+                    section=1)
         for j, cb in enumerate(cb_list):
             if j not in used_b:
                 node = {'path': cb['tag'], 'label': cb.get('label')}
-                self.item('only_in_b', None, node,
-                          f'{self.head(None, node)}: component only in b',
-                          b=cb, section=1)
+                self.lone[('b only', cb['tag'])] = self.item(
+                    'only_in_b', None, node,
+                    f'{self.head(None, node)}: component only in b', b=cb,
+                    section=1)
         return found
 
     def pair_geometries(self, ca: dict, cb: dict) -> bool:
@@ -2698,9 +2705,15 @@ class _Comparison:
                           na, nb, f'{side}: {note.get("message")}')
 
     def fold(self):
-        """Moves what a differing geometry causes into its item."""
+        """Moves what a differing geometry causes into its item, and what
+        the nodes of a component only one model has give into the
+        component's item."""
         kept = []
         for item in self.items:
+            lone = self.lone.get(item.get('_component'))
+            if lone is not None and item is not lone:
+                lone.setdefault('consequences', []).append(item)
+                continue
             target = self.differing.get(item.get('_component'))
             if target is not None and item is not target and \
                     item.get('_fold') and item['kind'] != 'geometry':
