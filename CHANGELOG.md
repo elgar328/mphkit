@@ -16,10 +16,11 @@ until 1.0, a minor release (0.2, 0.3, ...) may change the API. See
   tags, order or entity numbers: the properties that differ from the
   defaults (except those a node's other settings leave unused), with
   their SI values, and selections by the location and size of their
-  entities; `solver=True` adds the solver settings that differ from the
-  ones COMSOL would choose. It leaves the model as it
-  was, except that compiling may update the solver sequences of a model
-  saved by another COMSOL version (listed in the result's `notes`).
+  entities. It leaves the model as it was. `solver=True` adds the solver
+  settings that differ from the ones COMSOL would choose; it compiles the
+  equations, which in a model saved by another COMSOL version or build
+  may update its solver sequences and build the empty meshes of layered
+  materials (listed in the result's `notes`).
 - `mk.compare(a, b)` lists how two models (or results of `mk.describe`)
   differ, with nodes paired by name or by type and place rather than by
   tags or order, and an empty list if nothing does. Each item has a

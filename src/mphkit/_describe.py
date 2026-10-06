@@ -99,6 +99,7 @@ def describe(model: Model, /, *, solver: bool = False) -> dict:
     script rebuilt a model made in the COMSOL Desktop:
 
     ```python
+    import json
     d = mk.describe(model)
     with open('old.json', 'w', encoding='utf-8') as file:
         json.dump(d, file, indent=1, ensure_ascii=False)
@@ -158,7 +159,10 @@ def describe(model: Model, /, *, solver: bool = False) -> dict:
     under `row_defaults`). Study step properties that pair tags with
     values (`activate`, ...) become a dict of the pairs that differ, e.g.
     {'ec': 'off'}; `solnum` and `notsolnum` count '1' and 'auto' as the
-    default (solving sets one to the other).
+    default (solving sets one to the other). `unused`, `names`,
+    `unknown_defaults`, `all_properties`, `rows`, `row_defaults` and,
+    in selections, `applied`, `exterior` and `named` are there only
+    where they apply.
     Other entries differ from nodes: a physics interface has
     `identifier` (its name in expressions, e.g. 'ht'), `settings` and
     `defaults` (by 'group/name') instead of `properties`, with `si`,
@@ -180,7 +184,8 @@ def describe(model: Model, /, *, solver: bool = False) -> dict:
     'remaining' (COMSOL tells them apart only before meshing); other
     nodes on the whole geometry 'geometry', global nodes 'global', one
     that selects nothing 'none', and a selection on several levels
-    'several' (its entities 'unknown'). An entity that could not be
+    'several' (its entities 'unknown', its `levels` listed). An entity
+    that could not be
     measured is {'unknown': number}. Domain 0, the exterior of boundary
     elements, is not an entity of the geometry: a selection that has it
     has `exterior: True` (and `exterior_applied` where that differs).
@@ -212,7 +217,10 @@ def describe(model: Model, /, *, solver: bool = False) -> dict:
     COMSOL may update the existing sequences and build the empty meshes
     of layered materials, which `notes` then list ('model_changed'). Such
     a model may also show changes that are only version differences.
-    Without `solver=True`, nothing in the model is changed.
+    As solving does, compiling may also remove, remake or change nodes of
+    COMSOL's own that an earlier solve made (e.g. a derived variable
+    iexpr_root_freq); they are not in the Java export. Without
+    `solver=True`, nothing in the model is changed.
 
     `mk.compare` lists the differences between two results (or
     models). Not described: named selections themselves (nodes show the

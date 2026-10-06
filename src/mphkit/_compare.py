@@ -81,18 +81,19 @@ def compare(a: Model | dict, b: Model | dict, /, *,
     JSON); the list is empty where nothing differs. Solvers are compared
     when both models are described with `solver=True` (a model without a
     solver sequence counts as COMSOL's own); a note says so when only one
-    was. Nodes are paired without their tags or order: by name where
-    expressions call them by name (parameters, variables, functions,
-    operators, probes, mass properties, global equations), else by type and
-    where their selections lie, on a table that pairs the entities of the
-    two geometries by bounding box and size (also where a face is split into
-    pieces differently); a node that selects nothing pairs with one of the
-    same tag and label; meshes pair by geometry, the same tag first, then
-    in order. Values are compared after model b's tags in them are
-    translated to model a's (`ht2.T`, `comp2.`, an operator called by
-    another name, `mass1.mass`); values COMSOL evaluates to the same SI
-    value and unit are equal ('100[degC]' and '373.15[K]'), lists like
-    'range(0,0.1,1)' are compared by their numbers.
+    was. Models given here are described without it: to compare solvers,
+    pass results of `mk.describe(model, solver=True)`. Nodes are paired
+    without their tags or order: by name where expressions call them by name
+    (parameters, variables, functions, operators, probes, mass properties,
+    global equations), else by type and where their selections lie, on a
+    table that pairs the entities of the two geometries by bounding box and
+    size (also where a face is split into pieces differently); a node that
+    selects nothing pairs with one of the same tag and label; meshes pair by
+    geometry, the same tag first, then in order. Values are compared after
+    model b's tags in them are translated to model a's (`ht2.T`, `comp2.`,
+    an operator called by another name, `mass1.mass`); values COMSOL
+    evaluates to the same SI value and unit are equal ('100[degC]' and
+    '373.15[K]'), lists like 'range(0,0.1,1)' are compared by their numbers.
 
     Each item has `kind`, `path` and `label` (each {'a', 'b'}; None on
     the side that lacks it), `message` (one line, naming each side's
@@ -132,7 +133,7 @@ def compare(a: Model | dict, b: Model | dict, /, *,
     differs. A selection explains its own level only; an interface on in
     one model only explains all levels. Nodes under a node disabled in
     one model are in its 'active' item. Messages end in '(+N
-    consequences)'; `causes` may name an item `ignore` hides.
+    consequence(s))'; `causes` may name an item `ignore` hides.
 
     Where a geometry differs, what follows from it is in the geometry item's
     `consequences` (fix the geometry first): selections that differ only in
@@ -164,8 +165,10 @@ def compare(a: Model | dict, b: Model | dict, /, *,
     properties other than the ones of nodes, physics, materials,
     coordinate systems, pairs, meshes, studies and solvers (e.g. load
     groups), a mesh deleted and made again in another order (its tag
-    pairs it with another; the differences of the two show), and a
-    feature of global equations without equations that one model has.
+    pairs it with another; the differences of the two show), a feature
+    of global equations without equations that one model has, and the
+    features a study step disables where the two models put global
+    equations into features otherwise (they compare by feature).
     Compared although they may be unused: a probe's `intsurface` and
     `intvolume` outside 3D, a sweep's `filename` while both save to a
     file (its default differs from one computer to the next), values

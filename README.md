@@ -7,7 +7,8 @@
 
 Helpers on top of [MPh](https://github.com/MPh-py/MPh) for COMSOL in
 Python: build geometry, select by location, insert library materials,
-check a model before solving, and read results as numbers or pictures.
+check a model before solving, summarize and compare models' settings, and
+read results as numbers or pictures.
 Selections made by location, not entity number, keep working when the
 geometry changes.
 
@@ -157,7 +158,8 @@ and how to stop it: on macOS (Linux not tried) end its Python process only,
 lists.
 
 A model rebuilt by a script can be checked against the one made in the
-COMSOL Desktop: `mk.describe` returns a model's settings as plain values,
+COMSOL Desktop (`old`, e.g. loaded with `client.load('old.mph')`):
+`mk.describe` returns a model's settings as plain values,
 with selections described by the location of their entities, so nodes
 can be matched by type and place, whatever their tags and order, and
 `mk.compare` lists what differs:
