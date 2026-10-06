@@ -1215,6 +1215,46 @@ def test_mesh_default_in_its_unit():
     assert item['a'] == 'L/10'
 
 
+def test_meshes_of_steps():
+    def model(meshes, used):
+        made = described(studies=[{
+            'tag': 'std1', 'path': 'std1', 'label': 'Study 1',
+            'active': True, 'solver': {'status': 'automatic',
+                                       'sequence': None},
+            'steps': [{'tag': 'stat', 'path': 'std1/stat',
+                       'type': 'Stationary', 'label': 'Stationary',
+                       'active': True,
+                       'properties': {'mesh': {'geom1': used}},
+                       'defaults': {'mesh': {'geom1': 'mesh1'}},
+                       'selection': None, 'selections': {},
+                       'features': []}]}])
+        made['components'][0]['meshes'] = [{
+            'tag': tag, 'path': f'comp1/{tag}', 'label': tag,
+            'geometry': 'geom1', 'automatic': False, 'features': [
+                {'tag': 'size', 'path': f'comp1/{tag}/size', 'type': 'Size',
+                 'label': 'Size', 'active': True,
+                 'properties': {'hmax': hmax}, 'defaults': {'hmax': 0.1},
+                 'selection': None, 'selections': {}, 'features': []}]}
+            for tag, hmax in meshes]
+        return made
+
+    # the step's mesh in a's tags
+    a = model([('mesh1', 0.2), ('mesh2', 0.05)], 'mesh2')
+    b = model([('mesh1', 0.2), ('mesh3', 0.05)], 'mesh3')
+    assert mk.compare(a, b) == []
+    assert mk.compare(b, a) == []
+    b = model([('mesh1', 0.2), ('mesh3', 0.05)], 'mesh3')
+    a = model([('mesh1', 0.2), ('mesh2', 0.05)], 'mesh1')
+    [item] = mk.compare(a, b)
+    assert (item['a'], item['b']) == ('mesh1', 'mesh3')
+    assert item['message'].endswith("(in a's tags: mesh2)")
+    assert mirrored(a, b)
+    # meshes of one geometry pair by tag first, then in order
+    a = model([('mesh1', 0.2), ('mesh2', 0.05)], 'mesh2')
+    b = model([('mesh2', 0.05), ('mesh1', 0.2)], 'mesh2')
+    assert mk.compare(a, b) == []
+
+
 def test_unchecked_kept_apart():
     # two reasons for one node: both kept
     selection = {'level': 'several', 'levels': ['boundary', 'domain'],
@@ -1695,6 +1735,26 @@ def test_probes(two):
     mk.component_of(two[1]/'geometries'/'Geometry 1').java.probe().create(
         'bnd1', 'Boundary')
     assert 'only_in_b' in kinds(mk.compare(*two))
+
+
+def test_step_mesh(two):
+    # a step on a second mesh, tagged otherwise in b
+    for model, tag in zip(two, ('mesh2', 'mesh7')):
+        geom = two_blocks(model)
+        (model/'physics').create('HeatTransfer', geom)
+        meshes = model.java.component(
+            str(mk.component_of(geom).java.tag())).mesh()
+        second = meshes.create(tag)
+        second.create('ftet1', 'FreeTet')
+        second.feature('size').set('hauto', '7')
+        # a new step takes the last mesh made: this one is not the default
+        meshes.create('mesh1').create('ftet1', 'FreeTet')
+        study = (model/'studies').create(name='study')
+        step = study.create('Stationary')
+        step.java.set('mesh', [str(geom.java.tag()), tag])
+    [step] = mk.describe(two[1])['studies'][0]['steps']
+    assert step['properties']['mesh'] == {'geom1': 'mesh7'}
+    assert kinds(mk.compare(*two)) == []
 
 
 def test_time_list(two):

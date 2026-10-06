@@ -87,7 +87,8 @@ def compare(a: Model | dict, b: Model | dict, /, *,
     where their selections lie, on a table that pairs the entities of the
     two geometries by bounding box and size (also where a face is split into
     pieces differently); a node that selects nothing pairs with one of the
-    same tag and label. Values are compared after model b's tags in them are
+    same tag and label; meshes pair by geometry, the same tag first, then
+    in order. Values are compared after model b's tags in them are
     translated to model a's (`ht2.T`, `comp2.`, an operator called by
     another name, `mass1.mass`); values COMSOL evaluates to the same SI
     value and unit are equal ('100[degC]' and '373.15[K]'), lists like
@@ -157,9 +158,12 @@ def compare(a: Model | dict, b: Model | dict, /, *,
     row of the table), a probe's name used as a variable, the same mass
     properties name in two components, where boundary elements apply on
     the exterior (domain 0; where they select it is compared), tags in
-    file names with a relative path ('data/comp1.mph'), and tags in
+    file names with a relative path ('data/comp1.mph'), tags in
     properties other than the ones of nodes, physics, materials,
-    coordinate systems, pairs, studies and solvers (e.g. load groups).
+    coordinate systems, pairs, meshes, studies and solvers (e.g. load
+    groups), a mesh deleted and made again in another order (its tag
+    pairs it with another; the differences of the two show), and a
+    feature of global equations without equations that one model has.
     Compared although they may be unused: a probe's `intsurface` and
     `intvolume` outside 3D, a sweep's `filename` while both save to a
     file (its default differs from one computer to the next), values
@@ -1033,7 +1037,7 @@ class Translator:
             kind: {} for kind in ('component', 'geometry', 'physics',
                                   'identifier', 'multiphysics', 'material',
                                   'coordinate', 'pair', 'study',
-                                  'sequence', 'massprop')}
+                                  'sequence', 'massprop', 'mesh')}
         # by b's identifier (and physics tag): b feature tag to a's
         self.features: dict[str, dict[str, str]] = {}
         # by b's study tag: b step tag to a's
@@ -1048,7 +1052,7 @@ class Translator:
 
     def whole(self, value: str) -> str | None:
         for kind in ('physics', 'multiphysics', 'material', 'coordinate',
-                     'pair', 'study', 'sequence'):
+                     'pair', 'study', 'sequence', 'mesh'):
             if value in self.maps[kind]:
                 return self.maps[kind][value]
         return None
@@ -1941,14 +1945,34 @@ class _Comparison:
         meshes_b = list(cb.get('meshes', []))
         pairs = []
         only_a = []
-        for ma in ca.get('meshes', []):
-            match = next((mb for mb in meshes_b if geometries.get(
-                mb.get('geometry')) == ma.get('geometry')), None)
+        meshes_a = ca.get('meshes', [])
+
+        def same_geometry(ma: dict, mb: dict) -> bool:
+            return geometries.get(mb.get('geometry') or '') == \
+                ma.get('geometry')
+
+        # on one geometry, the same tag first, then in order
+        for ma in meshes_a:
+            match = next((mb for mb in meshes_b if same_geometry(ma, mb)
+                          and mb.get('tag') == ma.get('tag')), None)
+            if match is not None:
+                meshes_b.remove(match)
+                pairs.append((ma, match))
+        paired = [ma for ma, _ in pairs]
+        for ma in meshes_a:
+            if any(ma is other for other in paired):
+                continue
+            match = next((mb for mb in meshes_b if same_geometry(ma, mb)),
+                         None)
             if match is None:
                 only_a.append(ma)
             else:
                 meshes_b.remove(match)
                 pairs.append((ma, match))
+        pairs.sort(key=lambda pair: next(
+            i for i, ma in enumerate(meshes_a) if ma is pair[0]))
+        for ma, mb in pairs:
+            self.translator.add('mesh', mb.get('tag'), ma.get('tag'))
         mesh_context = _Context(context.component, context.component_b,
                                 mesh=True, differs=context.differs)
         for ma in only_a:
@@ -2349,7 +2373,8 @@ class _Comparison:
                 blocked.append(name)
                 continue
             if isinstance(value_a, dict) or isinstance(value_b, dict):
-                self.compare_map(na, nb, name, value_a, value_b, da, db,
+                self.compare_map(na, nb, name, value_a, value_b,
+                                 pb.get(name) if name in pb else None, da, db,
                                  context)
                 continue
             found = self.compare_one(name, value_a, value_b, s_a, s_b,
@@ -2423,12 +2448,17 @@ class _Comparison:
                 return 'unchecked'
         return same_value(value_a, value_b, si_a, si_b, self.parameters)
 
-    def compare_map(self, na, nb, name, value_a, value_b, da, db,
+    def compare_map(self, na, nb, name, value_a, value_b, raw_b, da, db,
                     context: _Context):
         """Compares a study step's map (physics to 'on', ...) key by
-        key; a key one side lacks has its default there."""
+        key, the keys in a's tags; a key one side lacks has its default
+        there. b's own values are shown, with a's tags where they differ.
+        """
         map_a = value_a if isinstance(value_a, dict) else {}
         map_b = value_b if isinstance(value_b, dict) else {}
+        own_b = {self.translator.key(key): item
+                 for key, item in raw_b.items()} \
+            if isinstance(raw_b, dict) else {}
         defaults_a = da.get(name) if isinstance(da.get(name), dict) else {}
         defaults_b = self.translator.value(db.get(name), context.component_b)
         defaults_b = defaults_b if isinstance(defaults_b, dict) else {}
@@ -2436,10 +2466,13 @@ class _Comparison:
             x = map_a[key] if key in map_a else defaults_b.get(key)
             y = map_b[key] if key in map_b else defaults_a.get(key)
             if same_value(x, y, parameters=self.parameters):
+                shown_b = own_b.get(key, y) if key in map_b else y
+                ending = f" (in a's tags: {shown(y)})" \
+                    if shown_b != y else ''
                 self.item('property', na, nb, f'{self.head(na, nb)}: '
-                          f'{name}[{key}] is {shown(x)} in a, {shown(y)} '
-                          'in b', a=x, b=y, context=context,
-                          name=f'{name}[{key}]')
+                          f'{name}[{key}] is {shown(x)} in a, '
+                          f'{shown(shown_b)} in b{ending}', a=x, b=shown_b,
+                          context=context, name=f'{name}[{key}]')
 
     def compare_rows(self, na, nb, rows_a: list, rows_b: list,
                      context: _Context):
