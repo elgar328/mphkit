@@ -101,10 +101,10 @@ def problem_size(model: Model, /, *, study=None) -> dict:
     sequence the study has (also one you changed) or else the one COMSOL
     would create, which picks iterative solvers for large 3D problems.
     A step added after the study's solver sequence was made gets the
-    solver COMSOL would create. `linear_solver` is the iterative method, e.g. `'gmres'`, and `None`
-    for direct solvers: the direct solver set (e.g. PARDISO) may be
-    replaced when solving (by MUMPS on macOS); the progress log names the
-    one used. With a parametric sweep, the sizes are those at the current
+    solver COMSOL would create. `linear_solver` is the iterative method,
+    e.g. `'gmres'`, and `None` for direct solvers: the direct solver set
+    (e.g. PARDISO) may be replaced when solving (by MUMPS on macOS); the
+    progress log names the one used. With a parametric sweep, the sizes are those at the current
     parameter values; a sweep that changes the mesh changes them too.
 
     `mesh_elements` counts the elements of each mesh the study uses (by
@@ -127,7 +127,11 @@ def problem_size(model: Model, /, *, study=None) -> dict:
     tried. Returns plain values and leaves nothing in the model, except
     in a model saved by another COMSOL version or build, where compiling
     may update its solver sequences and build the empty meshes of
-    layered materials, as solving would; a UserWarning then says what.
+    layered materials, as solving would; a UserWarning then says what,
+    also when compiling fails. As solving does, compiling may also
+    remove, remake or change nodes of COMSOL's own that an earlier solve
+    made (e.g. a derived variable iexpr_root_freq); they are not in the
+    Java export and results stay the same.
     """
     if not isinstance(model, Model):
         raise TypeError(f'mk.problem_size takes a model, not {model!r}.')
@@ -136,16 +140,22 @@ def problem_size(model: Model, /, *, study=None) -> dict:
     std = str(study_java.tag())
     interfaces = _check.active_physics(model)
     meshes = _check_meshes(model, study_java, interfaces)
-    with _comsol.history_off(java), \
-            _comsol.compiled_traces_removed(java) as changed:
-        attached = attached_sequence(java, std)
-        steps, solvers = _sizes(java, study_java, changed)
-        if attached is not None:
-            # a step added after the sequence was made is not in it
-            solvers = {**solvers, **_sequence_solvers(attached)}
-    if changed:
-        warnings.warn('mk.problem_size could not leave the model as it '
-                      'was: ' + '; '.join(changed) + '.', stacklevel=2)
+    changed: list[str] = []
+    try:
+        with _comsol.history_off(java), \
+                _comsol.compiled_traces_removed(java) as found:
+            changed = found
+            attached = attached_sequence(java, std)
+            steps, solvers = _sizes(java, study_java, changed)
+            if attached is not None:
+                # a step added after the sequence was made is not in it
+                solvers = {**solvers, **_sequence_solvers(attached)}
+    finally:
+        # also when compiling failed
+        if changed:
+            warnings.warn('mk.problem_size could not leave the model as '
+                          'it was: ' + '; '.join(changed) + '.',
+                          stacklevel=2)
     for step in steps:
         step.update(solvers.get(step.pop('tag'), UNKNOWN))
     return {'study': _comsol.name_of(study_java), 'steps': steps,
@@ -291,7 +301,8 @@ def _sizes(java, study, changed: list[str]
             steps.append(size)
         return steps, solvers
     finally:
-        sequences.remove(tag)
+        _comsol.undo(changed, 'the temporary solver sequence',
+                     lambda: sequences.remove(tag))
         _results_set_back(java, recorded, changed)
 
 
@@ -331,10 +342,10 @@ def _results_set_back(java, recorded: tuple, changed: list[str]):
         now = parameters
     for name, value in now.items():
         if name not in parameters:
-            _comsol._undo(changed, f'the new parameter {name!r}',
+            _comsol.undo(changed, f'the new parameter {name!r}',
                           lambda: java.param().remove(name))
         elif value != parameters[name]:
-            _comsol._undo(changed, f'the parameter {name!r}',
+            _comsol.undo(changed, f'the parameter {name!r}',
                           lambda: java.param().set(name, parameters[name]))
     _comsol.set_back(settings, changed)
 

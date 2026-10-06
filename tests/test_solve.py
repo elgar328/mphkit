@@ -599,9 +599,53 @@ def test_results_set_back_on_error(plate, monkeypatch):
     with pytest.warns(UserWarning, match='a test setting'):
         mk.problem_size(model)
     monkeypatch.setattr(_solve, '_sequence_solvers', broken)
-    with pytest.raises(RuntimeError, match='no solvers'):
+    with pytest.raises(RuntimeError, match='no solvers'), \
+            pytest.warns(UserWarning, match='a test setting'):
         mk.problem_size(model)
     assert len(calls) == 2
+
+
+def test_recording_fails(plate, monkeypatch):
+    # an error while recording the model comes through as it is
+    model, geom = plate
+
+    def broken(java):
+        raise RuntimeError('cannot record')
+
+    monkeypatch.setattr(_comsol, '_settings', broken)
+    with pytest.raises(RuntimeError, match='cannot record'):
+        mk.problem_size(model)
+
+
+def test_temporary_sequence_left(plate, monkeypatch):
+    # a temporary sequence that stays is a warning, not an update of
+    # COMSOL's, and the rest is still set back
+    model, geom = plate
+    java = model.java
+    original, results = _comsol.undo, _solve._results_set_back
+    calls = []
+
+    def undo(changed, what, step):
+        if what == 'the temporary solver sequence':
+            changed.append(f'could not set back {what}: test')
+        else:
+            original(changed, what, step)
+
+    def set_back(java, recorded, changed):
+        calls.append(1)
+        results(java, recorded, changed)
+
+    monkeypatch.setattr(_comsol, 'undo', undo)
+    monkeypatch.setattr(_solve, '_results_set_back', set_back)
+    try:
+        with pytest.warns(UserWarning, match='temporary solver') as found:
+            mk.problem_size(model)
+        assert not any('COMSOL added' in str(w.message) for w in found)
+        assert calls == [1]
+    finally:
+        for tag in [str(t) for t in java.sol().tags()]:
+            if tag.startswith(_solve.ESTIMATE):
+                java.sol().remove(tag)
 
 
 def test_derived_variables(plate):
@@ -617,6 +661,8 @@ def test_changed_for_good(plate, monkeypatch):
     # what COMSOL changes for good (a sequence updated for this version)
     # is a warning
     model, geom = plate
+    # an existing sequence, which COMSOL updates
+    model.java.sol().create('sol1')
     original = _comsol._sequence_nodes
     calls = []
 

@@ -1129,10 +1129,14 @@ def compiled_traces_removed(model) -> Iterator[list[str]]:
     compiled since it was made or loaded nodes of COMSOL's own (derived
     variables iexpr1, ...; operators maxOp1, minOp1). All settings are
     recorded and those that differ set back, the switches last and again
-    until nothing differs; then the notes; then the new nodes are
-    removed. Left as COMSOL does it: the operators a physics interface
-    makes for itself (builder_*) are numbered anew with the same
-    contents. Not undone, and listed: in a model saved by another COMSOL
+    (up to three times) while any differ; then the notes; then the new
+    nodes are removed. Left as COMSOL does it: the operators a physics
+    interface makes for itself (builder_*) are numbered anew with the
+    same contents, and, as solving does, compiling may remove, remake or
+    change nodes of COMSOL's own that an earlier solve made (a derived
+    variable iexpr_root_freq, the selection of maxOp1, hidden numbers of
+    builder functions); they are not in the Java export and results stay
+    the same. Not undone, and listed: in a model saved by another COMSOL
     version or build (6.4 build 258 against 293 was enough), COMSOL may
     add nodes to the existing sequences (a field node, which cannot be
     removed) and build empty meshes of layered materials.
@@ -1141,24 +1145,27 @@ def compiled_traces_removed(model) -> Iterator[list[str]]:
     nodes = {name: {str(t) for t in getattr(model, name)().tags()}
              for name in COMPILED}
     sequences = set(_sequence_nodes(model))
+    tops = {str(t) for t in model.sol().tags()}
     empty = [str(t) for t in model.mesh().tags()
              if model.mesh(t).isEmpty()]
     changed: list[str] = []
     try:
         yield changed
     finally:
-        # each step on its own: one that fails leaves the others to run
+        # setting back goes on past what fails (`undo`, `set_back`)
         set_back(settings, changed)
         for where, node, value in notes:
-            _undo(changed, f'the note of {where}', lambda: (
+            undo(changed, f'the note of {where}', lambda: (
                 _note(node) not in (None, value) and node.set(NOTE, value)))
         for name, before in nodes.items():
             container = getattr(model, name)()
             for tag in [str(t) for t in container.tags()]:
                 if tag not in before and not tag.startswith('builder_'):
-                    _undo(changed, f'the new node {tag!r}',
+                    undo(changed, f'the new node {tag!r}',
                           lambda: container.remove(tag))
-        added = sorted(set(_sequence_nodes(model)) - sequences)
+        # a temporary sequence left over is not COMSOL's update
+        added = sorted(path for path in set(_sequence_nodes(model))
+                       - sequences if path.split('/')[0] in tops)
         if added:
             changed.append('COMSOL added ' + ', '.join(added) + ' to the '
                            'solver sequences (an update for this version)')
@@ -1168,7 +1175,7 @@ def compiled_traces_removed(model) -> Iterator[list[str]]:
                            + ', '.join(built))
 
 
-def _undo(changed: list[str], what: str, step: Callable[[], Any]):
+def undo(changed: list[str], what: str, step: Callable[[], Any]):
     """Runs one step of setting a model back; notes it if it fails."""
     try:
         step()
@@ -1194,7 +1201,8 @@ def _sequence_nodes(model) -> list[str]:
 # Study step settings that the first compile of a model sets from '1' to
 # 'auto' (values of variables not solved for)
 FIRST_COMPILE = ('solnum', 'notsolnum')
-# Settings that setting a value turns on: set back last
+# Settings that setting a value turns on: set back after the others (in
+# any order)
 SWITCHES = ('notsolnum', 'notmanualsol', 'nottimeinterp', 'solnum',
             'manualsol', 'timeinterp')
 # Settings read as text; lists and matrices with their own getter, whose
@@ -1289,6 +1297,8 @@ def set_back(settings: list[Setting], changed: list[str]):
                 setting.node.set(setting.name, java_null()
                                  if setting.value is None else setting.value)
             except Exception as error:
+                # reported below, also when reading it failed
+                differed = True
                 errors[i] = reason(error)
         if not differing:
             break

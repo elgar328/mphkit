@@ -1324,8 +1324,9 @@ class _Reader:
                 reason = ('COMSOL could not make its own solver sequence: '
                           f'{_comsol.reason(error)}')
             finally:
-                if temporary in _tags(sequences):
-                    sequences.remove(temporary)
+                _comsol.undo(changed, 'the temporary solver sequence',
+                             lambda: temporary in _tags(sequences)
+                             and sequences.remove(temporary))
         for message in changed:
             self.note(stag, 'model_changed', message)
         if automatic is None:
