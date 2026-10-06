@@ -540,6 +540,70 @@ def test_solver_notes(plate):
     assert model_state(model) == before
 
 
+def test_sequence_settings(plate):
+    # settings of steps and of existing sequence nodes changed while the
+    # equations compile are set back, switches and notes included
+    model, geom = plate
+    java = model.java
+    std = str(java.study().tags()[0])
+    sequence = java.sol().create('sol1')
+    sequence.study(std)
+    sequence.createAutoSequence(std)
+    study = java.study().create('std9')
+    study.create('time', 'Transient')
+    before = model_state(model)
+    with _comsol.history_off(java), \
+            _comsol.compiled_traces_removed(java) as changed:
+        step = java.study('std9').feature('time')
+        step.set('nott', '0.5')
+        step.set('notmanualsolnum', '51')
+        variables = sequence.feature('v1')
+        variables.set('notsolnum', 'manual')
+    assert model_state(model) == before
+    assert changed == []
+
+
+def test_results_set_back(plate):
+    # a parameter added and settings of result tables changed by running
+    # the steps are set back
+    model, geom = plate
+    java = model.java
+    java.param().set('currentiter', '3')
+    table = java.result().table().create('tbl9', 'Table')
+    before = model_state(model)
+    recorded = _solve._results(java)
+    java.param().set('currentiter', '0')
+    java.param().set('extra', '1')
+    table.set('switchtable', not table.getBoolean('switchtable'))
+    changed = []
+    _solve._results_set_back(java, recorded, changed)
+    assert changed == []
+    assert model_state(model) == before
+
+
+def test_results_set_back_on_error(plate, monkeypatch):
+    # set back also when compiling fails; what stays changed is a warning
+    model, geom = plate
+    calls = []
+    original = _solve._results_set_back
+
+    def set_back(java, recorded, changed):
+        calls.append(1)
+        original(java, recorded, changed)
+        changed.append('could not set back a test setting')
+
+    def broken(sequence):
+        raise RuntimeError('no solvers')
+
+    monkeypatch.setattr(_solve, '_results_set_back', set_back)
+    with pytest.warns(UserWarning, match='a test setting'):
+        mk.problem_size(model)
+    monkeypatch.setattr(_solve, '_sequence_solvers', broken)
+    with pytest.raises(RuntimeError, match='no solvers'):
+        mk.problem_size(model)
+    assert len(calls) == 2
+
+
 def test_derived_variables(plate):
     # Compiling the equations makes COMSOL's 'Derived Variables' nodes
     # (iexpr1, ...) in a model not solved since it was made or loaded.
@@ -765,7 +829,10 @@ def test_two_steps(plate):
     model, geom = plate
     step = (model/'studies'/'static').create('Transient', name='later')
     step.property('tlist', 'range(0,10,50)')
+    before = model_state(model)
     first, second = mk.problem_size(model)['steps']
+    # compiling filled in the step it starts from (null before): set back
+    assert model_state(model) == before
     assert first['dofs'] > 0
     assert (second['step'], second['type']) == ('later', 'Transient')
     assert second['dofs'] is None and second['fields'] is None

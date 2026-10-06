@@ -1119,22 +1119,25 @@ def compiled_traces_removed(model) -> Iterator[list[str]]:
     far as COMSOL lets it, and yields a list that tells afterwards what
     stayed changed. Call it with the history off.
 
-    Making a sequence with `createAutoSequence` can rewrite the
-    'lastchangedproperty' note of an existing one (seen on a Variables
-    node). In a model not compiled since it was made or loaded, compiling
-    adds nodes of COMSOL's own (derived variables iexpr1, ...; operators
-    maxOp1, minOp1) and sets study steps' `solnum` and `notsolnum` from
-    '1' to 'auto'; none of it shows in a Java export, and solving makes
-    them again. Notes and steps are set back and the new nodes removed.
-    Left as COMSOL does it: the operators a physics interface makes for
-    itself (builder_*) are numbered anew with the same contents. Not
-    undone, and listed: in a model saved by another COMSOL version or
-    build (6.4 build 258 against 293 was enough), COMSOL may add nodes to
-    the existing sequences (a field node, which cannot be removed) and
-    build empty meshes of layered materials.
+    Compiling and making a sequence with `createAutoSequence` change the
+    model where a Java export does not show it: settings of study steps
+    and of the nodes of existing solver sequences (`solnum` and
+    `notsolnum` from '1' to 'auto' the first time; with a Phase
+    Initialization step, the values of variables not solved for `nott`
+    and `notmanualsolnum`, which turn other settings on when set), the
+    'lastchangedproperty' note of sequence nodes, and in a model not
+    compiled since it was made or loaded nodes of COMSOL's own (derived
+    variables iexpr1, ...; operators maxOp1, minOp1). All settings are
+    recorded and those that differ set back, the switches last and again
+    until nothing differs; then the notes; then the new nodes are
+    removed. Left as COMSOL does it: the operators a physics interface
+    makes for itself (builder_*) are numbered anew with the same
+    contents. Not undone, and listed: in a model saved by another COMSOL
+    version or build (6.4 build 258 against 293 was enough), COMSOL may
+    add nodes to the existing sequences (a field node, which cannot be
+    removed) and build empty meshes of layered materials.
     """
-    notes = _solver_notes(model)
-    steps = _first_compile(model)
+    settings, notes = _settings(model)
     nodes = {name: {str(t) for t in getattr(model, name)().tags()}
              for name in COMPILED}
     sequences = set(_sequence_nodes(model))
@@ -1145,13 +1148,10 @@ def compiled_traces_removed(model) -> Iterator[list[str]]:
         yield changed
     finally:
         # each step on its own: one that fails leaves the others to run
-        for node, value in notes.values():
-            _undo(changed, 'a solver note', lambda: (
+        set_back(settings, changed)
+        for where, node, value in notes:
+            _undo(changed, f'the note of {where}', lambda: (
                 _note(node) not in (None, value) and node.set(NOTE, value)))
-        for (step, name), setting in steps.items():
-            _undo(changed, f'the study step setting {name!r}', lambda: (
-                str(step.getString(name)) != setting
-                and step.set(name, setting)))
         for name, before in nodes.items():
             container = getattr(model, name)()
             for tag in [str(t) for t in container.tags()]:
@@ -1194,40 +1194,141 @@ def _sequence_nodes(model) -> list[str]:
 # Study step settings that the first compile of a model sets from '1' to
 # 'auto' (values of variables not solved for)
 FIRST_COMPILE = ('solnum', 'notsolnum')
+# Settings that setting a value turns on: set back last
+SWITCHES = ('notsolnum', 'notmanualsol', 'nottimeinterp', 'solnum',
+            'manualsol', 'timeinterp')
+# Settings read as text; lists and matrices with their own getter, whose
+# Java value goes back as it is
+TEXT_TYPES = frozenset({'String', 'File', 'Int', 'Double', 'Boolean'})
+LIST_GETTERS = {'StringArray': 'getStringArray',
+                'StringMatrix': 'getStringMatrix',
+                'IntArray': 'getIntArray', 'DoubleArray': 'getDoubleArray',
+                'DoubleMatrix': 'getDoubleMatrix',
+                'DoubleRowMatrix': 'getDoubleMatrix'}
 
 
-def _first_compile(model) -> dict[tuple[Any, str], str]:
-    """Returns the study step settings the first compile changes."""
-    found = {}
-    for stag in model.study().tags():
-        steps = model.study(stag).feature()
-        for tag in steps.tags():
-            step = steps.get(tag)
-            for name in FIRST_COMPILE:
-                try:
-                    if step.hasProperty(name):
-                        found[(step, name)] = str(step.getString(name))
-                except Exception:
-                    pass
+class Setting:
+    """One setting of a node as it was: its Java value and its text."""
+
+    def __init__(self, where: str, node, name: str, kind: str, value):
+        self.where, self.node, self.name, self.kind = where, node, name, kind
+        self.value, self.text = value, setting_text(value)
+
+    def now(self) -> str | None:
+        return setting_text(read_setting(self.node, self.name, self.kind))
+
+
+def read_setting(node, name: str, kind: str):
+    """Reads a setting: one value as text (None for a Java null), a list
+    or matrix as the Java value."""
+    if kind in TEXT_TYPES:
+        value = node.getString(name)
+        return None if value is None else str(value)
+    return getattr(node, LIST_GETTERS[kind])(name)
+
+
+def java_null():
+    """A Java null string, to set a setting back to having no value."""
+    import jpype  # type: ignore[import-untyped]
+    return jpype.JObject(None, jpype.JString)
+
+
+def setting_text(value) -> str | None:
+    """Writes a setting's value as comparable text (numpy-free)."""
+    if value is None or isinstance(value, str):
+        return value
+    if type(value).__name__ == 'java.lang.String':
+        return str(value)       # iterating it would give its characters
+    try:
+        items = list(value)
+    except TypeError:
+        return str(value)
+    return '[' + ', '.join(str(setting_text(item)) for item in items) + ']'
+
+
+def record_settings(where: str, node, skip=()) -> list[Setting]:
+    """Records the settings of a node that can be set back."""
+    found: list[Setting] = []
+    try:
+        names = [str(name) for name in node.properties()]
+    except Exception:
+        return found
+    for name in names:
+        if name in skip:
+            continue
+        kind = value_type(node, name)
+        if kind not in TEXT_TYPES and kind not in LIST_GETTERS:
+            continue
+        try:
+            found.append(Setting(where, node, name, kind,
+                                 read_setting(node, name, kind)))
+        except Exception:
+            pass
     return found
 
 
-def _solver_notes(model) -> dict[str, tuple[Any, list[list[str]]]]:
-    """Returns the note of every solver sequence node that has one."""
-    found: dict[str, tuple[Any, list[list[str]]]] = {}
+def set_back(settings: list[Setting], changed: list[str]):
+    """
+    Sets back the settings that differ, the switches last and again (at
+    most three times) while any differ, since setting one may change
+    another; lists in `changed` those that still differ.
+    """
+    errors: dict[int, str] = {}
+    order = sorted(range(len(settings)),
+                   key=lambda i: settings[i].name in SWITCHES)
+    differed = False
+    for _ in range(3):
+        differing = False
+        for i in order:
+            setting = settings[i]
+            try:
+                if setting.now() == setting.text:
+                    continue
+                differing = differed = True
+                # a step's `initstudystep` is null until compiling fills it
+                setting.node.set(setting.name, java_null()
+                                 if setting.value is None else setting.value)
+            except Exception as error:
+                errors[i] = reason(error)
+        if not differing:
+            break
+    if not differed:
+        return
+    for i, setting in enumerate(settings):
+        try:
+            same = setting.now() == setting.text
+        except Exception as error:
+            same, errors[i] = False, reason(error)
+        if not same:
+            changed.append(f'could not set back the setting '
+                           f'{setting.name!r} of {setting.where}: '
+                           f'{errors.get(i, "still differs")}')
+
+
+def _settings(model) -> tuple[list[Setting], list[tuple]]:
+    """Records the settings of the study steps and of the nodes of the
+    solver sequences, and the notes of the latter."""
+    settings: list[Setting] = []
+    notes: list[tuple] = []
+    for stag in [str(t) for t in model.study().tags()]:
+        steps = model.study(stag).feature()
+        for tag in [str(t) for t in steps.tags()]:
+            settings += record_settings(f"the study step '{stag}/{tag}'",
+                                        steps.get(tag))
 
     def walk(node, path: str):
-        for tag in node.feature().tags():
+        for tag in [str(t) for t in node.feature().tags()]:
             child = node.feature(tag)
+            where = f"the solver node '{path}/{tag}'"
+            settings.extend(record_settings(where, child, skip=(NOTE,)))
             value = _note(child)
             if value is not None:
-                found[f'{path}/{tag}'] = (child, value)
+                notes.append((where, child, value))
             walk(child, f'{path}/{tag}')
 
-    sequences = model.sol()
-    for tag in sequences.tags():
-        walk(sequences.get(tag), str(tag))
-    return found
+    for tag in [str(t) for t in model.sol().tags()]:
+        walk(model.sol(tag), tag)
+    return settings, notes
 
 
 def _note(node) -> list[list[str]] | None:

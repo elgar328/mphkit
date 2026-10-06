@@ -139,7 +139,7 @@ def problem_size(model: Model, /, *, study=None) -> dict:
     with _comsol.history_off(java), \
             _comsol.compiled_traces_removed(java) as changed:
         attached = attached_sequence(java, std)
-        steps, solvers = _sizes(java, study_java)
+        steps, solvers = _sizes(java, study_java, changed)
         if attached is not None:
             # a step added after the sequence was made is not in it
             solvers = {**solvers, **_sequence_solvers(attached)}
@@ -240,12 +240,17 @@ def used_meshes(study, interfaces) -> list[tuple[str, str]]:
     return pairs
 
 
-def _sizes(java, study) -> tuple[list[dict], dict[str, dict]]:
+def _sizes(java, study, changed: list[str]
+           ) -> tuple[list[dict], dict[str, dict]]:
     """
     Compiles the equations of each step in a temporary solver sequence,
     the one COMSOL would create, and returns their sizes and the
-    sequence's solvers. Call it with the history off.
+    sequence's solvers. Call it with the history off. Running the steps
+    may add a parameter and change settings of result tables and plots
+    (seen in a model with a Phase Initialization step and a table plot);
+    they are set back, and what stays changed is added to `changed`.
     """
+    recorded = _results(java)
     sequences = java.sol()
     tag = str(sequences.uniquetag(ESTIMATE))
     sequence = sequences.create(tag)
@@ -287,6 +292,51 @@ def _sizes(java, study) -> tuple[list[dict], dict[str, dict]]:
         return steps, solvers
     finally:
         sequences.remove(tag)
+        _results_set_back(java, recorded, changed)
+
+
+def _results(java) -> tuple[dict[str, str], list]:
+    """Records the model's parameters and the settings of its result
+    tables and of the nodes of its plot groups."""
+    parameters = {}
+    try:
+        for name in [str(n) for n in java.param().varnames()]:
+            parameters[name] = str(java.param().get(name))
+    except Exception:
+        pass
+    settings: list = []
+    try:
+        tables = java.result().table()
+        for tag in [str(t) for t in tables.tags()]:
+            settings += _comsol.record_settings(f"the table '{tag}'",
+                                                tables.get(tag))
+        for group in [str(t) for t in java.result().tags()]:
+            features = java.result(group).feature()
+            for tag in [str(t) for t in features.tags()]:
+                settings += _comsol.record_settings(
+                    f"the plot '{group}/{tag}'", features.get(tag))
+    except Exception:
+        pass
+    return parameters, settings
+
+
+def _results_set_back(java, recorded: tuple, changed: list[str]):
+    """Removes parameters that running the steps added, sets back those
+    it changed and the settings of result tables and plots."""
+    parameters, settings = recorded
+    try:
+        now = {str(n): str(java.param().get(str(n)))
+               for n in java.param().varnames()}
+    except Exception:
+        now = parameters
+    for name, value in now.items():
+        if name not in parameters:
+            _comsol._undo(changed, f'the new parameter {name!r}',
+                          lambda: java.param().remove(name))
+        elif value != parameters[name]:
+            _comsol._undo(changed, f'the parameter {name!r}',
+                          lambda: java.param().set(name, parameters[name]))
+    _comsol.set_back(settings, changed)
 
 
 def attached_sequence(java, std: str) -> Any:

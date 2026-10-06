@@ -43,11 +43,12 @@ until 1.0, a minor release (0.2, 0.3, ...) may change the API. See
 - `mk.problem_size` leaves the model as it was. It changed a note the
   COMSOL Desktop keeps in a solver sequence not solved yet, left nodes of
   COMSOL's own (derived variables `iexpr1`, ..., operators `maxOp1`, ...)
-  in a model not solved since it was made or loaded, and the first time
-  also set the study steps' values of variables not solved for from `1`
-  to `auto`. In a model saved by another COMSOL version or build,
-  compiling may still update its solver sequences, as solving would; a
-  warning then says what changed.
+  in a model not solved since it was made or loaded, changed settings of
+  study steps and of existing solver sequences (values of variables not
+  solved for), and in some models added a parameter `currentiter` and
+  changed settings of result tables and plots. In a model saved by
+  another COMSOL version or build, compiling may still update its solver
+  sequences, as solving would; a warning then says what changed.
 
 ## [0.3.0] - 2026-10-04
 

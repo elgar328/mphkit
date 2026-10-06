@@ -109,15 +109,19 @@ def describe(model: Model, /, *, solver: bool = False) -> dict:
     #  'selections': {}, 'features': []}
     ```
 
-    The result has `parameters` (expression, SI value and SI unit), the
-    model's `functions`, `variables`, `couplings` (operators),
+    The result has `format` (3; `mk.compare` takes this one only) and
+    `mphkit` (the version that described), `parameters` (expression, SI
+    value and SI unit), the model's `functions`, `variables`, `couplings`
+    (operators),
     `coordinates`, `materials`, `definitions` and `probes` (each with
     `component` unless global), `components` with their `geometries`,
     `pairs`, `physics`, `multiphysics`, `meshes` and `mass_properties`,
     `studies` with their steps and solver, and the tags of the model's
     `solutions`; `notes` list ({'path', 'kind', 'message'}) what could
-    not be read, which defaults are unknown, why a solver was not
-    compared and what COMSOL changed for good. Results (plots, datasets,
+    not be read ('unreadable', 'place_unknown', 'levels_unknown',
+    'length_unknown'), which defaults are unknown ('defaults_unknown'),
+    why a solver was not compared ('solver_not_compared') and what
+    COMSOL changed for good ('model_changed'). Results (plots, datasets,
     evaluations, tables) are left out.
 
     A node (feature, step, operator, ...) has `tag`, `path` (tags from
@@ -140,11 +144,10 @@ def describe(model: Model, /, *, solver: bool = False) -> dict:
     are left out. `names` lists the names expressions call a function,
     operator, probe or mass properties node by. Global equations keep
     their per-equation lists under `rows` (and the defaults of one row
-    under `row_defaults`). Study
-    step properties that pair tags with values (`activate`, ...) become a
-    dict of the pairs that differ, e.g. {'ec': 'off'}; `solnum` and
-    `notsolnum` count '1' and 'auto' as the default (solving sets one to
-    the other).
+    under `row_defaults`). Study step properties that pair tags with
+    values (`activate`, ...) become a dict of the pairs that differ, e.g.
+    {'ec': 'off'}; `solnum` and `notsolnum` count '1' and 'auto' as the
+    default (solving sets one to the other).
     Other entries differ from nodes: a physics interface has
     `identifier` (its name in expressions, e.g. 'ht'), `settings` and
     `defaults` (by 'group/name') instead of `properties`, with `si`,
@@ -164,12 +167,17 @@ def describe(model: Model, /, *, solver: bool = False) -> dict:
     does. `named` is the label of a named selection it uses. Mesh
     operations on the whole geometry or on what is left have the level
     'remaining' (COMSOL tells them apart only before meshing); other
-    nodes on the whole geometry 'geometry', global nodes 'global', and a
-    selection on several levels 'several' (its entities 'unknown').
+    nodes on the whole geometry 'geometry', global nodes 'global', one
+    that selects nothing 'none', and a selection on several levels
+    'several' (its entities 'unknown'). An entity that could not be
+    measured is {'unknown': number}. Domain 0, the exterior of boundary
+    elements, is not an entity of the geometry: a selection that has it
+    has `exterior: True` (and `exterior_applied` where that differs).
     Boxes are single precision (1.1 reads 1.100000023841858) and curved
     entities are measured on a rendering mesh: compare with a tolerance.
-    Geometries list all their entities this way under `entities`, and
-    `finalize` tells whether they form a union or an assembly.
+    Geometries list all their entities this way under `entities`, with
+    their `dimension`, `axisymmetric`, number of `voids`, `bounding_box`
+    and `finalize` (whether they form a union or an assembly).
 
     A mesh has `automatic` (controlled by the physics, the COMSOL
     Desktop's default; meshes made through MPh are not) and
@@ -177,14 +185,18 @@ def describe(model: Model, /, *, solver: bool = False) -> dict:
     `sequence` and a `status`: 'automatic' when it has none yet (a
     script model before solving), else 'not asked'. With
     `solver=True`, the sequence is compared with the one COMSOL
-    would create now: 'compared' with the `changes` (by tag path), or
+    would create now: 'compared' with the `changes` (each with `path`,
+    `labels`, `type`, `change`: 'property', 'only_in_model' or
+    'only_in_automatic', and `properties`: name to [model's value,
+    COMSOL's value]), or
     'not compared' with the reason: a mesh the study uses is not built
     (run `model.mesh()` and describe again), a component with physics
     has no mesh, the study is disabled, or COMSOL could not make its own
     sequence. Two solution tags count as equal, so a changed initial
-    solution does not show. This
-    makes a temporary sequence in the model and compiles the equations;
-    describe removes what that leaves, as far as COMSOL lets it: in a
+    solution does not show. This makes a temporary sequence in the model
+    and compiles the equations; describe sets back what that changes
+    (settings of study steps and existing sequences) and removes what it
+    adds, as far as COMSOL lets it: in a
     model saved by another COMSOL version or build (see `saved_with`),
     COMSOL may update the existing sequences and build the empty meshes
     of layered materials, which `notes` then list ('model_changed'). Such
@@ -1392,9 +1404,24 @@ def _skeleton(reader: _Reader) -> Iterator[Any]:
                 pass
         for ctag in reader.components:
             component = java.component(ctag)
-            scomp = scratch.component().create(ctag, True)
+            try:
+                scomp = scratch.component().create(ctag, True)
+            except Exception as error:
+                # its nodes list all their properties
+                reader.note(ctag, 'defaults_unknown', 'no new component '
+                            'could be made for defaults: '
+                            f'{_comsol.reason(error)}')
+                continue
+            unmade = set()
             for gtag in _tags(component.geom()):
-                _scratch_geometry(scomp, component.geom(gtag))
+                try:
+                    _scratch_geometry(scomp, component.geom(gtag))
+                except Exception as error:
+                    # meshes of a wrong block would show sizes as changed
+                    unmade.add(gtag)
+                    reader.note(f'{ctag}/{gtag}', 'defaults_unknown',
+                                'no new geometry could be made for '
+                                f'defaults: {_comsol.reason(error)}')
             for ptag in _tags(component.physics()):
                 physics = component.physics(ptag)
                 try:
@@ -1422,12 +1449,17 @@ def _skeleton(reader: _Reader) -> Iterator[Any]:
                     pass
             for mtag in _tags(component.mesh()):
                 try:
-                    scomp.mesh().create(mtag,
-                                        str(component.mesh(mtag).geom()))
+                    gtag = str(component.mesh(mtag).geom())
+                    if gtag not in unmade:
+                        scomp.mesh().create(mtag, gtag)
                 except Exception:
                     pass        # its features list all their properties
         for stag in _tags(java.study()):
-            scratch.study().create(stag)
+            try:
+                scratch.study().create(stag)
+            except Exception as error:
+                reader.note(stag, 'defaults_unknown', 'no new study could '
+                            f'be made for defaults: {_comsol.reason(error)}')
         yield scratch
     finally:
         if tag in [str(t) for t in util.tags()]:

@@ -285,6 +285,43 @@ def test_set_back_step_by_step():
 # Models #
 ##########
 
+def test_set_back_settings(monkeypatch):
+    # settings that differ are set back (also to no value); what cannot be
+    # is noted once
+    monkeypatch.setattr(_comsol, 'java_null', lambda: None)
+
+    class Node:
+        def __init__(self):
+            self.values = {'nott': '0', 'stuck': 'a', 'null': None}
+
+        def properties(self):
+            return list(self.values)
+
+        def getValueType(self, name):
+            return 'String'
+
+        def getString(self, name):
+            return self.values[name]
+
+        def set(self, name, value):
+            if name == 'stuck':
+                raise RuntimeError('Object cannot be changed.')
+            self.values[name] = value
+
+    node = Node()
+    settings = _comsol.record_settings("the solver node 'sol1/v2'", node)
+    changed = []
+    _comsol.set_back(settings, changed)
+    assert changed == []
+    node.values.update(nott='0.5', stuck='b', null='x')
+    _comsol.set_back(settings, changed)
+    assert node.values['nott'] == '0'
+    assert node.values['null'] is None
+    assert changed == [
+        "could not set back the setting 'stuck' of the solver node "
+        "'sol1/v2': Object cannot be changed."]
+
+
 def plate(client, name='plate'):
     """
     A 100 × 50 × 10 mm plate with a hole: temperature on the face at x = 0
@@ -829,6 +866,29 @@ def test_multiphysics_and_coordinates(model):
     systems = {c['tag']: c for c in described['coordinates']}
     assert systems['sys2']['properties'] == {'angle': ['0', '0', '30[deg]']}
     assert systems['sys2']['component'] == 'comp1'
+
+
+def test_skeleton_fails_in_part(solved, monkeypatch):
+    # a geometry COMSOL cannot make for defaults: noted, the rest goes on
+    model, geom, described = solved
+
+    def broken(component, geometry):
+        raise RuntimeError('cannot make it')
+
+    monkeypatch.setattr(_describe, '_scratch_geometry', broken)
+    found = mk.describe(model)
+    [note] = [n for n in found['notes'] if n['kind'] == 'defaults_unknown'
+              and 'no new geometry' in n['message']]
+    assert note['path'].endswith('/geom1') and 'cannot make it' in \
+        note['message']
+    [mesh] = found['components'][0]['meshes']
+    assert all(f.get('all_properties') for f in mesh['features'])
+    # physics on that geometry list all their settings too; the studies
+    # are still described
+    [physics] = found['components'][0]['physics']
+    assert physics['all_properties'] is True
+    assert [s['tag'] for s in found['studies'][0]['steps']] == \
+        [s['tag'] for s in described['studies'][0]['steps']]
 
 
 def test_model_changed(solved, monkeypatch):
