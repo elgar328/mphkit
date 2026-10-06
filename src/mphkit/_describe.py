@@ -29,7 +29,7 @@ from . import _catalog, _check, _comsol, _solve
 
 # Version of the result's layout; raise it when the layout changes or
 # what describe leaves out as unused
-FORMAT = 4
+FORMAT = 5
 # Tag prefix of the temporary model and solver sequences
 SCRATCH = 'mkdesc'
 AXES = 'xyz'
@@ -117,11 +117,11 @@ def describe(model: Model, /, *, solver: bool = False) -> dict:
     #  'selections': {}, 'features': []}
     ```
 
-    The result has `format` (4; `mk.compare` takes this one only) and
+    The result has `format` (5; `mk.compare` takes this one only) and
     `mphkit` (the version that described), `parameters` (expression, SI
     value and SI unit), the model's `functions`, `variables`, `couplings`
     (operators),
-    `coordinates`, `materials`, `definitions` and `probes` (each with
+    `coordinate_systems`, `materials`, `definitions` and `probes` (each with
     `component` unless global), `components` with their `geometries`,
     `pairs`, `physics`, `multiphysics`, `meshes` and `mass_properties`,
     `studies` with their steps and solver, and the tags of the model's
@@ -194,13 +194,13 @@ def describe(model: Model, /, *, solver: bool = False) -> dict:
     Desktop's default; meshes made through MPh are not) and
     `size_level`. A study's `solver` has the tag of its solver
     `sequence` and a `status`: 'automatic' when it has none yet (a
-    script model before solving), else 'not asked'. With
+    script model before solving), else 'not_asked'. With
     `solver=True`, the sequence is compared with the one COMSOL
     would create now: 'compared' with the `changes` (each with `path`,
     `labels`, `type`, `change`: 'property', 'only_in_model' or
     'only_in_automatic', and `properties`: name to [model's value,
     COMSOL's value]), or
-    'not compared' with the reason: a mesh the study uses is not built
+    'not_compared' with the reason: a mesh the study uses is not built
     (run `model.mesh()` and describe again), a component with physics
     has no mesh, the study is disabled, or COMSOL could not make its own
     sequence. Two solution tags count as equal, so a changed initial
@@ -238,7 +238,7 @@ def describe(model: Model, /, *, solver: bool = False) -> dict:
             'functions': reader.listed('func'),
             'variables': reader.variables(),
             'couplings': reader.listed('cpl'),
-            'coordinates': reader.listed('coordSystem'),
+            'coordinate_systems': reader.listed('coordSystem'),
             'materials': reader.materials(),
             'definitions': reader.listed('common', subnodes=_create),
             'probes': reader.listed('probe', subnodes=_create),
@@ -1298,7 +1298,7 @@ class _Reader:
         if sequence is None:
             return {'status': 'automatic', 'sequence': None}
         if not compare:
-            return {'status': 'not asked', 'sequence': tag}
+            return {'status': 'not_asked', 'sequence': tag}
         if not _active(study):
             return self.not_compared(stag, tag, 'study disabled')
         reason = self.unready(study)
@@ -1334,11 +1334,10 @@ class _Reader:
                                  solutions | set(_tags(sequences)))
         return {'status': 'compared', 'sequence': tag, 'changes': changes}
 
-    def not_compared(self, stag: str, tag: str | None, reason: str,
-                     note: bool = True) -> dict:
-        if note:
-            self.note(stag, 'solver_not_compared', reason)
-        return {'status': 'not compared', 'sequence': tag,
+    def not_compared(self, stag: str, tag: str | None, reason: str
+                     ) -> dict:
+        self.note(stag, 'solver_not_compared', reason)
+        return {'status': 'not_compared', 'sequence': tag,
                 'reason': reason}
 
     def unready(self, study) -> str | None:

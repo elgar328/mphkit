@@ -73,7 +73,7 @@ def described(features=(), geometries=None, parameters=None, **extra):
                  'features': list(features)}
     found = {'format': _describe.FORMAT, 'parameters': parameters or {},
              'functions': [],
-             'variables': [], 'couplings': [], 'coordinates': [],
+             'variables': [], 'couplings': [], 'coordinate_systems': [],
              'materials': [], 'definitions': [], 'probes': [],
              'components': [{'tag': 'comp1', 'label': 'Component 1',
                              'geometries': geometries, 'pairs': [],
@@ -430,7 +430,7 @@ def test_solver_not_asked():
                  'active': True, 'steps': [],
                  'solver': {'status': status, 'sequence': 'sol1'}}]
 
-    a = described(studies=study('not asked'))
+    a = described(studies=study('not_asked'))
     b = described(studies=study('compared'))
     found = mk.compare(a, b)
     assert kinds(found) == []
@@ -917,12 +917,12 @@ def test_component_only_in_b():
 
 
 @pytest.mark.parametrize('one, other, expected', [
-    ('not asked', 'not asked', []), ('not asked', 'automatic', []),
-    ('not asked', 'compared', ['note']),
-    ('not asked', 'not compared', ['note', 'unchecked']),
+    ('not_asked', 'not_asked', []), ('not_asked', 'automatic', []),
+    ('not_asked', 'compared', ['note']),
+    ('not_asked', 'not_compared', ['note', 'unchecked']),
     ('compared', 'automatic', []),
-    ('not compared', 'compared', ['unchecked']),
-    ('not compared', 'not compared', ['unchecked', 'unchecked'])])
+    ('not_compared', 'compared', ['unchecked']),
+    ('not_compared', 'not_compared', ['unchecked', 'unchecked'])])
 def test_solver_statuses(one, other, expected):
     def study(status):
         return [{'tag': 'std1', 'path': 'std1', 'label': 'Study 1',

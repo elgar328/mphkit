@@ -1096,7 +1096,7 @@ def words(described: dict) -> set[str]:
     systems, pairs and mass properties names.
     """
     found: set[str] = set()
-    for key in ('materials', 'coordinates'):
+    for key in ('materials', 'coordinate_systems'):
         found.update(n['tag'] for n in described.get(key, []) if 'tag' in n)
     for component in described.get('components', []):
         found.add(component['tag'])
@@ -1172,7 +1172,7 @@ class _Comparison:
         self.compare_parameters()
         pairs = self.pair_components()
         self.pair_lists(('functions', 'couplings', 'probes'), named=True)
-        self.pair_lists(('coordinates',), kind='coordinate')
+        self.pair_lists(('coordinate_systems',), kind='coordinate')
         self.pair_materials(pairs)
         for ca, cb, context in pairs:
             self.pair_component(ca, cb, context)
@@ -1872,18 +1872,18 @@ class _Comparison:
     def compare_solver(self, sa: dict, sb: dict):
         solver_a, solver_b = sa.get('solver') or {}, sb.get('solver') or {}
         statuses = {solver_a.get('status'), solver_b.get('status')}
-        if 'not asked' in statuses:
+        if 'not_asked' in statuses:
             # one model's solver was read: say how to compare them; a
             # model without a sequence (COMSOL's own) needs no reading
             for side, solver, other, study in (
                     ('a', solver_a, solver_b, sa),
                     ('b', solver_b, solver_a, sb)):
-                if solver.get('status') == 'not asked' and \
-                        other.get('status') in ('compared', 'not compared'):
+                if solver.get('status') == 'not_asked' and \
+                        other.get('status') in ('compared', 'not_compared'):
                     self.item('note', sa, sb, f'{self.head(sa, sb)}: '
                               f'solvers not compared; describe {side} with '
                               'solver=True')
-                elif solver.get('status') == 'not compared':
+                elif solver.get('status') == 'not_compared':
                     self.unchecked(side, study,
                                    f'{self.side_head(side, study)}: solver '
                                    f'not compared: {solver.get("reason")}')

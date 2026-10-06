@@ -462,7 +462,7 @@ def test_plate(solved):
     assert described['mphkit'] == mk.__version__
     assert described['comsol'].startswith('COMSOL')
     assert described['saved_with'].startswith('COMSOL')
-    assert described['format'] == _describe.FORMAT == 4
+    assert described['format'] == _describe.FORMAT == 5
     assert described['notes'] == []
 
 
@@ -531,7 +531,7 @@ def test_leaves_nothing(client, solved):
     # without solver=True nothing is compiled
     plain = mk.describe(model)
     assert model_state(model) == before
-    assert plain['studies'][0]['solver']['status'] == 'not asked'
+    assert plain['studies'][0]['solver']['status'] == 'not_asked'
     assert plain['notes'] == []
 
 
@@ -655,7 +655,7 @@ def test_solver_failing(client, solved, monkeypatch):
     found = mk.describe(model, solver=True)
     assert model_state(model) == before
     solver = found['studies'][0]['solver']
-    assert solver['status'] == 'not compared'
+    assert solver['status'] == 'not_compared'
     assert solver['sequence'] == 'sol1'
     assert 'made to fail' in solver['reason']
 
@@ -686,12 +686,12 @@ def test_solver(model):
     assert sorted(change['properties']) == ['control', 'stol'], \
         change['properties']
     assert mk.describe(model)['studies'][0]['solver'] == {
-        'status': 'not asked', 'sequence': 'sol1'}
+        'status': 'not_asked', 'sequence': 'sol1'}
     # without a built mesh, a temporary sequence would build it silently
     mesh = model.java.mesh(model.java.mesh().tags()[0])
     mesh.clearMesh()
     solver = mk.describe(model, solver=True)['studies'][0]['solver']
-    assert solver['status'] == 'not compared'
+    assert solver['status'] == 'not_compared'
     assert 'run model.mesh()' in solver['reason']
     assert mesh.getNumElem() == 0
     # a disabled study is not compared either (COMSOL 6.4 refuses to
@@ -705,7 +705,7 @@ def test_solver(model):
     sequences = [str(t) for t in model.java.sol().tags()]
     reader = _describe._Reader(model)
     assert reader.solver(Disabled(), 'std1', True) == {
-        'status': 'not compared', 'sequence': 'sol1',
+        'status': 'not_compared', 'sequence': 'sol1',
         'reason': 'study disabled'}
     assert [str(t) for t in model.java.sol().tags()] == sequences
 
@@ -943,7 +943,7 @@ def test_multiphysics_and_coordinates(model):
     assert coupling['selection'] == {'level': 'domain', 'geometry': 'geom1',
                                      'entities': 'all'}
     assert 'all_properties' not in coupling
-    systems = {c['tag']: c for c in described['coordinates']}
+    systems = {c['tag']: c for c in described['coordinate_systems']}
     assert systems['sys2']['properties'] == {'angle': ['0', '0', '30[deg]']}
     assert systems['sys2']['component'] == 'comp1'
 
