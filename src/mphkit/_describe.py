@@ -245,7 +245,7 @@ def describe(model: Model, /, *, solver: bool = False) -> dict:
 # Plain functions #
 ###################
 
-def json_value(value):
+def json_value(value) -> Any:
     """
     Returns a value read from COMSOL as JSON-ready values: lists for
     tuples and arrays, and 'NaN', 'Infinity' or '-Infinity' for those

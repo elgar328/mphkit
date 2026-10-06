@@ -13,30 +13,18 @@ until 1.0, a minor release (0.2, 0.3, ...) may change the API. See
 
 - `mk.describe(model)` returns a model's settings as plain, JSON-ready
   values in which nodes can be matched by type and place rather than by
-  tags, feature order or entity numbers:
-  parameters, definitions, probes, materials, physics, multiphysics,
-  meshes, mass properties and studies, with only the properties that differ from the
-  defaults (leaving out those other settings make unused) and their SI
-  values where COMSOL can evaluate them, the names expressions call
-  functions, operators and probes by, and the selections described by
-  the location and size of their entities (with the geometry's length
-  in metres and whether it forms a union or an assembly);
-  with `solver=True` also the solver settings that differ from the ones
-  COMSOL would choose. It is meant for checking a model rebuilt by a
-  script against the one made in the COMSOL Desktop. It leaves the model
-  as it was; with `solver=True` it compiles the equations, which in a
-  model saved by another COMSOL version or build may update its solver
-  sequences and build empty meshes of layered materials (listed in the
-  result's `notes`).
+  tags, order or entity numbers: the properties that differ from the
+  defaults, with their SI values, and selections by the location and
+  size of their entities; `solver=True` adds the solver settings that
+  differ from the ones COMSOL would choose. It leaves the model as it
+  was, except that compiling may update the solver sequences of a model
+  saved by another COMSOL version (listed in the result's `notes`).
 - `mk.compare(a, b)` lists how two models (or results of `mk.describe`)
-  differ: parameters, geometry, and nodes paired by name or by type and
-  the place of their selections rather than by tags or order, with
-  values compared after translating tags and in SI units. Each item
-  has a kind, both paths and a one-line message; what follows from a
-  differing geometry is grouped under it, and where a node applies
-  differently under the node that overrides it. The order of mesh
-  operations and study steps is compared too. Labels and library
-  entries of materials are hidden unless shown.
+  differ, with nodes paired by name or by type and place rather than by
+  tags or order, and an empty list if nothing does. Each item has a
+  kind, both paths and a one-line message; what follows from a
+  difference (a geometry, a node that overrides another) is grouped
+  under it.
 
 ### Fixed
 

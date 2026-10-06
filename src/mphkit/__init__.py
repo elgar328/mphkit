@@ -100,8 +100,8 @@ keeps the solutions) and `old.save('old.java')` show it as Java
 (`old.save()` without a path overwrites the .mph); `help(mk.sel.find)`
 moves numbered selections and tells how to inspect the old model.
 Its nodes: `old/'geometries'/'Geometry 1'` (names: `old.geometries()`).
-`mk.compare(old, new)` lists what a script rebuilding it does
-differently.
+`mk.compare(old, model)` lists what a script rebuilding it as `model`
+does differently ([] if nothing).
 
 Index:
 
@@ -129,7 +129,8 @@ Index:
 - Results: mk.integral, mk.average, mk.maximum, mk.minimum, mk.value,
   mk.plot; sweeps: mk.outer_values, mk.step_values (values of the outer
   loop and of the steps, also eigenfrequencies).
-- Compare models: mk.describe, mk.compare (settings, selections by location).
+- Compare models: mk.describe, mk.compare (settings; selections by
+  location).
 - Other: mk.set (properties of any node or Java object), mk.component_of
   (a geometry's component), mk.coordinate_system (e.g. for perfectly
   matched layers), mk.LicenseError (no CAD license), mk.StepWarning
