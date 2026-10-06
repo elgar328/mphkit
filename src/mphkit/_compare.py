@@ -13,6 +13,7 @@ back from JSON); only `compare` itself calls COMSOL, to describe a model.
 """
 from __future__ import annotations
 
+import bisect
 import json
 import math
 import re
@@ -595,11 +596,21 @@ def match_tables(ta: Table, tb: Table, tol: Tolerance):
     for one, many, flip in ((ta, tb, False), (tb, ta, True)):
         singles = left_b if flip else left_a
         pieces_left = left_a if flip else left_b
+        # the pieces by the low end of their x range, to find the ones in
+        # a box without trying them all
+        position = {j: k for k, j in enumerate(pieces_left)}
+        lows = sorted((many.rows[j]['box'][0][0], j) for j in pieces_left)
+        starts = [low for low, _ in lows]
         for i in list(singles):
             row = one.rows[i]
             if row['size'] is None:
                 continue
-            pieces = [j for j in pieces_left
+            low, high = row['box'][0]
+            first = bisect.bisect_left(starts, low - tol.of(low))
+            last = bisect.bisect_right(starts, high + tol.of(high))
+            spanned = sorted((j for _, j in lows[first:last]
+                              if j in position), key=position.__getitem__)
+            pieces = [j for j in spanned
                       if tol.inside(many.rows[j]['box'], row['box'])]
             if not pieces:
                 continue
@@ -608,6 +619,7 @@ def match_tables(ta: Table, tb: Table, tol: Tolerance):
                 singles.remove(i)
                 for j in pieces:
                     pieces_left.remove(j)
+                    del position[j]
                 cell = (frozenset(pieces), frozenset({i})) if flip else \
                     (frozenset({i}), frozenset(pieces))
                 cells.append(cell)
@@ -778,7 +790,8 @@ class GeometryPair:
         only_a: set[int] = set()
         only_b: set[int] = set()
         differing: set = set()
-        for index, (cell_a, cell_b) in enumerate(cells):
+        for index in self.touched(level, rows_a, rows_b):
+            cell_a, cell_b = cells[index]
             in_a, in_b = cell_a & rows_a, cell_b & rows_b
             if in_a == cell_a and in_b == cell_b:
                 common += ta.size(cell_a)
@@ -822,6 +835,14 @@ class GeometryPair:
                 for r in rows)
         return found
 
+    def touched(self, level: str, rows_a: set, rows_b: set) -> list[int]:
+        """The cells (in order) that rows of either side are in."""
+        found: set[int] = set()
+        for side, rows in ((0, rows_a), (1, rows_b)):
+            cells = self.cell_of(side, level)
+            found.update(cells[row] for row in rows if cells[row] != 'rest')
+        return sorted(found)
+
     def cell_of(self, side: int, level: str) -> dict:
         """A level's rows of one side by the cell they are in, 'rest' for
         rows without a counterpart."""
@@ -864,7 +885,9 @@ class GeometryPair:
             return (in_a == cell_a and in_b == cell_b) or \
                 (not in_a and not in_b)
 
-        for index, (cell_a, cell_b) in enumerate(cells):
+        for index in self.touched(level, rows_a | applied_a,
+                                  rows_b | applied_b):
+            cell_a, cell_b = cells[index]
             if not alike(cell_a, cell_b, cell_a & rows_a, cell_b & rows_b):
                 continue
             in_a, in_b = cell_a & applied_a, cell_b & applied_b
@@ -1127,6 +1150,7 @@ class _Comparison:
         # a's components whose geometry differs, with its geometry item
         self.differing: dict[str | None, dict] = {}
         self.pending: list[tuple] = []
+        self.overlaps: dict[tuple[int, int], tuple] = {}
         self.unchecked_paths: set[tuple] = set()
         self.count = 0
         self.components = ({c['tag'] for c in a.get('components', [])},
@@ -1397,6 +1421,13 @@ class _Comparison:
         return found
 
     def overlap(self, na: dict, nb: dict) -> float:
+        key = (id(na), id(nb))
+        if key not in self.overlaps:
+            # the nodes are kept with the value: their ids stay theirs
+            self.overlaps[key] = (na, nb, self.measure_overlap(na, nb))
+        return self.overlaps[key][2]
+
+    def measure_overlap(self, na: dict, nb: dict) -> float:
         if 'source' in na or 'source' in nb:      # an identity pair
             straight = [self.selection(na.get(s), nb.get(s))['overlap']
                         for s in ('source', 'destination')]
