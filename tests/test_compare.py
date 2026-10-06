@@ -406,6 +406,93 @@ def test_global_equations_by_row():
     assert item['name'] == 'u2'
 
 
+def equations(tag, names, **extra):
+    return node(tag, 'GlobalEquations', {'level': 'global'},
+                rows={'name': names, 'equation': [f'{n}t' for n in names]},
+                row_defaults={'name': '', 'equation': '',
+                              'initialValueU': '0'}, **extra)
+
+
+def mirrored(a, b):
+    """Tells whether compare(b, a) is compare(a, b) with a and b
+    swapped, by kind, paths and count."""
+    swap = {'only_in_a': 'only_in_b', 'only_in_b': 'only_in_a'}
+
+    def key(items, flip):
+        return sorted((swap.get(i['kind'], i['kind']) if flip else i['kind'],
+                       i['path']['b' if flip else 'a'],
+                       i['path']['a' if flip else 'b'])
+                      for i in items if i['kind'] != 'unchecked')
+    return key(mk.compare(a, b), False) == key(mk.compare(b, a), True)
+
+
+def test_global_equation_features():
+    # a disabled feature is found where the equations are split otherwise
+    a = described([equations('ge1', ['u']),
+                   equations('ge2', ['v'], active=False)])
+    b = described([equations('ge1', ['u', 'v'])])
+    [item] = mk.compare(a, b)
+    assert item['kind'] == 'active'
+    assert item['path'] == {'a': 'comp1/ht/ge2', 'b': 'comp1/ht/ge1'}
+    assert mirrored(a, b)
+    # one disabled feature linked to two: one item, with its own path
+    a = described([equations('ge1', ['u', 'v'], active=False)])
+    b = described([equations('ge1', ['u']), equations('ge2', ['v'])])
+    found = [i for i in mk.compare(a, b) if i['kind'] == 'active']
+    assert [i['path']['a'] for i in found] == ['comp1/ht/ge1']
+    assert mirrored(a, b)
+    # labels only where one is paired with one
+    b['components'][0]['physics'][0]['features'][1]['label'] = 'Other'
+    a['components'][0]['physics'][0]['features'][0]['active'] = True
+    assert mk.compare(a, b, show='label') == []
+    # a subfeature only one side has, once
+    weak = node('wk1', 'WeakContribution', {'level': 'global'})
+    a['components'][0]['physics'][0]['features'][0]['features'] = [weak]
+    found = mk.compare(a, b)
+    assert kinds(found) == ['only_in_a']
+    assert found[0]['path']['a'] == 'comp1/ht/wk1'
+    # an equation only one side has, once
+    b = described([equations('ge1', ['u'])])
+    a = described([equations('ge1', ['u', 'v'])])
+    assert [i['name'] for i in mk.compare(a, b)] == ['v']
+
+
+def test_global_equation_tags():
+    # the tags of global equations translate in study steps
+    def model(features, disabled):
+        step = {'tag': 'stat', 'path': 'std1/stat', 'type': 'Stationary',
+                'label': 'Stationary', 'active': True,
+                'properties': {'disabledphysics': disabled},
+                'defaults': {'disabledphysics': []}, 'selection': None,
+                'selections': {}, 'features': []}
+        return described(features, studies=[{
+            'tag': 'std1', 'path': 'std1', 'label': 'Study 1',
+            'active': True, 'steps': [step],
+            'solver': {'status': 'automatic', 'sequence': None}}])
+
+    a = model([equations('ge1', ['u'])], ['ht/ge1'])
+    b = model([equations('ge2', ['u'])], ['ht/ge2'])
+    assert mk.compare(a, b) == []
+
+
+def test_global_equation_settings():
+    # a setting one side leaves at its default
+    a = described([equations('ge1', ['u'],
+                             properties={'quantity': 'length'},
+                             defaults={'quantity': 'none'})])
+    b = described([equations('ge1', ['u'])])
+    [item] = mk.compare(a, b)
+    assert (item['a'], item['b']) == ('length', 'none')
+    # unknown defaults are unchecked
+    del a['components'][0]['physics'][0]['features'][0]['defaults'][
+        'quantity']
+    assert kinds(mk.compare(a, b)) == ['unchecked']
+    # features of another type keep their own values
+    b['components'][0]['physics'][0]['features'][0]['type'] = 'Other'
+    [item] = mk.compare(a, b)
+    assert (item['a'], item['b']) == ('length', None)
+
+
 def test_step_maps():
     def step(activate, defaults):
         return {'tag': 'stat', 'path': 'std1/stat', 'type': 'Stationary',

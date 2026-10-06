@@ -1796,8 +1796,78 @@ class _Comparison:
             [f for f in na.get('features', []) if 'rows' not in f],
             [f for f in nb.get('features', []) if 'rows' not in f],
             context, nb)
+        groups = self.pair_rows(rows_a, rows_b, nb, context)
         self.later(self.compare_interface, na, nb, context)
+        self.later(self.compare_row_features, groups, context)
         self.later(self.compare_rows, na, nb, rows_a, rows_b, context)
+
+    def pair_rows(self, rows_a: list, rows_b: list, owner_b: dict,
+                  context: _Context) -> list[tuple[list, list, list]]:
+        """
+        Pairs features that list equations by row (global equations) of
+        one type by the equations they share, several to several, records
+        b's tags under a's (the first partner) and pairs their subfeatures
+        in each group of features linked that way. Returns the groups as
+        (a's features, b's features, pairs).
+        """
+        def names(feature) -> set:
+            return set(feature['rows'].get('name') or [])
+
+        pairs = [(i, j) for i, fa in enumerate(rows_a)
+                 for j, fb in enumerate(rows_b)
+                 if fa.get('type') == fb.get('type')
+                 and names(fa) & names(fb)]
+        for key in (owner_b.get('identifier'), owner_b.get('tag')):
+            if key:
+                tags = self.translator.features.setdefault(key, {})
+                for i, j in pairs:
+                    tags.setdefault(rows_b[j]['tag'], rows_a[i]['tag'])
+        # the groups of features linked by shared equations
+        group: dict[tuple, int] = {}
+        for i, j in pairs:
+            ga, gb = group.get(('a', i)), group.get(('b', j))
+            if ga is None and gb is None:
+                group[('a', i)] = group[('b', j)] = len(group)
+            elif ga is not None and gb is None:
+                group[('b', j)] = ga
+            elif ga is None and gb is not None:
+                group[('a', i)] = gb
+            elif ga is not None and ga != gb:
+                for key, value in group.items():
+                    if value == gb:
+                        group[key] = ga
+        found = []
+        for number in dict.fromkeys(group.values()):
+            in_a = [f for i, f in enumerate(rows_a)
+                    if group.get(('a', i)) == number]
+            in_b = [f for j, f in enumerate(rows_b)
+                    if group.get(('b', j)) == number]
+            linked = [(rows_a[i], rows_b[j]) for i, j in pairs
+                      if group[('a', i)] == number]
+            found.append((in_a, in_b, linked))
+            # now, so that their tags are known before values are compared
+            self.pair_features(
+                [sub for f in in_a for sub in f.get('features', [])],
+                [sub for f in in_b for sub in f.get('features', [])],
+                context, owner_b)
+        return found
+
+    def compare_row_features(self, groups: list, context: _Context):
+        """Compares the features of each group from `pair_rows`: one
+        item for each disabled one, labels where one is paired with one.
+        Their selection is global, the same for all."""
+        disabled = set()
+        for in_a, in_b, linked in groups:
+            for fa, fb in linked:
+                if fa.get('active', True) == fb.get('active', True):
+                    continue
+                off = ('a', fa['path']) if not fa.get('active', True) \
+                    else ('b', fb['path'])
+                if off not in disabled:
+                    disabled.add(off)
+                    self.compare_active(fa, fb, context)
+            if len(in_a) == 1 and len(in_b) == 1:
+                self.compare_label(in_a[0], in_b[0], context)
 
     def pair_features(self, list_a, list_b, context, owner_b,
                       ordered=None) -> list:
@@ -2342,15 +2412,34 @@ class _Comparison:
             for feature in features:
                 rows = feature['rows']
                 defaults = feature.get('row_defaults', {})
-                settings = {k: v for k, v in
-                            (feature.get('properties') or {}).items()}
                 for i, name in enumerate(rows.get('name', [])):
                     row = {k: (v[i] if i < len(v) else defaults.get(k))
                            for k, v in rows.items()
                            if k not in ('name', 'description')}
-                    row.update(settings)
                     found[name] = (feature, row)
             return found
+
+        def settings(fa: dict, fb: dict) -> tuple[dict, dict, list]:
+            """The settings of two features as each has them: a value
+            one sets comes from the other's defaults (of the same type)."""
+            pa, pb = fa.get('properties') or {}, fb.get('properties') or {}
+            da, db = fa.get('defaults') or {}, fb.get('defaults') or {}
+            same_type = fa.get('type') == fb.get('type')
+            own_a, own_b, blocked = {}, {}, []
+            for key in list(pa) + [k for k in pb if k not in pa]:
+                if same_type and (key not in pa and key not in db or
+                                  key not in pb and key not in da):
+                    blocked.append(key)
+                    continue
+                if not same_type:
+                    own_a[key], own_b[key] = pa.get(key), (pb.get(key), False)
+                    continue
+                # b's values are translated below; a's defaults are a's
+                own_a[key] = pa[key] if key in pa else \
+                    self.translator.value(db[key], context.component_b)
+                own_b[key] = (pb[key], False) if key in pb else \
+                    (da[key], True)
+            return own_a, own_b, blocked
 
         found_a, found_b = table(rows_a), table(rows_b)
         for name in list(found_a) + [n for n in found_b
@@ -2367,16 +2456,26 @@ class _Comparison:
                           name=name)
                 continue
             (fa, row_a), (fb, row_b) = found_a[name], found_b[name]
-            for key in list(row_a) + [k for k in row_b if k not in row_a]:
-                x = row_a.get(key)
-                y = self.translator.value(row_b.get(key),
-                                          context.component_b)
+            own_a, own_b, blocked = settings(fa, fb)
+            if blocked:
+                self.unchecked('a', fa, f'{self.head(fa, fb)}: defaults '
+                               f'unknown, not compared: {", ".join(blocked)}',
+                               context)
+            values_a = {**row_a, **own_a}
+            values_b = {**{k: (v, False) for k, v in row_b.items()},
+                        **own_b}
+            for key in list(values_a) + [k for k in values_b
+                                         if k not in values_a]:
+                x = values_a.get(key)
+                raw, of_a = values_b.get(key, (None, False))
+                y = raw if of_a else self.translator.value(
+                    raw, context.component_b)
                 if same_value(x, y, parameters=self.parameters):
                     self.item('property', fa, fb,
                               f'{self.head(fa, fb)}: equation {name}: '
                               f'{key} is {shown(x)} in a, '
-                              f'{shown(row_b.get(key))} in b', a=x,
-                              b=row_b.get(key), context=context, name=name)
+                              f'{shown(raw)} in b', a=x,
+                              b=raw, context=context, name=name)
 
     # Where nodes apply, and why it differs
 
