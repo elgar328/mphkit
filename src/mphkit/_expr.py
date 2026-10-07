@@ -8,6 +8,13 @@ Expr = str | Real
 Vector = Sequence[Expr]
 
 
+def java_string(value) -> bool:
+    """Tells whether a value is a Java string, as COMSOL's own lists give
+    them (e.g. `model.java.result().dataset().tags()`)."""
+    import jpype  # type: ignore[import-untyped]
+    return isinstance(value, jpype.JString)
+
+
 def expr(value: Expr) -> str:
     """Return `value` as a COMSOL expression string.
 
@@ -18,6 +25,8 @@ def expr(value: Expr) -> str:
         raise TypeError(f'Expected a number or expression, got {value!r}.')
     if isinstance(value, str):
         return value
+    if java_string(value):
+        return str(value)
     if isinstance(value, Integral):
         return str(int(value))
     if isinstance(value, Real):

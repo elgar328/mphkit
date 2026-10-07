@@ -23,6 +23,7 @@ def test_convert_pure():
     assert _comsol.convert([[0, 1], [2, 'a']]) == [['0', '1'], ['2', 'a']]
     assert _comsol.convert([True, False]) == [True, False]
     assert _comsol.convert('r/2') == 'r/2'
+    assert _comsol.java_string('r/2') is False
     assert _comsol.convert(True) is True
     assert _comsol.convert(2**31 - 1) == 2**31 - 1
     assert _comsol.convert(-2**31) == -2**31

@@ -5,6 +5,7 @@ import pytest
 
 import mphkit as mk
 from conftest import count
+from mphkit import _comsol
 from mphkit._comsol import WorkPlaneNode
 
 
@@ -71,6 +72,39 @@ def test_node_mixed_list(model):
     assert mk.set(step, plist=[100, 'f0']) is step
     assert [str(v) for v in step.java.getStringArray('plist')] == \
         ['100', 'f0']
+
+
+def test_java_strings(model, component):
+    # values taken from COMSOL's own lists are Java strings
+    import jpype
+    plot = model.java.result().create('pg1', 'PlotGroup1D')
+    mk.set(plot, data=jpype.JString('none'))
+    assert plot.getString('data') == 'none'
+    model.java.study().create('std1').create('freq', 'Frequency')
+    step = (model/'studies').children()[0].children()[0]
+    mk.set(step, plist=[jpype.JString('100'), jpype.JString('f0')])
+    assert [str(v) for v in step.java.getStringArray('plist')] == \
+        ['100', 'f0']
+    # in a table, in a geometry helper and as a node's name
+    table = component.func().create('int1', 'Interpolation')
+    mk.set(table, table=[[jpype.JString('0'), jpype.JString('1')],
+                         [jpype.JString('1'), jpype.JString('2')]])
+    assert [[str(v) for v in row] for row in
+            table.getStringMatrix('table')] == [['0', '1'], ['1', '2']]
+    geom = model/'geometries'/'Geometry 1'
+    block = mk.block(geom, (jpype.JString('2'), 3, 4))
+    assert str(block.java.getStringArray('size')[0]) == '2'
+    found = _comsol.find_node(model.java.result(), jpype.JString('pg1'),
+                              'plot', 'plots', 'no plot')
+    assert str(found.tag()) == 'pg1'
+
+    # a value COMSOL lists but whose type it does not take says so
+    class Named:
+        def __str__(self):
+            return 'none'
+
+    with pytest.raises(ValueError, match=r"not .* \(Named\)"):
+        mk.set(plot, data=Named())
 
 
 def test_geometry_feature_inputs(model, geom):

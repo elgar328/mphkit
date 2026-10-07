@@ -9,6 +9,15 @@ until 1.0, a minor release (0.2, 0.3, ...) may change the API. See
 
 ## [Unreleased]
 
+### Fixed
+
+- Values read from COMSOL's own lists (Java strings, e.g.
+  `model.java.result().dataset().tags()[0]`) work in `mk.set` (also inside
+  lists and tables), as sizes and positions of geometry helpers, and as
+  `dataset=` and other names of nodes. Before, `mk.set` refused them with
+  a message that named the same value as allowed and as rejected; such a
+  message now names the value's type.
+
 ## [0.4.0] - 2026-10-07
 
 ### Added

@@ -17,7 +17,7 @@ import numpy
 from mph.node import Node
 from mph.node import cast, escape, join, tag_pattern
 
-from ._expr import vector
+from ._expr import java_string, vector
 
 ENTITIES = ('domain', 'boundary', 'edge', 'point')
 RESULT_SUFFIX = {'domain': 'dom', 'boundary': 'bnd', 'edge': 'edg', 'point': 'pnt'}
@@ -108,8 +108,8 @@ def find_node(container, value, what: str, group: str, wrong: str):
         if len(value.path) != 2 or value.path[0] != group:
             raise TypeError(f'"{value}" is not a {what} node.')
         key = tag_of(value)
-    elif isinstance(value, str):
-        key = value
+    elif isinstance(value, str) or java_string(value):
+        key = str(value)
     else:
         raise TypeError(wrong)
     for tag in container.tags():
@@ -549,6 +549,8 @@ def convert(value):
     """Converts a Python value into something MPh's `cast()` accepts."""
     if isinstance(value, Node):
         return tag_of(value)
+    if java_string(value):
+        return str(value)       # cast() takes no Java strings
     if isinstance(value, numpy.generic):
         value = value.item()
     if isinstance(value, numpy.ndarray):
@@ -557,7 +559,8 @@ def convert(value):
             and not -2**31 <= value < 2**31):
         return str(value)  # cast() would wrap it around as a Java int
     if isinstance(value, (list, tuple)):
-        items = [tag_of(v) if isinstance(v, Node) else v for v in value]
+        items = [tag_of(v) if isinstance(v, Node) else
+                 str(v) if java_string(v) else v for v in value]
         if any(isinstance(v, (list, tuple, numpy.ndarray)) for v in items):
             return [vector(row) for row in items]
         if any(isinstance(v, bool) for v in items):
@@ -640,10 +643,13 @@ def set_property(java, name: str, value, listing=None):
                 pass
         allowed = allowed_values(java, name)
         if allowed:
+            # an allowed value of a type COMSOL does not take
+            kind = f' ({type(value).__name__})' if str(value) in allowed \
+                else ''
             raise ValueError(
                 f'Property "{name}" of "{type_name(java)}" accepts '
-                f'{", ".join(repr(v) for v in allowed)}, not {value!r}.'
-            ) from error
+                f'{", ".join(repr(v) for v in allowed)}, not {value!r}'
+                f'{kind}.') from error
         raise
 
 
