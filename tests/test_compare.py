@@ -117,7 +117,8 @@ def test_spaced():
     ('range(0,dt,1)', None), ('1[s] 2[s]', None), ('x', None),
     # given up before making the values
     ('range(0,1,inf)', None), ('range(0,nan,1)', None),
-    ('range(0,1e-7,1)', None)])
+    ('range(0,1e-7,1)', None),
+    ('range(0,1,999999) range(0,1,999999)', None)])
 def test_numbers(text, expected):
     found = _compare.numbers(text)
     if expected is None:
@@ -457,6 +458,34 @@ def test_global_equation_features():
     assert [i['name'] for i in mk.compare(a, b)] == ['v']
 
 
+def test_global_equation_groups():
+    # features linked through shared equations form one group: two in a
+    # with two in b, so no label is compared and steps that name them
+    # are unchecked
+    def step(disabled):
+        return [{'tag': 'std1', 'path': 'std1', 'label': 'Study 1',
+                 'active': True, 'solver': {'status': 'automatic',
+                                            'sequence': None},
+                 'steps': [{'tag': 'stat', 'path': 'std1/stat',
+                            'type': 'Stationary', 'label': 'Stationary',
+                            'active': True,
+                            'properties': {'disabledphysics': disabled},
+                            'defaults': {'disabledphysics': []},
+                            'selection': None, 'selections': {},
+                            'features': []}]}]
+
+    a = described([equations('ge1', ['u'], label='X'),
+                   equations('ge2', ['v', 'w'])],
+                  studies=step(['ht/ge1']))
+    b = described([equations('ge1', ['w'], label='Y'),
+                   equations('ge2', ['u', 'v'])],
+                  studies=step(['ht/ge2']))
+    found = mk.compare(a, b, show='label')
+    assert kinds(found) == ['unchecked']
+    assert 'put into features otherwise' in found[0]['message']
+    assert mirrored(a, b)
+
+
 def test_global_equation_tags():
     # the tags of global equations translate in study steps
     def model(features, disabled):
@@ -487,6 +516,21 @@ def test_global_equation_settings():
     del a['components'][0]['physics'][0]['features'][0]['defaults'][
         'quantity']
     assert kinds(mk.compare(a, b)) == ['unchecked']
+    # b's default in a's tags
+    a = described([equations('ge1', ['u'], defaults={'src': 'ht.T'})])
+    b = described()
+    b['components'][0]['physics'] = [interface('ht2', [equations(
+        'ge1', ['u'], properties={'src': 'ht2.x'},
+        defaults={'src': 'ht2.T'})])]
+    [item] = mk.compare(a, b)
+    assert (item['a'], item['b']) == ('ht.T', 'ht2.x')
+    assert item['from_default'] is True
+    a = described([equations('ge1', ['u'],
+                             properties={'quantity': 'length'},
+                             defaults={'quantity': 'none'})])
+    b = described([equations('ge1', ['u'])])
+    del a['components'][0]['physics'][0]['features'][0]['defaults'][
+        'quantity']
     # features of another type keep their own values
     b['components'][0]['physics'][0]['features'][0]['type'] = 'Other'
     [item] = mk.compare(a, b)
@@ -1072,6 +1116,9 @@ def test_arguments_and_order():
     assert kinds(mk.compare(a, b)) == ['only_in_a', 'only_in_b']
     assert mk.compare(b, a)[0]['path']['b'] == 'parameters/L'
     assert mk.compare(a, b, ignore=None) == mk.compare(a, b)
+    # names given once, as an iterator
+    assert mk.compare(a, b, ignore=iter(['only_in_b'])) == \
+        mk.compare(a, b, ignore='only_in_b')
     for wrong in ({'only_in_b': 1}, ['only_in_b', 1], 3):
         with pytest.raises(ValueError, match='a name or a list'):
             mk.compare(a, b, ignore=wrong)

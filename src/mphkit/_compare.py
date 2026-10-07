@@ -133,7 +133,8 @@ def compare(a: Model | dict, b: Model | dict, /, *,
     differs. A selection explains its own level only; an interface on in
     one model only explains all levels. Nodes under a node disabled in
     one model are in its 'active' item. Messages end in '(+N
-    consequence(s))'; `causes` may name an item `ignore` hides.
+    consequence(s))' (a geometry's in '(+N consequence(s): fix the
+    geometry first)'); `causes` may name an item `ignore` hides.
 
     Where a geometry differs, what follows from it is in the geometry item's
     `consequences` (fix the geometry first): selections that differ only in
@@ -154,21 +155,23 @@ def compare(a: Model | dict, b: Model | dict, /, *,
     over `ignore`. The consequences of a hidden item take its place.
 
     Not compared: results, the order of physics features and materials
-    (where they apply is: a cause may come before the node it
-    overrides), expressions COMSOL cannot evaluate other than as
-    written ('2*a' and 'a*2' differ), the two faces of a pair in an
-    assembly and other entities with the same box and size (they are one
-    row of the table), a probe's name used as a variable, the same mass
-    properties name in two components, where boundary elements apply on
-    the exterior (domain 0; where they select it is compared), tags in
-    file names with a relative path ('data/comp1.mph'), tags in
-    properties other than the ones of nodes, physics, materials,
-    coordinate systems, pairs, meshes, studies and solvers (e.g. load
-    groups), a mesh deleted and made again in another order (its tag
-    pairs it with another; the differences of the two show), a feature
-    of global equations without equations that one model has, and the
-    features a study step disables where the two models put global
-    equations into features otherwise (they compare by feature).
+    (where they apply is: a cause may come before the node it overrides),
+    expressions COMSOL cannot evaluate other than as written ('2*a' and
+    'a*2' differ), the two faces of a pair in an assembly and other entities
+    with the same box and size (they are one row of the table), a probe's
+    name used as a variable, the same mass properties name in two
+    components, where boundary elements apply on the exterior (domain 0;
+    where they select it is compared), tags in file names with a relative
+    path ('data/comp1.mph'), tags in properties other than the ones of
+    nodes, physics, materials, coordinate systems, pairs, meshes, studies
+    and solvers (e.g. load groups), the entries of a study step's map whose
+    keys in b stand for one key in a (one of them is kept), a mesh deleted
+    and made again in another order (its tag pairs it with another; the
+    differences of the two show), a feature of global equations without
+    equations that one model has or that shares none with the other model
+    (nor its subfeatures), and settings of study steps that name features of
+    global equations the two models put into features otherwise (an
+    'unchecked' item says so).
     Compared although they may be unused: a probe's `intsurface` and
     `intvolume` outside 3D, a sweep's `filename` while both save to a
     file (its default differs from one computer to the next), values
@@ -196,8 +199,9 @@ def compare(a: Model | dict, b: Model | dict, /, *,
     except (KeyError, TypeError, AttributeError, IndexError) as error:
         if not plain:
             raise
+        # also with a model on one side: the error may come from either
         raise ValueError(
-            f'mk.compare could not read {" or ".join(plain)} '
+            'mk.compare could not read a or b '
             f'({type(error).__name__}: {error}). Pass complete results of '
             'mk.describe; if they are, this is a bug in mphkit.'
         ) from error
@@ -211,13 +215,17 @@ def _names(value) -> set[str]:
         return set()
     if isinstance(value, str):
         return {value}
-    if isinstance(value, dict) or not isinstance(value, Iterable) or \
-            not all(isinstance(name, str) for name in value):
+    # read once: an iterator can be read only once
+    names = None if isinstance(value, dict) or \
+        not isinstance(value, Iterable) else list(value)
+    if names is None or not all(isinstance(name, str) for name in names):
         raise ValueError(f'mk.compare takes a name or a list of names for '
                          f'ignore and show, not {value!r}.')
-    return set(value)
+    return set(names)
 
 
+# Most numbers a value is compared by, one by one
+LONGEST = 10**6
 # Lists at the top of a result of mk.describe
 LISTS = ('functions', 'variables', 'couplings', 'coordinate_systems',
          'materials', 'definitions', 'probes', 'studies', 'solutions',
@@ -355,8 +363,8 @@ def numbers(text: str) -> list[float] | None:
             if not all(math.isfinite(v) for v in (start, step, stop)) or \
                     step == 0 or (stop - start) * step < 0:
                 return None
-            # too long to compare value by value
-            if (stop - start) / step + 1 > 10**6:
+            # too long to compare value by value (all ranges together)
+            if len(found) + (stop - start) / step + 1 > LONGEST:
                 return None
             slack = 1e-9 * abs(step)
             count = 0
@@ -364,13 +372,13 @@ def numbers(text: str) -> list[float] | None:
                 value = start + count * step
                 if (value - stop) * math.copysign(1, step) > slack:
                     break
-                if count >= 10**6:
-                    return None     # too long to compare value by value
                 found.append(value)
                 count += 1
         elif NUMBER.fullmatch(token):
             found.append(float(token))
         else:
+            return None
+        if len(found) > LONGEST:
             return None
     return found
 
@@ -1238,6 +1246,9 @@ class _Comparison:
         # components only one model has (b's as ('b only', tag)), with
         # their items
         self.lone: dict[Any, dict] = {}
+        # paths of global equation features each model puts into features
+        # otherwise than the other
+        self.split_rows: dict[str, set[str]] = {'a': set(), 'b': set()}
         self.pending: list[tuple] = []
         self.overlaps: dict[tuple[int, int], tuple] = {}
         self.unchecked_paths: set[tuple] = set()
@@ -1834,13 +1845,14 @@ class _Comparison:
             [f for f in na.get('features', []) if 'rows' not in f],
             [f for f in nb.get('features', []) if 'rows' not in f],
             context, nb)
-        groups = self.pair_rows(rows_a, rows_b, nb, context)
+        groups = self.pair_rows(rows_a, rows_b, na, nb, context)
         self.later(self.compare_interface, na, nb, context)
         self.later(self.compare_row_features, groups, context)
         self.later(self.compare_rows, na, nb, rows_a, rows_b, context)
 
-    def pair_rows(self, rows_a: list, rows_b: list, owner_b: dict,
-                  context: _Context) -> list[tuple[list, list, list]]:
+    def pair_rows(self, rows_a: list, rows_b: list, owner_a: dict,
+                  owner_b: dict, context: _Context
+                  ) -> list[tuple[list, list, list]]:
         """
         Pairs features that list equations by row (global equations) of
         one type by the equations they share, several to several, records
@@ -1883,6 +1895,13 @@ class _Comparison:
             linked = [(rows_a[i], rows_b[j]) for i, j in pairs
                       if group[('a', i)] == number]
             found.append((in_a, in_b, linked))
+            if len(in_a) != 1 or len(in_b) != 1:
+                # put into features otherwise: their tags do not translate
+                for side, owner, features in (('a', owner_a, in_a),
+                                              ('b', owner_b, in_b)):
+                    for head in (owner.get('identifier'), owner.get('tag')):
+                        self.split_rows[side].update(
+                            f"{head}/{f['tag']}" for f in features if head)
             # now, so that their tags are known before values are compared
             self.pair_features(
                 [sub for f in in_a for sub in f.get('features', [])],
@@ -1953,8 +1972,6 @@ class _Comparison:
     def pair_meshes(self, ca: dict, cb: dict, context: _Context):
         geometries = self.translator.maps['geometry']
         meshes_b = list(cb.get('meshes', []))
-        pairs = []
-        only_a = []
         meshes_a = ca.get('meshes', [])
 
         def same_geometry(ma: dict, mb: dict) -> bool:
@@ -1962,25 +1979,20 @@ class _Comparison:
                 ma.get('geometry')
 
         # on one geometry, the same tag first, then in order
-        for ma in meshes_a:
-            match = next((mb for mb in meshes_b if same_geometry(ma, mb)
-                          and mb.get('tag') == ma.get('tag')), None)
-            if match is not None:
-                meshes_b.remove(match)
-                pairs.append((ma, match))
-        paired = [ma for ma, _ in pairs]
-        for ma in meshes_a:
-            if any(ma is other for other in paired):
-                continue
-            match = next((mb for mb in meshes_b if same_geometry(ma, mb)),
-                         None)
-            if match is None:
-                only_a.append(ma)
-            else:
-                meshes_b.remove(match)
-                pairs.append((ma, match))
-        pairs.sort(key=lambda pair: next(
-            i for i, ma in enumerate(meshes_a) if ma is pair[0]))
+        partners: dict[int, dict] = {}
+        for same_tag in (True, False):
+            for i, ma in enumerate(meshes_a):
+                if i in partners:
+                    continue
+                match = next((mb for mb in meshes_b if same_geometry(ma, mb)
+                              and (not same_tag or
+                                   mb.get('tag') == ma.get('tag'))), None)
+                if match is not None:
+                    meshes_b.remove(match)
+                    partners[i] = match
+        only_a = [ma for i, ma in enumerate(meshes_a) if i not in partners]
+        pairs = [(ma, partners[i]) for i, ma in enumerate(meshes_a)
+                 if i in partners]
         for ma, mb in pairs:
             self.translator.add('mesh', mb.get('tag'), ma.get('tag'))
         mesh_context = _Context(context.component, context.component_b,
@@ -2345,6 +2357,7 @@ class _Comparison:
         si_a, si_b = na.get('si') or {}, nb.get('si') or {}
         sd_a, sd_b = na.get('si_defaults') or {}, nb.get('si_defaults') or {}
         unused = set(na.get('unused') or []) | set(nb.get('unused') or [])
+        split = []
         if na.get('type') == 'MassProperties':
             skip = skip | {'name'}      # compared through the pairing
         blocked = []
@@ -2353,6 +2366,10 @@ class _Comparison:
         component_b = context.component_b
         for name in list(pa) + [n for n in pb if n not in pa]:
             if name in unused or name in NAME_KEYS or name in skip:
+                continue
+            if self.names_split(pa.get(name), 'a') or \
+                    self.names_split(pb.get(name), 'b'):
+                split.append(name)
                 continue
             from_default = False
             # a mesh length from the other's defaults is in its unit
@@ -2416,8 +2433,21 @@ class _Comparison:
             self.unchecked('a', na, f'{self.head(na, nb)}: defaults '
                            f'unknown, not compared: {", ".join(blocked)}',
                            context)
+        if split:
+            self.unchecked('a', na, f'{self.head(na, nb)}: names global '
+                           'equations put into features otherwise, not '
+                           f'compared: {", ".join(split)}', context)
         if key == 'properties':
             self.used_only(na, nb, context)
+
+    def names_split(self, value, side: str) -> bool:
+        """Tells whether a value names a global equation feature that
+        the two models put into features otherwise."""
+        if isinstance(value, str):
+            return value in self.split_rows[side]
+        if isinstance(value, list):
+            return any(self.names_split(item, side) for item in value)
+        return False
 
     def used_only(self, na: dict, nb: dict, context: _Context):
         """
@@ -2513,11 +2543,13 @@ class _Comparison:
                     blocked.append(key)
                     continue
                 if not same_type:
-                    own_a[key], own_b[key] = pa.get(key), (pb.get(key), False)
+                    own_a[key] = (pa.get(key), False)
+                    own_b[key] = (pb.get(key), False)
                     continue
                 # b's values are translated below; a's defaults are a's
-                own_a[key] = pa[key] if key in pa else \
-                    self.translator.value(db[key], context.component_b)
+                own_a[key] = (pa[key], False) if key in pa else \
+                    (self.translator.value(db[key], context.component_b),
+                     True)
                 own_b[key] = (pb[key], False) if key in pb else \
                     (da[key], True)
             return own_a, own_b, blocked
@@ -2542,9 +2574,11 @@ class _Comparison:
                 self.unchecked('a', fa, f'{self.head(fa, fb)}: defaults '
                                f'unknown, not compared: {", ".join(blocked)}',
                                context)
-            values_a = {**row_a, **own_a}
+            values_a = {**row_a, **{k: v for k, (v, _) in own_a.items()}}
             values_b = {**{k: (v, False) for k, v in row_b.items()},
                         **own_b}
+            borrowed = {k for own in (own_a, own_b)
+                        for k, (_, default) in own.items() if default}
             for key in list(values_a) + [k for k in values_b
                                          if k not in values_a]:
                 x = values_a.get(key)
@@ -2553,11 +2587,13 @@ class _Comparison:
                     raw, context.component_b)
                 if same_value(x, y, parameters=self.parameters):
                     ending = '' if of_a else in_a_tags(x, raw, y)
+                    extra = {'from_default': True} if key in borrowed \
+                        else {}
                     self.item('property', fa, fb,
                               f'{self.head(fa, fb)}: equation {name}: '
                               f'{key} is {shown(x)} in a, '
                               f'{shown(raw)} in b{ending}', a=x,
-                              b=raw, context=context, name=name)
+                              b=raw, context=context, name=name, **extra)
 
     # Where nodes apply, and why it differs
 
