@@ -13,39 +13,35 @@ until 1.0, a minor release (0.2, 0.3, ...) may change the API. See
 
 ### Added
 
-- `mk.describe(model)` returns a model's settings as plain, JSON-ready
-  values in which nodes can be matched by type and place rather than by
-  tags, order or entity numbers: the properties that differ from the
-  defaults (except those a node's other settings leave unused), with
-  their SI values, and selections by the location and size of their
-  entities. It leaves the model as it was. `solver=True` adds the solver
-  settings that differ from the ones COMSOL would choose; it compiles the
-  equations, which in a model saved by another COMSOL version or build
-  may update its solver sequences and build the empty meshes of layered
-  materials (listed in the result's `notes`), and, as solving does, remake
-  nodes of COMSOL's own that are not in the Java export.
-- `mk.compare(a, b)` lists how two models (or results of `mk.describe`)
-  differ, with nodes paired by name or by type and place rather than by
-  tags or order, and an empty list if nothing does. Each item has a
-  kind, both paths and a one-line message; what follows from a
-  difference (a geometry, a node that overrides another) is grouped
-  under it.
+- `mk.describe(model)` summarizes a model's settings as plain, JSON-ready
+  values that do not depend on tags, feature order or entity numbers. Each
+  node lists only the properties that differ from COMSOL's defaults, with
+  their SI values, and selections are given by where their entities lie and
+  how large they are, so nodes can be matched by type and place. The model
+  is left as it was. With `solver=True` it also lists the solver settings
+  that differ from the ones COMSOL would choose; this compiles the
+  equations, which in a model saved by another COMSOL version or build may
+  update its solver sequences, as solving would (reported in `notes`).
+- `mk.compare(a, b)` lists the differences between two models, or between
+  saved results of `mk.describe`, pairing nodes by name or by type and
+  place rather than by tag or order; it returns an empty list when nothing
+  differs. Each difference has a kind, its path in both models and a
+  one-line message, and differences that follow from another one (a
+  changed geometry, a node overridden by another) are grouped under it.
 
 ### Fixed
 
-- `mk.problem_size` leaves the model as it was. It changed a note the
-  COMSOL Desktop keeps in a solver sequence not solved yet, left nodes of
-  COMSOL's own (derived variables `iexpr1`, ..., operators `maxOp1`, ...)
-  in a model not solved since it was made or loaded, changed settings of
-  study steps and of existing solver sequences (values of variables not
-  solved for), and in some models added a parameter `currentiter` and
-  changed settings of result tables and plots. In a model saved by
-  another COMSOL version or build, compiling may still update its solver
-  sequences and build the empty meshes of layered materials, as solving
-  would; a warning then says what changed, also when compiling fails.
-  Nodes of COMSOL's own that an earlier solve made (e.g. a derived
-  variable `iexpr_root_freq`) may be removed, remade or changed, as when
-  solving; they are not in the Java export and results stay the same.
+- `mk.problem_size` now leaves the model as it was. It could change a note
+  the COMSOL Desktop keeps in an unsolved solver sequence, leave COMSOL's
+  own helper nodes behind (derived variables `iexpr1`, ..., operators
+  `maxOp1`, ...), change settings of study steps and existing solver
+  sequences, and in some models add a parameter `currentiter` or change
+  settings of result tables and plots. As when solving, compiling may
+  still update the solver sequences of a model saved by another COMSOL
+  version or build, which a warning reports (also when compiling fails),
+  and may remove or remake helper nodes an earlier solve made (e.g.
+  `iexpr_root_freq`); these are not in the Java export and do not change
+  results.
 
 ## [0.3.0] - 2026-10-04
 
