@@ -20,7 +20,8 @@ until 1.0, a minor release (0.2, 0.3, ...) may change the API. See
   settings that differ from the ones COMSOL would choose; it compiles the
   equations, which in a model saved by another COMSOL version or build
   may update its solver sequences and build the empty meshes of layered
-  materials (listed in the result's `notes`).
+  materials (listed in the result's `notes`), and, as solving does, remake
+  nodes of COMSOL's own that are not in the Java export.
 - `mk.compare(a, b)` lists how two models (or results of `mk.describe`)
   differ, with nodes paired by name or by type and place rather than by
   tags or order, and an empty list if nothing does. Each item has a
@@ -41,8 +42,8 @@ until 1.0, a minor release (0.2, 0.3, ...) may change the API. See
   sequences and build the empty meshes of layered materials, as solving
   would; a warning then says what changed, also when compiling fails.
   Nodes of COMSOL's own that an earlier solve made (e.g. a derived
-  variable `iexpr_root_freq`) may be remade, as when solving; they are
-  not in the Java export and results stay the same.
+  variable `iexpr_root_freq`) may be removed, remade or changed, as when
+  solving; they are not in the Java export and results stay the same.
 
 ## [0.3.0] - 2026-10-04
 

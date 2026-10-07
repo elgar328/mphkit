@@ -104,8 +104,9 @@ def problem_size(model: Model, /, *, study=None) -> dict:
     solver COMSOL would create. `linear_solver` is the iterative method,
     e.g. `'gmres'`, and `None` for direct solvers: the direct solver set
     (e.g. PARDISO) may be replaced when solving (by MUMPS on macOS); the
-    progress log names the one used. With a parametric sweep, the sizes are those at the current
-    parameter values; a sweep that changes the mesh changes them too.
+    progress log names the one used. With a parametric sweep, the sizes
+    are those at the current parameter values; a sweep that changes the
+    mesh changes them too.
 
     `mesh_elements` counts the elements of each mesh the study uses (by
     name; a name used in several components gets the tag added).

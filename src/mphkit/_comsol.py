@@ -1296,6 +1296,7 @@ def set_back(settings: list[Setting], changed: list[str]):
                 # a step's `initstudystep` is null until compiling fills it
                 setting.node.set(setting.name, java_null()
                                  if setting.value is None else setting.value)
+                errors.pop(i, None)
             except Exception as error:
                 # reported below, also when reading it failed
                 differed = True

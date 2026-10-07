@@ -988,6 +988,31 @@ def test_model_changed(solved, monkeypatch):
     assert 'sol1/new' in note['message']
 
 
+def test_temporary_sequence_left(solved, monkeypatch):
+    # a temporary sequence that stays is a note, not COMSOL's update
+    model, geom, described = solved
+    java = model.java
+    original = _comsol.undo
+
+    def undo(changed, what, step):
+        if what == 'the temporary solver sequence':
+            changed.append(f'could not set back {what}: test')
+        else:
+            original(changed, what, step)
+
+    monkeypatch.setattr(_comsol, 'undo', undo)
+    try:
+        found = mk.describe(model, solver=True)
+        notes = [n['message'] for n in found['notes']
+                 if n['kind'] == 'model_changed']
+        assert any('temporary solver sequence' in n for n in notes)
+        assert not any('COMSOL added' in n for n in notes)
+    finally:
+        for tag in [str(t) for t in java.sol().tags()]:
+            if tag.startswith(_describe.SCRATCH):
+                java.sol().remove(tag)
+
+
 def test_pairs(model):
     geom = blocks(model)
     model.java.component('comp1').geom('geom1').feature('fin').set(

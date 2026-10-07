@@ -637,6 +637,7 @@ def test_temporary_sequence_left(plate, monkeypatch):
 
     monkeypatch.setattr(_comsol, 'undo', undo)
     monkeypatch.setattr(_solve, '_results_set_back', set_back)
+    before = model_state(model)
     try:
         with pytest.warns(UserWarning, match='temporary solver') as found:
             mk.problem_size(model)
@@ -646,6 +647,8 @@ def test_temporary_sequence_left(plate, monkeypatch):
         for tag in [str(t) for t in java.sol().tags()]:
             if tag.startswith(_solve.ESTIMATE):
                 java.sol().remove(tag)
+    # all else was set back
+    assert model_state(model) == before
 
 
 def test_derived_variables(plate):

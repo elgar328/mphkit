@@ -171,29 +171,28 @@ def describe(model: Model, /, *, solver: bool = False) -> dict:
     has `groups` (property groups with their values, `si` and
     functions); a pair has `type`, `source` and `destination`.
 
-    A selection is `{'level': 'boundary', 'geometry': 'geom1',
-    'entities': [...]}`: one entry per entity with its bounding box per
-    axis and its `size` (volume, area or length; none for points, whose
-    box is their coordinates), in the geometry's length unit
-    (`length_unit` of the geometry, `length_scale` metres), or 'all' for
-    all entities of that level. `applied` is where the node applies,
-    if that differs: a node later in the same physics overrides it on
-    the entities it shares, and default features apply where nothing else
-    does. `named` is the label of a named selection it uses. Mesh
-    operations on the whole geometry or on what is left have the level
-    'remaining' (COMSOL tells them apart only before meshing); other
-    nodes on the whole geometry 'geometry', global nodes 'global', one
-    that selects nothing 'none', and a selection on several levels
-    'several' (its entities 'unknown', its `levels` listed). An entity
-    that could not be
-    measured is {'unknown': number}. Domain 0, the exterior of boundary
-    elements, is not an entity of the geometry: a selection that has it
-    has `exterior: True` (and `exterior_applied` where that differs).
-    Boxes are single precision (1.1 reads 1.100000023841858) and curved
-    entities are measured on a rendering mesh: compare with a tolerance.
-    Geometries list all their entities this way under `entities`, with
-    their `dimension`, `axisymmetric`, number of `voids`, `bounding_box`
-    and `finalize` (whether they form a union or an assembly).
+    A selection is `{'level': 'boundary', 'geometry': 'geom1', 'entities':
+    [...]}`: one entry per entity with its bounding box per axis and its
+    `size` (volume, area or length; none for points, whose box is their
+    coordinates), in the geometry's length unit (`length_unit` of the
+    geometry, `length_scale` metres), or 'all' for all entities of that
+    level. `applied` is where the node applies, if that differs: a node
+    later in the same physics overrides it on the entities it shares, and
+    default features apply where nothing else does. `named` is the label of
+    a named selection it uses. Mesh operations on the whole geometry or on
+    what is left have the level 'remaining' (COMSOL tells them apart only
+    before meshing); other nodes on the whole geometry 'geometry', global
+    nodes 'global', one that selects nothing 'none', and a selection on
+    several levels 'several' (its entities 'unknown', its `levels` listed).
+    An entity that could not be measured is {'unknown': number}. Domain 0,
+    the exterior of boundary elements, is not an entity of the geometry: a
+    selection that has it has `exterior: True` (and `exterior_applied` where
+    that differs). Boxes are single precision (1.1 reads 1.100000023841858)
+    and curved entities are measured on a rendering mesh: compare with a
+    tolerance. Geometries list all their entities this way under `entities`,
+    with their `dimension`, `axisymmetric`, number of `voids`,
+    `bounding_box` and `finalize` (whether they form a union or an
+    assembly).
 
     A mesh has `automatic` (controlled by the physics, the COMSOL
     Desktop's default; meshes made through MPh are not) and
@@ -1343,8 +1342,7 @@ class _Reader:
                                  solutions | set(_tags(sequences)))
         return {'status': 'compared', 'sequence': tag, 'changes': changes}
 
-    def not_compared(self, stag: str, tag: str | None, reason: str
-                     ) -> dict:
+    def not_compared(self, stag: str, tag: str | None, reason: str) -> dict:
         self.note(stag, 'solver_not_compared', reason)
         return {'status': 'not_compared', 'sequence': tag,
                 'reason': reason}
