@@ -28,6 +28,12 @@ def geometry(model: Model, dim: int = 3, *, axisymmetric: bool = False,
     locks it once a physics interface uses the geometry. Integrals and
     averages are over the body of revolution; `mk.plot` draws the half
     plane.
+
+    New 3D geometries get COMSOL's default representation (the CAD
+    kernel, 'cadps', where tried; 2D and 1D ones the COMSOL kernel); the
+    models of COMSOL's Application Libraries use the COMSOL kernel
+    ('comsol'), which measures curved entities slightly differently:
+    `geom.java.geomRep('comsol')` before building matches them.
     """
     if not isinstance(axisymmetric, bool):
         raise TypeError(f'axisymmetric must be True or False, not '

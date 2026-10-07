@@ -29,7 +29,7 @@ from . import _catalog, _check, _comsol, _solve
 
 # Version of the result's layout; raise it when the layout changes or
 # what describe leaves out as unused
-FORMAT = 5
+FORMAT = 6
 # Tag prefix of the temporary model and solver sequences
 SCRATCH = 'mkdesc'
 AXES = 'xyz'
@@ -118,7 +118,7 @@ def describe(model: Model, /, *, solver: bool = False) -> dict:
     #  'selections': {}, 'features': []}
     ```
 
-    The result has `format` (5; `mk.compare` takes this one only) and
+    The result has `format` (6; `mk.compare` takes this one only) and
     `mphkit` (the version that described), `parameters` (expression, SI
     value and SI unit), the model's `functions`, `variables`, `couplings`
     (operators),
@@ -191,8 +191,9 @@ def describe(model: Model, /, *, solver: bool = False) -> dict:
     and curved entities are measured on a rendering mesh: compare with a
     tolerance. Geometries list all their entities this way under `entities`,
     with their `dimension`, `axisymmetric`, number of `voids`,
-    `bounding_box` and `finalize` (whether they form a union or an
-    assembly).
+    `bounding_box`, `finalize` (whether they form a union or an assembly)
+    and `representation` (the geometry kernel: 'comsol' or 'cadps', the CAD
+    kernel; they measure curved entities slightly differently).
 
     A mesh has `automatic` (controlled by the physics, the COMSOL
     Desktop's default; meshes made through MPh are not) and
@@ -1165,11 +1166,16 @@ class _Reader:
             finalize: str | None = str(get(java.feature('fin'), 'action'))
         except Exception:
             finalize = None
+        try:
+            representation: str | None = str(java.geomRep())
+        except Exception:
+            representation = None
         return {'tag': gtag, 'label': _label(java), 'dimension': sdim,
                 'axisymmetric': axisymmetric,
                 'length_unit': unit,
                 'length_scale': LENGTH_SCALES.get(unit),
                 'finalize': finalize,
+                'representation': representation,
                 'voids': _count(java.getNFiniteVoids),
                 'bounding_box': None if box is None else
                 {AXES[i]: box[2*i:2*i + 2] for i in range(sdim)},

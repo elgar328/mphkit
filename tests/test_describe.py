@@ -462,7 +462,7 @@ def test_plate(solved):
     assert described['mphkit'] == mk.__version__
     assert described['comsol'].startswith('COMSOL')
     assert described['saved_with'].startswith('COMSOL')
-    assert described['format'] == _describe.FORMAT == 5
+    assert described['format'] == _describe.FORMAT == 6
     assert described['notes'] == []
 
 

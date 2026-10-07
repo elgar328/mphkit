@@ -38,12 +38,13 @@ def cube_faces(low=0.0, high=1.0):
 
 
 def geometry(domains, boundaries, tag='geom1', unit='m', scale=1.0,
-             finalize='union'):
+             finalize='union', representation=None):
     lows = [min(d[a][0] for d in domains) for a in 'xyz']
     highs = [max(d[a][1] for d in domains) for a in 'xyz']
     return {'tag': tag, 'label': 'Geometry 1', 'dimension': 3,
             'axisymmetric': False, 'length_unit': unit,
             'length_scale': scale, 'finalize': finalize, 'voids': 0,
+            'representation': representation,
             'bounding_box': {a: [lo, hi] for a, lo, hi in
                              zip('xyz', lows, highs)},
             'entities': {'domain': domains, 'boundary': boundaries,
@@ -1334,6 +1335,78 @@ def test_meshes_of_steps():
     assert mk.compare(a, b) == []
 
 
+def kernels(sizes, kernel, finalize='union', end=3.0):
+    """Unit cubes in a row with the given sizes (the last one ending at
+    `end`), on a geometry kernel."""
+    domains = [box((2 * i, 2 * i + 1), (0, 1), (0, 1), size)
+               for i, size in enumerate(sizes)]
+    domains[-1]['x'][1] = end + 2 * (len(sizes) - 2)
+    return described(geometries=[geometry(
+        domains, [], finalize=finalize, representation=kernel)])
+
+
+def test_geometry_kernels():
+    # the same entities measured otherwise by another kernel
+    a = kernels([1.0, 1.0], 'comsol')
+    b = kernels([1.0, 1.0013], 'cadps')
+    [item] = mk.compare(a, b)
+    assert item['kind'] == 'geometry'
+    assert "geometry differs: a uses the COMSOL kernel, b the CAD kernel" \
+        in item['message']
+    assert "geomRep('comsol') in b before building)" in item['message']
+    assert '1 in the same place as one in b, sizes up to 0.13 % apart' \
+        in item['message']
+    assert (item['a']['representation'], item['b']['representation']) \
+        == ('comsol', 'cadps')
+    assert json.loads(json.dumps(b)) == b
+    [back] = mk.compare(b, a)
+    assert 'a uses the CAD kernel, b the COMSOL kernel' in back['message']
+    assert "geomRep('cadps') in b before building where a CAD kernel is " \
+        'installed' in back['message']
+    # the same kernel: only the sizes
+    [item] = mk.compare(kernels([1.0, 1.0], 'comsol'),
+                        kernels([1.0, 1.0013], 'comsol'))
+    assert 'kernel' not in item['message']
+    assert '0.13 % apart' in item['message']
+    # the largest of several
+    [item] = mk.compare(kernels([1.0, 1.0, 1.0], 'comsol'),
+                        kernels([1.0011, 1.0, 1.0013], 'cadps'))
+    assert '2 in the same place as one in b, sizes up to 0.13 %' in \
+        item['message']
+    # a kernel COMSOL may add later is named as it is
+    [item] = mk.compare(a, kernels([1.0, 1.0013], 'other'))
+    assert "geometry representation 'other'" in item['message']
+    # union against assembly: the sizes, not the kernel
+    found = mk.compare(a, kernels([1.0, 1.0013], 'cadps', 'assembly'))
+    [unchecked] = [i for i in found if i['kind'] == 'unchecked']
+    assert '0.13 % apart' in unchecked['message']
+    assert 'kernel' not in ' '.join(i['message'] for i in found)
+
+
+def test_geometry_kernels_alone():
+    # kernels that differ without entities in the same place: no note
+    a = kernels([1.0, 1.0], 'comsol')
+    assert mk.compare(a, kernels([1.0, 1.0], 'cadps')) == []
+    for end in (3.1, 3.0005):
+        found = mk.compare(a, kernels([1.0, 1.0], 'cadps', end=end))
+        assert found and 'kernel' not in found[0]['message']
+        assert 'same place' not in found[0]['message']
+
+
+def test_applies_nowhere():
+    overridden = {'level': 'boundary', 'geometry': 'geom1',
+                  'entities': faces(1)['entities'], 'applied': []}
+    a = described()
+    b = described([node('hf1', 'HeatFluxBoundary', overridden)])
+    [item] = mk.compare(a, b)
+    assert item['message'].endswith('only in b (applies nowhere)')
+    assert item['empty'] is True
+    b = described([node('hf1', 'HeatFluxBoundary', {
+        'level': 'boundary', 'geometry': 'geom1', 'entities': []})])
+    [item] = mk.compare(a, b)
+    assert item['message'].endswith('only in b (selects nothing)')
+
+
 def test_unchecked_kept_apart():
     # two reasons for one node: both kept
     selection = {'level': 'several', 'levels': ['boundary', 'domain'],
@@ -1834,6 +1907,28 @@ def test_step_mesh(two):
     [step] = mk.describe(two[1])['studies'][0]['steps']
     assert step['properties']['mesh'] == {'geom1': 'mesh7'}
     assert kinds(mk.compare(*two)) == []
+
+
+def test_geometry_kernel(two):
+    # a flat block measures the same on both kernels: no difference
+    for model, kernel in zip(two, ('cadps', 'comsol')):
+        geom = mk.geometry(model, 3)
+        geom.java.geomRep(kernel)
+        mk.block(geom, (1, 2, 3))
+        model.build(geom)
+    found = [mk.describe(m)['components'][0]['geometries'][0]
+             for m in two]
+    assert [g['representation'] for g in found] == ['cadps', 'comsol']
+    assert mk.compare(*two) == []
+    # 2D and 1D geometries have one too
+    for dim in (2, 1):
+        geom = mk.geometry(two[0], dim)
+        mk.feature(geom, 'Square' if dim == 2 else 'Interval')
+        two[0].build(geom)
+    kernels = [g['representation'] for c in mk.describe(two[0])[
+        'components'] for g in c['geometries']]
+    assert len(kernels) == 3 and all(k in ('cadps', 'comsol')
+                                     for k in kernels)
 
 
 def test_time_list(two):

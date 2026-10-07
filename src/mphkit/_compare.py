@@ -95,34 +95,33 @@ def compare(a: Model | dict, b: Model | dict, /, *,
     evaluates to the same SI value and unit are equal ('100[degC]' and
     '373.15[K]'), lists like 'range(0,0.1,1)' are compared by their numbers.
 
-    Each item has `kind`, `path` and `label` (each {'a', 'b'}; None on
-    the side that lacks it), `message` (one line, naming each side's
-    path without its component) and the values `a` and `b` as each
-    model has them. Items come in this order: parameters, geometries
-    (and components only one model has), the differences of nodes, then
-    'unchecked' and 'note'; within each, what only model b has comes
-    last. Kinds: 'parameter', 'geometry' (dimension, bounding box,
-    entities without a counterpart, union against assembly),
-    'only_in_a', 'only_in_b' (`a` or `b` holds the whole node; `empty:
-    True` if it selects nothing; a component only one model has is one
-    item for its geometries, physics, multiphysics couplings, meshes,
-    pairs, mass properties and materials, with what its operators,
-    functions, probes, definitions, variables and coordinate systems
-    give as its `consequences`),
-    'property' (`name` of the setting; `from_default: True` if one side
-    has it from its defaults), 'expression' (same value, but one side
-    uses parameters or leaves out the unit), 'variable', 'active',
-    'selection' (with the entity `numbers` that differ; `same_applied:
-    True` if both apply to the same entities), 'applied' (where a node
-    applies differs in the entities both models select: another node
-    overrides it in one of them), 'order' (of mesh operations or study
-    steps; the nodes that moved), 'solver' and 'label'; then 'unchecked'
-    (what could not be compared, e.g. unknown defaults) and 'note'. A
-    'property' item with `used_only: True` lists values one side sets
-    and uses while the other's settings leave them unused (e.g. sizes of
-    a mesh node with `custom` on in one model, next to the `custom` item
-    itself). Places are in each model's length unit; comparisons are in
-    SI.
+    Each item has `kind`, `path` and `label` (each {'a', 'b'}; None on the
+    side that lacks it), `message` (one line, naming each side's path
+    without its component) and the values `a` and `b` as each model has
+    them. Items come in this order: parameters, geometries (and components
+    only one model has), the differences of nodes, then 'unchecked' and
+    'note'; within each, what only model b has comes last. Kinds:
+    'parameter', 'geometry' (dimension, bounding box, entities without a
+    counterpart, with how much entities in the same place differ in size
+    and, where the models use different geometry kernels, that as the cause;
+    union against assembly), 'only_in_a', 'only_in_b' (`a` or `b` holds the
+    whole node; `empty: True` if it selects nothing or applies nowhere; a
+    component only one model has is one item for its geometries, physics,
+    multiphysics couplings, meshes, pairs, mass properties and materials,
+    with what its operators, functions, probes, definitions, variables and
+    coordinate systems give as its `consequences`), 'property' (`name` of
+    the setting; `from_default: True` if one side has it from its defaults),
+    'expression' (same value, but one side uses parameters or leaves out the
+    unit), 'variable', 'active', 'selection' (with the entity `numbers` that
+    differ; `same_applied: True` if both apply to the same entities),
+    'applied' (where a node applies differs in the entities both models
+    select: another node overrides it in one of them), 'order' (of mesh
+    operations or study steps; the nodes that moved), 'solver' and 'label';
+    then 'unchecked' (what could not be compared, e.g. unknown defaults) and
+    'note'. A 'property' item with `used_only: True` lists values one side
+    sets and uses while the other's settings leave them unused (e.g. sizes
+    of a mesh node with `custom` on in one model, next to the `custom` item
+    itself). Places are in each model's length unit; comparisons are in SI.
 
     An 'applied' item goes into the `consequences` of the item that
     explains it, its first `causes` (the paths of all candidates): a
@@ -167,11 +166,13 @@ def compare(a: Model | dict, b: Model | dict, /, *,
     and solvers (e.g. load groups), the entries of a study step's map whose
     keys in b stand for one key in a (one of them is kept), a mesh deleted
     and made again in another order (its tag pairs it with another; the
-    differences of the two show), a feature of global equations without
-    equations that one model has or that shares none with the other model
-    (nor its subfeatures), and settings of study steps that name features of
-    global equations the two models put into features otherwise (an
-    'unchecked' item says so).
+    differences of the two show), entities without a counterpart whose sizes
+    differ in opposite ways by about as much (they are compared by the size
+    of the region they cover together), a feature of global equations
+    without equations that one model has or that shares none with the other
+    model (nor its subfeatures), and settings of study steps that name
+    features of global equations the two models put into features otherwise
+    (an 'unchecked' item says so).
     Compared although they may be unused: a probe's `intsurface` and
     `intvolume` outside 3D, a sweep's `filename` while both save to a
     file (its default differs from one computer to the next), values
@@ -226,6 +227,8 @@ def _names(value) -> set[str]:
 
 # Most numbers a value is compared by, one by one
 LONGEST = 10**6
+# How messages name a geometry's representation (geomRep)
+KERNELS = {'comsol': 'the COMSOL kernel', 'cadps': 'the CAD kernel'}
 # Lists at the top of a result of mk.describe
 LISTS = ('functions', 'variables', 'couplings', 'coordinate_systems',
          'materials', 'definitions', 'probes', 'studies', 'solutions',
@@ -777,6 +780,7 @@ class GeometryPair:
         self.tables: dict[tuple[int, str], Table] = {}
         self.matches: dict[str, tuple] = {}
         self.cell_maps: dict[tuple[int, str], dict] = {}
+        self.twin_gaps: dict[str, list[float]] = {}
         # whether the shapes differ (set by the comparison)
         self.differs = False
 
@@ -839,8 +843,12 @@ class GeometryPair:
         if box_a and box_b and not self.tol.boxes(box_a, box_b):
             found.append('bounding box differs')
         if ga.get('finalize') == gb.get('finalize'):
-            for level, (left_a, left_b) in self.leftovers().items():
+            left = self.leftovers()
+            for level, (left_a, left_b) in left.items():
                 found.append(self.rows_text(level, left_a, left_b))
+            note = self.kernel_note(list(left))
+            if note:
+                found.insert(0, note)
         return found
 
     def rows_text(self, level: str, left_a, left_b) -> str:
@@ -851,7 +859,62 @@ class GeometryPair:
                 places = [table.rows[r]['place'] for r in rows]
                 parts.append(f'{len(rows)} {level} only in {side} '
                              f'({places_text(places)})')
+        gaps = self.twins(level)
+        if gaps:
+            parts.append(f'{len(gaps)} in the same place as one in b, '
+                         f'sizes up to {_percent(max(gaps))} % apart')
         return ', '.join(parts)
+
+    def twins(self, level: str) -> list[float]:
+        """
+        The relative size differences of the rows without a counterpart
+        that have the same box as one of the other side (one to one), e.g.
+        a curved entity that two geometry kernels measure differently.
+        """
+        if level not in self.twin_gaps:
+            _, left_a, left_b = self.match(level)
+            ta, tb = self.table(0, level), self.table(1, level)
+            order = sorted((tb.rows[j]['box'][0][0], j) for j in left_b
+                           if tb.rows[j]['box'] and
+                           tb.rows[j]['size'] is not None)
+            lows = [low for low, _ in order]
+            used: set[int] = set()
+            gaps = []
+            for i in left_a:
+                row = ta.rows[i]
+                if not row['box'] or row['size'] is None:
+                    continue
+                low = row['box'][0][0]
+                slack = self.tol.of(low)
+                for k in range(bisect.bisect_left(lows, low - slack),
+                               bisect.bisect_right(lows, low + slack)):
+                    j = order[k][1]
+                    other = tb.rows[j]
+                    if j in used or not self.tol.boxes(row['box'],
+                                                       other['box']):
+                        continue
+                    used.add(j)
+                    largest = max(abs(row['size']), abs(other['size']))
+                    gaps.append(abs(row['size'] - other['size']) / largest
+                                if largest else 0.0)
+                    break
+            self.twin_gaps[level] = gaps
+        return self.twin_gaps[level]
+
+    def kernel_note(self, levels: list[str]) -> str | None:
+        """Names different geometry kernels as the cause where entities
+        in the same place differ in size, else None."""
+        kernel_a = self.ga.get('representation')
+        kernel_b = self.gb.get('representation')
+        if not kernel_a or not kernel_b or kernel_a == kernel_b or \
+                not any(self.twins(level) for level in levels):
+            return None
+        where = ' where a CAD kernel is installed' \
+            if kernel_a == 'cadps' else ''
+        return (f'a uses {_kernel(kernel_a)}, b {_kernel(kernel_b)}, which '
+                'measure curved entities differently (to match a, set '
+                f'geom.java.geomRep({kernel_a!r}) in b before building'
+                f'{where})')
 
     def score(self) -> float:
         """How much of both geometries' domains pair up (0 to 1)."""
@@ -1327,7 +1390,8 @@ class _Comparison:
         fold = any(other.get('type') == kind for other in others)
         message = f'{self.head(na, nb)}: only in {side}'
         if empty:
-            message += ' (selects nothing)'
+            message += ' (selects nothing)' \
+                if _nothing(node.get('selection')) else ' (applies nowhere)'
         extra = {'empty': True} if empty else {}
         entry = self.item(f'only_in_{side}', na, nb, message,
                           a=node if side == 'a' else None,
@@ -2888,7 +2952,18 @@ def _numbers(found: dict) -> dict:
 def _shape(geometry: dict) -> dict:
     return {key: geometry.get(key) for key in (
         'dimension', 'axisymmetric', 'length_unit', 'voids',
-        'bounding_box', 'finalize')}
+        'bounding_box', 'finalize', 'representation')}
+
+
+def _kernel(representation: str) -> str:
+    return KERNELS.get(representation,
+                       f'geometry representation {representation!r}')
+
+
+def _percent(gap: float) -> str:
+    """A relative difference in percent, as '0.13' or '25'."""
+    percent = 100 * gap
+    return f'{percent:.2g}' if percent < 10 else f'{percent:.0f}'
 
 
 def _article(geometry: dict) -> str:
