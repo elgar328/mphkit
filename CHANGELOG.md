@@ -9,6 +9,8 @@ until 1.0, a minor release (0.2, 0.3, ...) may change the API. See
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-10-07
+
 ### Added
 
 - `mk.describe(model)` returns a model's settings as plain, JSON-ready
@@ -258,7 +260,8 @@ First release.
 - `LicenseError` is raised when a feature needs a license that is not
   available.
 
-[Unreleased]: https://github.com/elgar328/mphkit/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/elgar328/mphkit/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/elgar328/mphkit/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/elgar328/mphkit/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/elgar328/mphkit/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/elgar328/mphkit/releases/tag/v0.1.0
